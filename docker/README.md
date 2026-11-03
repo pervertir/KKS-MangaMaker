@@ -13,7 +13,7 @@ official image; `docker/entry.sh` only adds two steps before handing over to the
 3. In the background, `docker/fetch_models.py` downloads what `docker/models.yaml` lists and is
    not on the volume yet: the WAI Illustrious v16 checkpoint, xinsir union ControlNet promax,
    IPAdapter plus + CLIP-H (about 12 GB, Hugging Face, no login), then the Civitai LoRAs
-   (about 13 GB, needs `CIVITAI_API_KEY`). Log: `/workspace/runpod-slim/manga_bootstrap.log`.
+   (about 15 GB, needs `CIVITAI_API_KEY`). Log: `/workspace/runpod-slim/manga_bootstrap.log`.
    ComfyUI sees new files without a restart.
 
 Second and later starts on the same volume skip everything already there, so they take seconds.
@@ -122,7 +122,9 @@ Concept LoRAs: missionary (2), doggystyle (2), cowgirl (3 angles), mating press 
 standing sex (2), sex on table, fellatio, paizuri on lap, cross-section, after sex. Non-consent,
 "size difference" and asphyxiation concepts were not included.
 
-Group concepts (`MANGA_LORA_SETS` key `group`, 31 LoRAs): FFM (6), MMF (5 incl. threesome kiss/oral),
+Group concepts (`MANGA_LORA_SETS` key `group`, 42 LoRAs): FFM (6), MMF (5 incl. threesome kiss/oral),
 FFMM and FFFM foursomes (3), group sex / orgy (4), double penetration (2), harem (2), gangbang (6,
-incl. airtight, oral and a slider), multiple penetrations, bukkake (2). Left out: NTR, monster/orc,
+incl. airtight, oral and a slider), multiple penetrations, bukkake (2), and many-women-one-man (11: reverse gangbang,
+cooperative fellatio x4, cooperative paizuri x3, double pussyjob, throne fellatio, multi-girl after
+sex). Left out: NTR, monster/orc,
 faceless "transparent" men, "mob" characters from non-consent anime, futa.
