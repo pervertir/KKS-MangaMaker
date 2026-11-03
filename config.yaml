@@ -1,0 +1,61 @@
+# MangaPipeline configuration. Paths are relative to this folder unless absolute.
+
+# Where ComfyUI runs. `runpod` = the pod below (default). `local` = comfy_url on this Mac.
+target: runpod
+runpod:
+  pod_name: manga-comfy
+  image: runpod/comfyui:1.3.3-comfyuiv0.30.0-cuda12.8   # the official "ComfyUI - CUDA 12.8" template image
+  container_disk_gb: 60
+  gpu: "NVIDIA GeForce RTX 4090"
+  data_center: EU-RO-1
+  network_volume_id: mc60e9gkm5      # 50 GB "manga-comfy" volume; models persist here
+  comfy_dir: /workspace/runpod-slim/ComfyUI
+  ssh_key: ~/.runpod/ssh/runpodctl-ssh-key
+comfy_url: http://127.0.0.1:8188     # used only when target: local
+comfy_root: /Volumes/980Pro/Workspace/AI/ComfyUI   # used only when target: local
+python: /Users/deepratnaawale/miniconda3/envs/comfyui/bin/python
+
+# Where Studio screenshots (F11) land, and where the bubble templates live.
+cap_dir: ../UserData/cap
+templates_dir: ../UserData/cap/Comics/Templates
+bubbles_subdir: Thought and Speech Bubbles
+
+# Models (filenames as ComfyUI lists them). Change here if you swap checkpoints.
+checkpoint: waiIllustriousSDXL_v160.safetensors   # on the pod (HF mirror); local has v170
+controlnet: xinsir_controlnet_union-sdxl-1-promax.safetensors
+controlnet_union_type: openpose
+ipadapter: ip-adapter-plus_sdxl_vit-h.safetensors
+clip_vision: clip_vision_h.safetensors
+reactor_swap_model: inswapper_128.onnx
+
+# Civitai LoRA lookup. Downloads go to <comfy_root>/models/loras/<lora_subdir>.
+lora_subdir: civitai_characters
+# Which Civitai base models are acceptable, best first. Must match the checkpoint family.
+base_model_preference: [Illustrious, NoobAI, SDXL 1.0, Pony]
+civitai_api_key_env: [CIVITAI_API_KEY, CAI_API_KEY]
+civitai_nsfw: true
+
+# Generation defaults (a shot.yaml can override any of these).
+defaults:
+  style: flat_anime
+  steps: 26
+  cfg: 5.5
+  sampler: euler_ancestral
+  scheduler: normal
+  controlnet_strength: 0.9
+  controlnet_end: 0.85
+  ipadapter_weight: 0.4   # 0.55 copied the KK render's pastel palette; 0.35-0.4 keeps identity with saturated colours
+  ipadapter_weight_type: linear
+  lora_weight: 0.8
+  batch: 1
+  seed: -1
+
+# Dialogue composition defaults.
+compose:
+  font: /System/Library/Fonts/Supplemental/Comic Sans MS.ttf
+  font_bold: /System/Library/Fonts/Supplemental/Comic Sans MS Bold.ttf
+  min_font_px: 14
+  max_font_px: 96
+  line_spacing: 1.15
+  bubble_default: "001"
+  bubble_size: 0.38        # bubble width as a fraction of image width

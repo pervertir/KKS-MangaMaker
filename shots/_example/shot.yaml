@@ -1,0 +1,30 @@
+# Example shot. pose.png here is the OpenPose card thumbnail (a real capture is an F11 render of that card).
+shot: example
+pose: pose.png
+reference: reference.png      # optional; used by identity: ipadapter / reactor
+
+characters:
+  - name: "Rem"
+    series: "Re:Zero"
+    lora: auto                 # auto | none | file.safetensors | https://civitai.com/models/<id>
+    lora_weight: 0.8
+    tags: "maid, blue hair, short hair"
+
+identity: auto                 # auto | lora | ipadapter | reactor | none
+style: flat_anime
+prompt: "standing in a classroom, hands behind back, smiling, looking at viewer, window light"
+negative: ""
+seed: -1
+# width: 832
+# height: 1216
+
+dialogue:
+  - text: "So this is the new classroom?"
+    bubble: "001"
+    at: [0.72, 0.12]
+    size: 0.42
+    flip: false
+  - text: "Yes!"
+    bubble: "096"
+    at: [0.22, 0.30]
+    size: 0.22

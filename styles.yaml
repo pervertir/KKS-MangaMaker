@@ -1,0 +1,16 @@
+# Style presets. A shot picks one with `style:`; its own `prompt` is appended after `positive`.
+# `negative` is prepended to the shot's negative. Keep "speech bubble, text" in every negative:
+# dialogue is composited later, never rendered.
+
+flat_anime:
+  # first test render came out pale: keep the colours saturated and the lines dark
+  positive: "masterpiece, best quality, amazing quality, very aesthetic, absurdres, anime screencap, flat color, cel shading, clean bold lineart, vivid colors, high contrast, simple shading, sharp focus"
+  negative: "lowres, worst quality, low quality, bad anatomy, bad hands, missing fingers, extra digits, fewer digits, jpeg artifacts, blurry, signature, watermark, username, speech bubble, text, logo, 3d, realistic, photorealistic, gradient shading, oil painting, washed out, pale, desaturated, faded"
+
+manga_bw:
+  positive: "masterpiece, best quality, absurdres, monochrome, greyscale, manga, screentone, ink lineart, high contrast, clean lineart, detailed"
+  negative: "lowres, worst quality, low quality, bad anatomy, bad hands, missing fingers, extra digits, jpeg artifacts, blurry, signature, watermark, username, speech bubble, text, logo, color, 3d, realistic"
+
+soft_anime:
+  positive: "masterpiece, best quality, amazing quality, very aesthetic, absurdres, anime illustration, soft lighting, detailed eyes, clean lineart"
+  negative: "lowres, worst quality, low quality, bad anatomy, bad hands, missing fingers, extra digits, jpeg artifacts, blurry, signature, watermark, username, speech bubble, text, logo, 3d, realistic"

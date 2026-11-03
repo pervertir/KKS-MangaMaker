@@ -1,0 +1,6 @@
+#!/bin/zsh
+# Runs mangapipe.py with the ComfyUI conda interpreter (has PIL, numpy, yaml, requests).
+HERE="${0:A:h}"
+PY="${MANGAPIPE_PYTHON:-/Users/deepratnaawale/miniconda3/envs/comfyui/bin/python}"
+if [ ! -x "$PY" ]; then PY="python3"; fi
+exec "$PY" "$HERE/mangapipe.py" "$@"

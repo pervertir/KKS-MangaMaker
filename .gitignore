@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.DS_Store
+.env
+
+# Local caches (LoRA lookups, downloaded metadata)
+cache/
+
+# Shots are per-user captures and renders; only the example inputs are tracked
+shots/*
+!shots/_example/
+shots/_example/out/
