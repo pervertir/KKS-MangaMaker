@@ -107,7 +107,7 @@ def main():
     if key:  # the downloader takes the variable's name and reads the key itself
         cmd += ["--api-key", "CIVITAI_API_KEY" if os.environ.get("CIVITAI_API_KEY") else "CAI_API_KEY"]
     log(f"downloading {len(allowed)} of {len(refs)} with civitai-bulk-downloader")
-    return subprocess.call(cmd, cwd=work)
+    return subprocess.call(cmd, cwd=work, stdin=subprocess.DEVNULL)  # never wait on its key prompt
 
 
 if __name__ == "__main__":
