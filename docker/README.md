@@ -29,6 +29,10 @@ volume, with these environment variables:
 | `MANGA_LORA_SETS` | `all` (default), `characters`, `acts`, or `none` |
 | `MANGA_FETCH_MODELS` | `0` to skip the downloader entirely |
 | `PUBLIC_KEY` | your ssh public key, as with the official image |
+| `JUPYTER_PASSWORD` | optional; otherwise one is generated into `/workspace/runpod-slim/jupyter_password.txt` |
+| `CIVITAI_BULK_FILE` | optional bulk list path (default `/workspace/MangaPipeline/civitai.txt`) |
+
+Network volume: `cmw0485av000006jt10lwbuod` (the user's choice for this image, 2026-11-03).
 
 With runpodctl: `config.yaml` > `runpod.image: <registry>/kks-mangamaker-comfyui:<tag>` and
 `./mangapipe pod create` (the env vars are set in the RunPod console template, or with
@@ -50,6 +54,24 @@ drives any ComfyUI instead of the local one. The models and LoRAs must exist on 
 
 **From the Mac, as before:** nothing changes. `./mangapipe run` on the Mac talks to this pod's
 ComfyUI over the proxy URL exactly as it did with the official image.
+
+## Civitai bulk downloader
+
+`civitai-dl URL_or_id ...` or `civitai-dl -f list.txt` (one per line, `#` comments, 3 parallel
+downloads, `-j` to change). Files go to the folder for their type (`checkpoints`, `loras/civitai`,
+`controlnet`, `embeddings`, `vae`, `upscale_models`); LoRA trigger words are kept for the pipeline.
+Put a list at `/workspace/MangaPipeline/civitai.txt` and it also runs at every pod start (existing
+files are skipped). The same blocklist applies. The image also keeps the base image's Civicomfy
+panel inside ComfyUI for one-off downloads (enter the API key in its settings).
+
+## JupyterLab
+
+On by default on port 8888. The token is `JUPYTER_PASSWORD` if you set one, else the generated one
+in `/workspace/runpod-slim/jupyter_password.txt` (also printed in the pod log). Set `MANGA_JUPYTER=0`
+to keep it off. Checkpoints bug: JupyterLab normally drops `.ipynb_checkpoints/` into every folder it
+touches, which shows up as bogus entries in ComfyUI's model lists; `/etc/jupyter/jupyter_server_config.py`
+keeps checkpoints in `/tmp/jupyter-checkpoints` and hides the folders, and leftovers under `models/`
+are removed at start.
 
 ## Downloaded at start vs baked into the image
 

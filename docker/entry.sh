@@ -22,6 +22,19 @@ if [ -d "$C/custom_nodes" ] && [ ! -d "$C/custom_nodes/ComfyUI_IPAdapter_plus" ]
         && echo "[manga] installed ComfyUI_IPAdapter_plus into the volume"
 fi
 
+# JupyterLab: the base /start.sh only starts it when JUPYTER_PASSWORD (or JUPYTER_DISABLE_AUTH) is
+# set. Keep it on by default with a generated password, readable only on the volume and in the log.
+if [ -z "${JUPYTER_PASSWORD:-}" ] && [ "${JUPYTER_DISABLE_AUTH:-}" != "true" ] && [ "${MANGA_JUPYTER:-1}" = "1" ]; then
+    PWF=/workspace/runpod-slim/jupyter_password.txt
+    mkdir -p /workspace/runpod-slim
+    [ -s "$PWF" ] || { openssl rand -hex 12 > "$PWF"; chmod 600 "$PWF"; }
+    export JUPYTER_PASSWORD=$(cat "$PWF")
+    echo "[manga] JupyterLab on :8888, token in $PWF (set JUPYTER_PASSWORD to choose your own)"
+fi
+mkdir -p /tmp/jupyter-checkpoints
+# Leftovers from before the checkpoint fix would still show up as fake models.
+find /workspace/runpod-slim/ComfyUI/models -type d -name .ipynb_checkpoints -prune -exec rm -rf {} + 2>/dev/null || true
+
 if [ "${MANGA_FETCH_MODELS:-1}" = "1" ]; then
     nohup "$APP/docker/bootstrap.sh" > /workspace/runpod-slim/manga_bootstrap.log 2>&1 < /dev/null &
     echo "[manga] model/LoRA downloader started; log: /workspace/runpod-slim/manga_bootstrap.log"

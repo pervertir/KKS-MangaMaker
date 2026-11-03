@@ -14,4 +14,10 @@ PY=python3
 python3 -c "import yaml, requests" 2>/dev/null || PY="$C/.venv-cu128/bin/python"
 "$PY" /opt/MangaPipeline/docker/fetch_models.py --comfy "$C" --home "${MANGA_HOME:-/workspace/MangaPipeline}" \
     --sets "${MANGA_LORA_SETS:-all}"
+# Your own bulk list (one Civitai URL or id per line), if present.
+BULK=${CIVITAI_BULK_FILE:-${MANGA_HOME:-/workspace/MangaPipeline}/civitai.txt}
+if [ -s "$BULK" ]; then
+    echo "--- bulk list $BULK"
+    "$PY" /opt/MangaPipeline/docker/civitai_bulk.py -f "$BULK"
+fi
 echo "--- disk"; df -h /workspace | tail -1
