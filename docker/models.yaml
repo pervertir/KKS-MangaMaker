@@ -71,7 +71,7 @@ lora_sets:
       - {model: 2066654, version: 2950372, concept: after sex}
 
   # Consensual group scenes (threesomes, foursomes, orgies). Same rule: adult characters only.
-  # Left out: NTR, monster/orc, "mob" scenes from non-consent anime, and gangbang-of-many-men concepts.
+  # Left out: NTR, monster/orc/faceless "transparent" men, and "mob" scenes from non-consent anime.
   group:
     subdir: civitai_concepts
     items:
@@ -97,3 +97,12 @@ lora_sets:
       - {model: 2353626, version: 2647171, concept: double penetration concept}
       - {model: 949418, version: 1974704, concept: harem cooperative}
       - {model: 2070980, version: 2343381, concept: harem throne}
+      - {model: 2436408, version: 3274419, concept: gangbang}
+      - {model: 482233, version: 1888917, concept: gangbang slider}
+      - {model: 1932245, version: 2186958, concept: gangbang many men}
+      - {model: 1431750, version: 2841196, concept: multiple boys}
+      - {model: 1689143, version: 2082203, concept: airtight gangbang}
+      - {model: 2516777, version: 2828844, concept: oral gangbang}
+      - {model: 1370965, version: 1548943, concept: multiple penetrations}
+      - {model: 1449667, version: 2295644, concept: bukkake}
+      - {model: 498684, version: 1291450, concept: excessive cum}
