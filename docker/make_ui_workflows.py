@@ -7,6 +7,7 @@ nodes. Writes:
   MangaPipeline - pose.json         OpenPose (union ControlNet) + character LoRA + IPAdapter reference
   MangaPipeline - pose+depth.json   adds a depth pass on the same union ControlNet and an act LoRA,
                                     for multi-character contact scenes (docker/WORKFLOW.md)
+  Anima - aesthetic.json / Anima - turbo.json   text-to-image on the Anima anime model
 Images are loaded from ComfyUI's input/ folder: pose.png, depth.png, reference.png.
 """
 from __future__ import annotations
@@ -68,6 +69,30 @@ def api_graph(depth: bool) -> dict:
                    "end_percent": 0.5, "vae": ["1", 2]}}
         g["14"]["inputs"].update(positive=["19", 0], negative=["19", 1])
     return g
+
+
+def anima_graph(turbo: bool) -> dict:
+    """Anima text-to-image (no ControlNet or Illustrious LoRAs on this model). Settings from its model card."""
+    unet = "anima-turbo-v1.1.safetensors" if turbo else "anima-aesthetic-v1.1.safetensors"
+    steps, cfg = (10, 1.0) if turbo else (30, 4.0)
+    return {
+        "1": {"class_type": "UNETLoader", "inputs": {"unet_name": unet, "weight_dtype": "default"}},
+        "2": {"class_type": "CLIPLoader", "inputs": {"clip_name": "qwen_3_06b_base.safetensors", "type": "stable_diffusion",
+              "device": "default"}},
+        "3": {"class_type": "VAELoader", "inputs": {"vae_name": "qwen_image_vae.safetensors"}},
+        "4": {"class_type": "CLIPTextEncode", "inputs": {"clip": ["2", 0], "text":
+              "masterpiece, best quality, year 2025, newest, sensitive, 1girl, hyuuga hinata, naruto (series), "
+              "mature female, adult, long hair, white eyes, smile, looking at viewer, standing, anime screenshot"}},
+        "5": {"class_type": "CLIPTextEncode", "inputs": {"clip": ["2", 0], "text":
+              "worst quality, low quality, artist name, blurry, jpeg artifacts, chromatic aberration, text, speech bubble, "
+              "child, loli, petite"}},
+        "6": {"class_type": "EmptyLatentImage", "inputs": {"width": 832, "height": 1216, "batch_size": 2}},
+        "7": {"class_type": "KSampler", "inputs": {"model": ["1", 0], "positive": ["4", 0], "negative": ["5", 0],
+              "latent_image": ["6", 0], "seed": 12345, "steps": steps, "cfg": cfg, "sampler_name": "er_sde" if not turbo else "euler",
+              "scheduler": "simple", "denoise": 1.0}},
+        "8": {"class_type": "VAEDecode", "inputs": {"samples": ["7", 0], "vae": ["3", 0]}},
+        "9": {"class_type": "SaveImage", "inputs": {"images": ["8", 0], "filename_prefix": "MangaPipeline/anima/render"}},
+    }
 
 
 def is_widget(spec) -> bool:
@@ -138,8 +163,9 @@ def main():
     info = requests.get(a.url.rstrip("/") + "/object_info", timeout=120).json()
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
-    for name, depth in (("MangaPipeline - pose", False), ("MangaPipeline - pose+depth", True)):
-        api = api_graph(depth)
+    graphs = {"MangaPipeline - pose": api_graph(False), "MangaPipeline - pose+depth": api_graph(True),
+              "Anima - aesthetic": anima_graph(False), "Anima - turbo": anima_graph(True)}
+    for name, api in graphs.items():
         missing = sorted({n["class_type"] for n in api.values()} - set(info))
         if missing:
             raise SystemExit(f"server lacks nodes: {missing}")

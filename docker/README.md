@@ -72,6 +72,12 @@ your F11 captures there. Regenerate them with `docker/make_ui_workflows.py --url
 (widget order comes from the server, so they match the installed nodes). The `.api.json` twins are
 the same graphs for the API.
 
+`Anima - aesthetic` and `Anima - turbo` run Anima (CircleStone Labs + Comfy Org, 2B, trained only on
+anime/art; non-commercial license), which knows most anime characters without a LoRA. It cannot use
+the SDXL ControlNet or the Illustrious LoRAs, so it is text-to-image only: good for covers, splash
+pages and shots where the exact pose doesn't matter. Prompt with booru tags; its safety tags are
+`safe, sensitive, nsfw, explicit`.
+
 ## Civitai bulk downloader
 
 `civitai-dl` runs your [civitai-bulk-downloader](https://github.com/deepratna-awale/civitai-bulk-downloader)

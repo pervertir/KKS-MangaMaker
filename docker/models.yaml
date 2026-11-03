@@ -24,6 +24,21 @@ base:
   - url: https://huggingface.co/h94/IP-Adapter/resolve/main/models/image_encoder/model.safetensors
     dir: clip_vision
     file: clip_vision_h.safetensors
+  # Anima (CircleStone Labs + Comfy Org, 2B, anime-only training, Cosmos-Predict2 based; non-commercial
+  # license). Loads with UNETLoader + CLIPLoader(type stable_diffusion) + the Qwen-Image VAE.
+  # SDXL ControlNets and Illustrious LoRAs do NOT work on it.
+  - url: https://huggingface.co/circlestone-labs/Anima/resolve/main/split_files/diffusion_models/anima-aesthetic-v1.1.safetensors
+    dir: diffusion_models
+    file: anima-aesthetic-v1.1.safetensors
+  - url: https://huggingface.co/circlestone-labs/Anima/resolve/main/split_files/diffusion_models/anima-turbo-v1.1.safetensors
+    dir: diffusion_models
+    file: anima-turbo-v1.1.safetensors
+  - url: https://huggingface.co/circlestone-labs/Anima/resolve/main/split_files/text_encoders/qwen_3_06b_base.safetensors
+    dir: text_encoders
+    file: qwen_3_06b_base.safetensors
+  - url: https://huggingface.co/circlestone-labs/Anima/resolve/main/split_files/vae/qwen_image_vae.safetensors
+    dir: vae
+    file: qwen_image_vae.safetensors
 
 # Extra refusals on top of mp/civitai.py BLOCKLIST (minors, child-era versions, loli/shota styles,
 # Boruto's kids by name). Whole words, checked against model name, tags, version name, trigger words.
