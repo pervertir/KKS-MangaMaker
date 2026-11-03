@@ -33,7 +33,7 @@ COPY scripts/_example.yaml /opt/MangaPipeline/seed/scripts/_example.yaml
 COPY shots/_example/ /opt/MangaPipeline/seed/shots/_example/
 COPY docker/config.pod.yaml /opt/MangaPipeline/config.yaml
 COPY docker/models.yaml docker/fetch_models.py docker/civitai_bulk.py docker/README.md docker/WORKFLOW.md /opt/MangaPipeline/docker/
-COPY --chmod=755 docker/entry.sh docker/bootstrap.sh /opt/MangaPipeline/docker/
+COPY --chmod=755 docker/entry.sh docker/bootstrap.sh docker/global_models.sh /opt/MangaPipeline/docker/
 COPY --chmod=755 docker/mangapipe.sh /usr/local/bin/mangapipe
 COPY --chmod=755 docker/civitai-dl.sh /usr/local/bin/civitai-dl
 # Keeps JupyterLab's .ipynb_checkpoints out of /workspace (and so out of ComfyUI's models folders).

@@ -18,6 +18,14 @@ official image; `docker/entry.sh` only adds two steps before handing over to the
 
 Second and later starts on the same volume skip everything already there, so they take seconds.
 
+## Global volume
+
+When a RunPod global volume is attached (mounted at `/workspace-global`), every
+`ComfyUI/models/<type>` folder is moved there once and replaced by a symlink, so all downloads (base
+models, LoRAs, `civitai-dl`) land on the global volume and any pod that mounts it sees them. The pod
+volume keeps ComfyUI, its venv, custom nodes and the MangaPipeline folders. `MANGA_MODELS_DIR`
+changes the target, `MANGA_GLOBAL_MODELS=0` turns it off.
+
 ## Deploying
 
 Create the pod from the pushed image instead of the official one, on the existing `manga-comfy`

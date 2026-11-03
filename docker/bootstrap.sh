@@ -10,6 +10,10 @@ for i in $(seq 1 600); do
 done
 [ -f "$C/main.py" ] || { echo "ComfyUI never appeared at $C"; exit 1; }
 
+if [ -d /workspace-global ] && [ "${MANGA_GLOBAL_MODELS:-1}" = "1" ]; then
+    /opt/MangaPipeline/docker/global_models.sh
+fi
+
 PY=python3
 python3 -c "import yaml, requests" 2>/dev/null || PY="$C/.venv-cu128/bin/python"
 "$PY" /opt/MangaPipeline/docker/fetch_models.py --comfy "$C" --home "${MANGA_HOME:-/workspace/MangaPipeline}" \
