@@ -26,7 +26,7 @@ STYLE_NEG = ("lowres, worst quality, low quality, bad anatomy, bad hands, missin
 
 def api_graph(depth: bool) -> dict:
     g = {
-        "1": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": "waiIllustriousSDXL_v160.safetensors"}},
+        "1": {"class_type": "CheckpointLoaderSimple", "inputs": {"ckpt_name": "waiIllustriousSDXL_v170.safetensors"}},
         "20": {"class_type": "LoraLoader", "inputs": {"model": ["1", 0], "clip": ["1", 1],
                "lora_name": "civitai_characters/DX888HinataV3.safetensors", "strength_model": 0.75, "strength_clip": 0.75}},
         "2": {"class_type": "CLIPTextEncode", "inputs": {"clip": ["20", 1], "text":

@@ -40,16 +40,22 @@ def is_safetensors(p: Path) -> bool:
     return len(head) >= 9 and head[8:9] == b"{"
 
 
-def fetch_base(comfy: Path, items: list[dict]) -> None:
+def fetch_base(comfy: Path, items: list[dict], key: str | None) -> None:
     for it in items:
         dest = comfy / "models" / it["dir"] / it["file"]
         if dest.exists() and dest.stat().st_size > 1_000_000:
             log(f"have  {it['file']}")
             continue
+        if it.get("civitai") and not key:
+            log(f"skip  {it['file']}: Civitai file, needs CIVITAI_API_KEY")
+            continue
         dest.parent.mkdir(parents=True, exist_ok=True)
         log(f"get   {it['file']}")
         part = dest.with_name(dest.name + ".part")
-        r = subprocess.run(["curl", "-L", "--fail", "--retry", "3", "--retry-delay", "5", "-sS", "-o", str(part), it["url"]])
+        # The key goes in on stdin (curl -K -), never on the command line where ps would show it.
+        auth = f'header = "Authorization: Bearer {key}"\n' if it.get("civitai") else ""
+        r = subprocess.run(["curl", "-K", "-", "-L", "--fail", "--retry", "3", "--retry-delay", "5", "-sS", "-o", str(part), it["url"]],
+                           input=auth, text=True)
         if r.returncode != 0:
             log(f"FAILED {it['file']} (curl exit {r.returncode})")
             part.unlink(missing_ok=True)
@@ -176,7 +182,7 @@ def main():
     comfy, home = Path(a.comfy), Path(a.home)
     key = next((os.environ[k].strip() for k in ("CIVITAI_API_KEY", "CAI_API_KEY", "CIVIT_AI_KEY") if os.environ.get(k)), None)
     if not a.check and not a.no_base:
-        fetch_base(comfy, cfg.get("base", []))
+        fetch_base(comfy, cfg.get("base", []), key)
     sets = [s.strip() for s in a.sets.split(",") if s.strip()]
     problems = [] if "none" in sets else fetch_loras(comfy, home, cfg, sets, key, a.check)
     log("done" + (f", {len(problems)} problem(s):" if problems else ""))

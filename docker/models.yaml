@@ -6,6 +6,12 @@
 # trigger words hit mp/civitai.py BLOCKLIST, even if someone adds it here. See docker/README.md.
 
 base:
+  # Default checkpoint: WAI-illustrious-SDXL v17 (Civitai 827184, the top-rated Illustrious model, NSFW-capable).
+  # Civitai-only, so it needs the key; v16 below (Hugging Face mirror) is the no-key fallback.
+  - url: https://civitai.com/api/download/models/2883731?type=Model&format=SafeTensor
+    civitai: true
+    dir: checkpoints
+    file: waiIllustriousSDXL_v170.safetensors
   - url: https://huggingface.co/Ine007/waiIllustriousSDXL_v160/resolve/main/waiIllustriousSDXL_v160.safetensors
     dir: checkpoints
     file: waiIllustriousSDXL_v160.safetensors

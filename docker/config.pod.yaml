@@ -13,7 +13,7 @@ cap_dir: /workspace/MangaPipeline/cap
 templates_dir: /workspace/MangaPipeline/Templates
 bubbles_subdir: Thought and Speech Bubbles
 
-checkpoint: waiIllustriousSDXL_v160.safetensors
+checkpoint: waiIllustriousSDXL_v170.safetensors   # v160 is on the volume as a fallback
 controlnet: xinsir_controlnet_union-sdxl-1-promax.safetensors
 controlnet_union_type: openpose
 ipadapter: ip-adapter-plus_sdxl_vit-h.safetensors
