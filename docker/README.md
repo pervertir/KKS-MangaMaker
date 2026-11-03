@@ -63,6 +63,15 @@ drives any ComfyUI instead of the local one. The models and LoRAs must exist on 
 **From the Mac, as before:** nothing changes. `./mangapipe run` on the Mac talks to this pod's
 ComfyUI over the proxy URL exactly as it did with the official image.
 
+## ComfyUI workflows
+
+The Workflows sidebar gets `MangaPipeline - pose` (OpenPose + character LoRA + IPAdapter
+reference) and `MangaPipeline - pose+depth` (adds the depth pass and an act LoRA, for contact
+scenes). They load `pose.png`, `depth.png` and `reference.png` from ComfyUI's input folder; swap in
+your F11 captures there. Regenerate them with `docker/make_ui_workflows.py --url <comfy url>`
+(widget order comes from the server, so they match the installed nodes). The `.api.json` twins are
+the same graphs for the API.
+
 ## Civitai bulk downloader
 
 `civitai-dl` runs your [civitai-bulk-downloader](https://github.com/deepratna-awale/civitai-bulk-downloader)

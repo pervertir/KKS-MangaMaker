@@ -36,6 +36,7 @@ COPY docker/models.yaml docker/fetch_models.py docker/civitai_bulk.py docker/REA
 COPY --chmod=755 docker/entry.sh docker/bootstrap.sh docker/global_models.sh /opt/MangaPipeline/docker/
 COPY --chmod=755 docker/mangapipe.sh /usr/local/bin/mangapipe
 COPY --chmod=755 docker/civitai-dl.sh /usr/local/bin/civitai-dl
+COPY docker/workflows/ /opt/MangaPipeline/comfy-workflows/
 # Keeps JupyterLab's .ipynb_checkpoints out of /workspace (and so out of ComfyUI's models folders).
 COPY docker/jupyter_server_config.py /etc/jupyter/jupyter_server_config.py
 

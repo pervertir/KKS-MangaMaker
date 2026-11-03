@@ -10,6 +10,13 @@ for i in $(seq 1 600); do
 done
 [ -f "$C/main.py" ] || { echo "ComfyUI never appeared at $C"; exit 1; }
 
+# Our graphs in ComfyUI's Workflows sidebar (UI format); never overwrites your edited copies.
+mkdir -p "$C/user/default/workflows"
+for f in /opt/MangaPipeline/comfy-workflows/*.json; do
+    case "$f" in *.api.json) continue;; esac
+    cp -n "$f" "$C/user/default/workflows/" 2>/dev/null || true
+done
+
 if [ -d /workspace-global ] && [ "${MANGA_GLOBAL_MODELS:-1}" = "1" ]; then
     /opt/MangaPipeline/docker/global_models.sh
 fi
