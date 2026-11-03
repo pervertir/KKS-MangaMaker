@@ -10,3 +10,6 @@ cache/
 shots/*
 !shots/_example/
 shots/_example/out/
+
+# Built manga pages (mangapipe page / layouts)
+pages/

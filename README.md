@@ -119,6 +119,41 @@ The text area inside a template bubble is found from its alpha mask (largest rec
 the opaque centroid), so any of the 104 bubbles works without per-template tuning. Text is
 wrapped and shrunk to fit. Font: Comic Sans MS from the system (change in `config.yaml`).
 
+## Manga pages from a script
+
+`./mangapipe page scripts/ch1.yaml --pdf` lays shot renders into page layouts and puts the dialogue
+on top, writing `pages/ch1/page_01.png ...` and `pages/ch1/ch1.pdf`. The model never renders text.
+`scripts/_example.yaml` builds two pages from the example shots.
+
+```yaml
+reading: rtl                 # manga order (panels and auto-placed bubbles run right to left); ltr for western
+shots_dir: shots
+scale: 1.0                   # templates are 1800x2700; 2.0 for print
+max_font_px: 56              # cap for fitted text, keeps sizes even across a page (font_px: N forces one size)
+pages:
+  - layout: 13               # Comic Strips/Template-13.png, or a grid: {rows: [[1], [1, 1]], heights: [2, 1]}
+    panels:                  # fill panels in reading order; `panel: N` pins one
+      - shot: ch1_s01        # newest shots/ch1_s01/out/render_*.png; `image:` picks another
+        focus: [0.5, 0.2]    # crop anchor (fractions of the render) when aspects differ
+        zoom: 1.0            # >1 = tighter crop around focus
+        fit: cover           # or contain
+        flip: false
+        dialogue:            # shot.yaml dialogue keys; at/size relative to the panel
+          - {text: "So this is the new classroom?", bubble: "001", at: [0.75, 0.15], size: 0.3}
+      - shot: ch1_s02        # no dialogue key = the shot's own shot.yaml dialogue; [] = none
+    dialogue:                # page-level captions / sfx, relative to the whole page
+      - {text: "Monday morning", bubble: caption, at: [0.2, 0.035], size: 0.3}
+```
+
+- Panels are found in the template image itself (white areas inside the borders), so all 100
+  templates work. `./mangapipe layouts` writes `pages/layouts.png`: every template with its number,
+  panel count and fill order.
+- A dialogue entry without `at` is placed automatically along the panel top, first line nearest the
+  reading start. Bubbles may cross panel borders and are only kept inside the page.
+- A shot with no render yet draws as a grey placeholder with its name, so a chapter can be laid out
+  before rendering.
+- `--page N` (repeatable) rebuilds only those pages.
+
 ## Commands
 
 | command | does |
@@ -129,6 +164,8 @@ wrapped and shrunk to fit. Font: Comic Sans MS from the system (change in `confi
 | `./mangapipe render DIR [--seed N] [--dry-run]` | ComfyUI render only (dry-run validates and writes the graph) |
 | `./mangapipe compose DIR [--image F]` | overlay dialogue on `out/render_*.png` or a given image |
 | `./mangapipe run DIR [--seed N] [--no-compose]` | everything |
+| `./mangapipe page SCRIPT [--page N] [--pdf] [--out DIR]` | build manga pages from a script |
+| `./mangapipe layouts [--ltr]` | contact sheet of the page templates with panel order |
 
 | `./mangapipe pod create\|setup\|restart\|status\|url\|start\|stop\|remove\|ssh ["cmd"]` | RunPod pod lifecycle (`restart` relaunches ComfyUI after adding nodes) |
 

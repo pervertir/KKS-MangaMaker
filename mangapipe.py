@@ -7,6 +7,8 @@
   mangapipe render <shot_dir> [--seed N] [--dry-run]             ComfyUI render only
   mangapipe compose <shot_dir> [--image FILE]                    dialogue overlay only
   mangapipe run <shot_dir> [--seed N] [--no-compose] [--dry-run] everything, end to end
+  mangapipe page <script.yaml> [--page N] [--pdf]                lay renders into manga pages with dialogue
+  mangapipe layouts                                              contact sheet of the 100 page templates
   mangapipe pod create|setup|restart|status|url|start|stop|remove|ssh   RunPod pod lifecycle (target: runpod)
 """
 from __future__ import annotations
@@ -23,6 +25,7 @@ from mp.civitai import Civitai, CivitaiError  # noqa: E402
 from mp.comfy_client import Comfy, ComfyError  # noqa: E402
 from mp.compose import compose  # noqa: E402
 from mp.config import Config  # noqa: E402
+from mp.page import PageError, build_script, layout_sheet  # noqa: E402
 from mp.remote import RemoteError  # noqa: E402
 from mp.sidecar import ShotError, load_shot, write_example  # noqa: E402
 from mp.studio import grab, prepare_pose, prepare_reference  # noqa: E402
@@ -213,6 +216,8 @@ def main(argv=None):
     p = sub.add_parser("lora");    p.add_argument("name"); p.add_argument("--series", default=""); p.add_argument("--refresh", action="store_true")
     p = sub.add_parser("render");  p.add_argument("shot_dir", type=Path); p.add_argument("--seed", type=int); p.add_argument("--dry-run", action="store_true"); p.add_argument("--refresh-lora", action="store_true")
     p = sub.add_parser("compose"); p.add_argument("shot_dir", type=Path); p.add_argument("--image", type=Path, action="append")
+    p = sub.add_parser("page");    p.add_argument("script", type=Path); p.add_argument("--page", type=int, action="append"); p.add_argument("--pdf", action="store_true"); p.add_argument("--out", type=Path)
+    p = sub.add_parser("layouts"); p.add_argument("--ltr", action="store_true"); p.add_argument("--out", type=Path)
     p = sub.add_parser("pod");     p.add_argument("action", choices=["create", "setup", "restart", "status", "url", "start", "stop", "remove", "ssh"]); p.add_argument("cmdline", nargs="?", default="")
     p = sub.add_parser("run");     p.add_argument("shot_dir", type=Path); p.add_argument("--seed", type=int); p.add_argument("--dry-run", action="store_true"); p.add_argument("--no-compose", action="store_true"); p.add_argument("--refresh-lora", action="store_true")
     a = ap.parse_args(argv)
@@ -231,6 +236,13 @@ def main(argv=None):
             r = civ.resolve({"name": a.name, "series": a.series, "lora": "auto"}, refresh=a.refresh)
             log(json.dumps(r, indent=2))
             return 0
+        if a.cmd == "page":
+            build_script(a.script, cfg, a.out, a.page, a.pdf, log)
+            return 0
+        if a.cmd == "layouts":
+            dest = layout_sheet(cfg, a.out or Path(__file__).resolve().parent / "pages" / "layouts.png", rtl=not a.ltr)
+            log(f"wrote {dest}  (red numbers = panel fill order)")
+            return 0
         if a.cmd == "pod":
             return pod_cmd(cfg, a.action, a.cmdline)
         shot = load_shot(a.shot_dir, cfg)
@@ -248,7 +260,7 @@ def main(argv=None):
             if files and not a.no_compose:
                 do_compose(shot, cfg, files)
             return 0
-    except (ShotError, CivitaiError, ComfyError, RemoteError, FileNotFoundError, ValueError, KeyError) as e:
+    except (ShotError, CivitaiError, ComfyError, RemoteError, PageError, FileNotFoundError, ValueError, KeyError) as e:
         log(f"error: {e}")
         return 1
 

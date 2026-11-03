@@ -1,0 +1,49 @@
+# Example manga script: two pages built from the shots in shots/. See mp/page.py or README for every key.
+title: Example
+reading: rtl               # manga order; ltr for western comics
+shots_dir: shots
+scale: 1.0                 # 1.0 = 1800x2700 pages; 2.0 for print
+font_px: 0                 # one text size for all bubbles; 0 = fit each bubble up to max_font_px
+max_font_px: 56
+
+pages:
+  - layout: 13             # three wide panels (run `mangapipe layouts` to browse all 100)
+    panels:
+      - shot: _example
+        focus: [0.5, 0.1]
+        dialogue:
+          - text: "So this is the new classroom?"
+            bubble: "001"
+            at: [0.8, 0.22]
+            size: 0.3
+      - shot: test_oc       # no dialogue key: uses test_oc/shot.yaml's dialogue
+        focus: [0.5, 0.25]
+      - shot: ch1_s03       # not rendered yet: grey placeholder
+        dialogue:
+          - text: "Wait for me!"     # no `at`: placed automatically
+          - text: "Hurry up."
+    dialogue:
+      - text: "Monday morning"
+        bubble: caption
+        at: [0.2, 0.035]
+        size: 0.3
+
+  - layout: {rows: [[1, 1], [1]], heights: [1, 1.4]}   # custom grid instead of a template
+    panels:
+      - shot: test_oc
+        zoom: 1.6
+        focus: [0.5, 0.2]
+        dialogue: []
+      - shot: _example
+        zoom: 1.6
+        focus: [0.5, 0.2]
+        dialogue:
+          - text: "Yes!"
+            bubble: "096"
+      - shot: _example
+        flip: true
+        dialogue:
+          - text: "WHAM"
+            bubble: sfx
+            at: [0.3, 0.6]
+            size: 0.4

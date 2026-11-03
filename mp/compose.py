@@ -117,7 +117,18 @@ def _parse_color(c, fallback):
 
 def compose(image_path: Path, dialogue: list[dict], cfg_compose: dict, bubbles_dir: Path, out_path: Path, log=print) -> Path:
     base = Image.open(image_path).convert("RGBA")
-    W, H = base.size
+    draw_dialogue(base, dialogue, cfg_compose, bubbles_dir, log=log)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    base.convert("RGB").save(out_path, quality=95)
+    return out_path
+
+
+def draw_dialogue(base: Image.Image, dialogue: list[dict], cfg_compose: dict, bubbles_dir: Path,
+                  rect: tuple[int, int, int, int] | None = None, bounds: tuple[int, int, int, int] | None = None, log=print):
+    """Draw dialogue onto an RGBA image in place. `at` and `size` are relative to `rect` (x, y, w, h;
+    default the whole image); bubbles are kept inside `bounds` (default `rect`)."""
+    RX, RY, W, H = rect or (0, 0, *base.size)
+    BX, BY, BW, BH = bounds or (RX, RY, W, H)
     font_path = cfg_compose.get("font")
     font_bold = cfg_compose.get("font_bold", font_path)
     min_px, max_px = int(cfg_compose.get("min_font_px", 14)), int(cfg_compose.get("max_font_px", 96))
@@ -127,7 +138,7 @@ def compose(image_path: Path, dialogue: list[dict], cfg_compose: dict, bubbles_d
         text = str(d.get("text", "")).strip()
         kind = str(d.get("bubble", cfg_compose.get("bubble_default", "001")))
         at = d.get("at", [0.5, 0.15])
-        cx, cy = _px(float(at[0]), W), _px(float(at[1]), H)
+        cx, cy = RX + _px(float(at[0]), W), RY + _px(float(at[1]), H)
         size = d.get("size", cfg_compose.get("bubble_size", 0.38))
         bw = _px(float(size), W)
         fp = font_bold if d.get("bold") else font_path
@@ -178,8 +189,8 @@ def compose(image_path: Path, dialogue: list[dict], cfg_compose: dict, bubbles_d
         color = _parse_color(d.get("color"), _auto_color(rgb))
         px, py = cx - bub.width // 2, cy - bub.height // 2
         if d.get("clamp", True):  # keep the bubble inside the image when it fits
-            px = min(max(px, 0), max(0, W - bub.width))
-            py = min(max(py, 0), max(0, H - bub.height))
+            px = min(max(px, BX), max(BX, BX + BW - bub.width))
+            py = min(max(py, BY), max(BY, BY + BH - bub.height))
         layer = Image.new("RGBA", base.size, (0, 0, 0, 0))
         layer.paste(bub, (px, py), bub)
         base.alpha_composite(layer)
@@ -192,7 +203,4 @@ def compose(image_path: Path, dialogue: list[dict], cfg_compose: dict, bubbles_d
             draw.text((tcx - tw / 2, y), l, font=f, fill=color)
             y += lh
         log(f"[compose] {i + 1}: bubble {bpath.name} at ({cx},{cy}) font {f.size}px, {len(lines)} line(s)")
-
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    base.convert("RGB").save(out_path, quality=95)
-    return out_path
+    return base

@@ -59,3 +59,4 @@ compose:
   line_spacing: 1.15
   bubble_default: "001"
   bubble_size: 0.38        # bubble width as a fraction of image width
+  page_max_font_px: 56     # text cap on 1800x2700 manga pages (mangapipe page), scaled with `scale`
