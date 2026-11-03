@@ -118,3 +118,33 @@ lora_sets:
       - {model: 1328924, version: 2659333, concept: duo paizuri pack}
       - {model: 1459141, version: 1650040, concept: double pussyjob}
       - {model: 1651401, version: 2678975, concept: multi-girl after sex}
+
+  # X-ray / cross-section views (the `acts` set already has Cross-Section 01).
+  xray:
+    subdir: civitai_concepts
+    items:
+      - {model: 494435, version: 1307519, concept: x-ray vaginal anal oral}
+      - {model: 1770003, version: 2003192, concept: perfect x-ray}
+      - {model: 1269017, version: 2141595, concept: x-ray deepthroat}
+      - {model: 2096225, version: 2371704, concept: x-ray fellatio}
+      - {model: 1808204, version: 2046250, concept: x-ray anal creampie}
+      - {model: 2972769, version: 3368955, concept: x-ray internal cumshot}
+
+  # More explicit positions and details. Left out: BDSM/assault "generators", tentacles, giantess,
+  # pregnancy, and the "hentai comic random generator" LoRAs (trained on whole doujin pages, content unknown).
+  hardcore:
+    subdir: civitai_concepts
+    items:
+      - {model: 1442761, version: 2840990, concept: full nelson}
+      - {model: 1363187, version: 2841397, concept: piledriver}
+      - {model: 1341096, version: 1514461, concept: piledriver sex}
+      - {model: 2140936, version: 2421617, concept: legs up sex}
+      - {model: 1715777, version: 1941641, concept: anal doggystyle}
+      - {model: 1439937, version: 3274395, concept: deepthroat}
+      - {model: 1989442, version: 2251993, concept: deepthroat slider}
+      - {model: 1380790, version: 1560238, concept: creampie}
+      - {model: 1741619, version: 3171900, concept: after sex creampie}
+      - {model: 1376203, version: 2913940, concept: stomach bulge}
+      - {model: 2118179, version: 2396442, concept: ass ripples}
+      - {model: 1430080, version: 1616431, concept: ahegao}
+      - {model: 2095998, version: 2371452, concept: ahegao concept}
