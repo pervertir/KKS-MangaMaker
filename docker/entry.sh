@@ -16,6 +16,11 @@ for d in shots pages cache scripts; do
     ln -s "$H/$d" "$APP/$d"
 done
 
+# Civitai downloads go through civitai-dl (the user's bulk downloader behind the blocklist), never the
+# base image's Civicomfy panel: drop it from the baked bundle (so fresh copies and upgrades skip it) and
+# from an existing ComfyUI.
+rm -rf /opt/comfyui-baked/custom_nodes/Civicomfy "$C/custom_nodes/Civicomfy"
+
 # Existing volume without the IPAdapter nodes: copy them in before ComfyUI starts.
 if [ -d "$C/custom_nodes" ] && [ ! -d "$C/custom_nodes/ComfyUI_IPAdapter_plus" ]; then
     cp -r /opt/comfyui-baked/custom_nodes/ComfyUI_IPAdapter_plus "$C/custom_nodes/" \

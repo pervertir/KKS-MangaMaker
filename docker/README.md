@@ -93,8 +93,8 @@ civitai-dl -f list.txt -- --verify --connections 8   # after -- : any civitai-do
 Entries that can't be screened (bare model names, failed lookups) are refused rather than passed
 through. Put a list at `/workspace/MangaPipeline/civitai.txt` and it also runs at every pod start
 (the downloader skips existing files). Its `config.json` and `downloads.log` live in
-`/workspace/MangaPipeline/civitai-dl/`. The base image's Civicomfy panel inside ComfyUI is still there
-for one-off downloads, without the screening.
+`/workspace/MangaPipeline/civitai-dl/`. The base image's Civicomfy extension is removed at start; all
+Civitai downloads go through `civitai-dl`.
 
 ## JupyterLab
 

@@ -39,6 +39,11 @@ base:
   - url: https://huggingface.co/circlestone-labs/Anima/resolve/main/split_files/vae/qwen_image_vae.safetensors
     dir: vae
     file: qwen_image_vae.safetensors
+  # SAM 3.1 (Meta, SAM license; Comfy-Org repackage), core ComfyUI SAM3_Detect: text-prompted masks
+  # ("head", "face", "hair") used to find each character left to right for per-character inpainting.
+  - url: https://huggingface.co/Comfy-Org/sam3.1/resolve/main/checkpoints/sam3.1_multiplex_fp16.safetensors
+    dir: checkpoints
+    file: sam3.1_multiplex_fp16.safetensors
 
 # Extra refusals on top of mp/civitai.py BLOCKLIST (minors, child-era versions, loli/shota styles,
 # Boruto's kids by name). Whole words, checked against model name, tags, version name, trigger words.
