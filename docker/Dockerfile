@@ -15,6 +15,10 @@ FROM runpod/comfyui:1.3.3-comfyuiv0.30.0-cuda12.8
 ADD https://github.com/cubiq/ComfyUI_IPAdapter_plus.git#a0f451a5113cf9becb0847b92884cb10cbdec0ef \
     /opt/comfyui-baked/custom_nodes/ComfyUI_IPAdapter_plus
 
+# The user's Civitai bulk downloader; `civitai-dl` pip-installs it into the ComfyUI venv on first use.
+ADD https://github.com/deepratna-awale/civitai-bulk-downloader.git#e2d43fccdd12614bc92de5345900cd39a3896b10 \
+    /opt/civitai-bulk-downloader
+
 # Dialogue font (Comic Neue, SIL OFL), standing in for the Mac's Comic Sans.
 ADD https://github.com/google/fonts/raw/main/ofl/comicneue/ComicNeue-Regular.ttf \
     https://github.com/google/fonts/raw/main/ofl/comicneue/ComicNeue-Bold.ttf \

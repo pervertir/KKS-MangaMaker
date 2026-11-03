@@ -57,12 +57,21 @@ ComfyUI over the proxy URL exactly as it did with the official image.
 
 ## Civitai bulk downloader
 
-`civitai-dl URL_or_id ...` or `civitai-dl -f list.txt` (one per line, `#` comments, 3 parallel
-downloads, `-j` to change). Files go to the folder for their type (`checkpoints`, `loras/civitai`,
-`controlnet`, `embeddings`, `vae`, `upscale_models`); LoRA trigger words are kept for the pipeline.
-Put a list at `/workspace/MangaPipeline/civitai.txt` and it also runs at every pod start (existing
-files are skipped). The same blocklist applies. The image also keeps the base image's Civicomfy
-panel inside ComfyUI for one-off downloads (enter the API key in its settings).
+`civitai-dl` runs your [civitai-bulk-downloader](https://github.com/deepratna-awale/civitai-bulk-downloader)
+(pinned commit, baked into `/opt/civitai-bulk-downloader`, pip-installed into the ComfyUI venv on
+first use) with the ComfyUI folder layout, after screening every entry against the blocklist:
+
+```bash
+civitai-dl URL_or_id ...                       # model pages, ?modelVersionId= links, /api/download links, ids
+civitai-dl -f /workspace/MangaPipeline/civitai.txt
+civitai-dl -f list.txt -- --verify --connections 8   # after -- : any civitai-download option
+```
+
+Entries that can't be screened (bare model names, failed lookups) are refused rather than passed
+through. Put a list at `/workspace/MangaPipeline/civitai.txt` and it also runs at every pod start
+(the downloader skips existing files). Its `config.json` and `downloads.log` live in
+`/workspace/MangaPipeline/civitai-dl/`. The base image's Civicomfy panel inside ComfyUI is still there
+for one-off downloads, without the screening.
 
 ## JupyterLab
 

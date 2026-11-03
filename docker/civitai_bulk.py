@@ -1,12 +1,15 @@
-"""Bulk Civitai downloader for the pod: URLs or ids in, files in the right ComfyUI models folder out.
+"""`civitai-dl` on the pod: screens a list against the content blocklist, then hands it to the
+user's civitai-bulk-downloader (https://github.com/deepratna-awale/civitai-bulk-downloader, baked
+into the image at /opt/civitai-bulk-downloader) with the ComfyUI folder layout.
 
     civitai-dl https://civitai.com/models/123?modelVersionId=456 789 ...
     civitai-dl -f /workspace/MangaPipeline/civitai.txt      # one URL or id per line, # comments
-    CIVITAI_BULK_FILE=... at pod start runs it in the background (docker/bootstrap.sh)
+    civitai-dl ... -- --verify --connections 8               # anything after -- goes to civitai-download
 
-The folder comes from the model type (Checkpoint, LORA/LoCon/DoRA, Controlnet, TextualInversion,
-VAE, Upscaler). Needs CIVITAI_API_KEY. Every model is checked against mp.civitai.BLOCKLIST first,
-so minors, child-era versions and loli/shota styles are refused. Existing files are skipped.
+Each entry is looked up on the Civitai API first and refused if its name, tags or trigger words hit
+mp.civitai.BLOCKLIST (minors, child-era versions, loli/shota styles). Entries that are not a Civitai
+URL or id (e.g. bare model names) and entries whose lookup fails are refused too: nothing goes
+through unchecked. LoRA trigger words are saved for the pipeline. Needs CIVITAI_API_KEY.
 """
 from __future__ import annotations
 
@@ -14,6 +17,7 @@ import argparse
 import json
 import os
 import re
+import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -21,85 +25,63 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(HERE))
-from fetch_models import Civ, is_safetensors, log  # noqa: E402
-from mp.civitai import API, _slug, blocked  # noqa: E402
-
-TYPE_DIRS = {"checkpoint": "checkpoints", "lora": "loras/civitai", "locon": "loras/civitai", "dora": "loras/civitai",
-             "controlnet": "controlnet", "textualinversion": "embeddings", "vae": "vae", "upscaler": "upscale_models"}
-
+from fetch_models import Civ, log  # noqa: E402
+from mp.civitai import blocked  # noqa: E402
 
 def parse(ref: str) -> tuple[int, int | None] | None:
     ref = ref.strip()
-    m = re.search(r"civitai\.com/models/(\d+)(?:.*?modelVersionId=(\d+))?", ref)
+    m = re.search(r"civitai\.(?:com|red|green)/models/(\d+)(?:.*?modelVersionId=(\d+))?", ref)
     if m:
         return int(m.group(1)), int(m.group(2)) if m.group(2) else None
+    m = re.search(r"civitai\.(?:com|red|green)/api/download/models/(\d+)", ref)
+    if m:
+        return None, int(m.group(1))
     return (int(ref), None) if ref.isdigit() else None
 
 
-def one(civ: Civ, comfy: Path, home: Path, ref: str) -> str:
-    p = parse(ref)
-    if not p:
-        return f"skip  {ref}: not a Civitai model URL or id"
-    model = civ.get(f"models/{p[0]}")
-    versions = model.get("modelVersions", [])
-    v = next((x for x in versions if x["id"] == p[1]), None) if p[1] else (versions[0] if versions else None)
-    if v is None:
-        return f"skip  {ref}: version not found"
-    hit = blocked([model.get("name", ""), v.get("name", ""), *model.get("tags", []), *v.get("trainedWords", [])])
-    if hit:
-        return f"REFUSE {model.get('name')}: blocklist '{hit}'"
-    sub = TYPE_DIRS.get((model.get("type") or "").lower())
-    if not sub:
-        return f"skip  {model.get('name')}: type {model.get('type')} has no models folder here"
-    files = [f for f in v.get("files", []) if f.get("name", "").endswith((".safetensors", ".pt", ".pth", ".bin"))]
-    if not files:
-        return f"skip  {model.get('name')}: no model file"
-    f = next((x for x in files if x.get("primary")), files[0])
-    stem, ext = os.path.splitext(f["name"])
-    dest = comfy / "models" / sub / (_slug(stem) + ext)
-    if dest.exists() and dest.stat().st_size > 100_000:
-        return f"have  {sub}/{dest.name}"
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    part = dest.with_name(dest.name + ".part")
+def screen(civ: Civ, home: Path, ref: str) -> tuple[bool, str]:
+    """(allowed, message). Fails closed."""
     try:
-        with civ.s.get(f.get("downloadUrl") or f"{API}/download/models/{v['id']}", stream=True, timeout=120) as r:
-            if r.status_code in (401, 403):
-                raise RuntimeError("refused (check CIVITAI_API_KEY)")
-            r.raise_for_status()
-            with open(part, "wb") as out:
-                for chunk in r.iter_content(1 << 20):
-                    out.write(chunk)
-        if ext == ".safetensors" and not is_safetensors(part):
-            raise RuntimeError("not a safetensors file (login or consent page?)")
-        part.rename(dest)
+        p = parse(ref)
+        if not p:
+            return False, f"REFUSE {ref}: only Civitai URLs or model ids can be screened"
+        model_id, version_id = p
+        if model_id is None:
+            model_id = civ.get(f"model-versions/{version_id}")["modelId"]
+        model = civ.get(f"models/{model_id}")
+        versions = model.get("modelVersions", [])
+        v = next((x for x in versions if x["id"] == version_id), None) if version_id else (versions[0] if versions else None)
+        if v is None:
+            return False, f"REFUSE {ref}: version not found"
+        hit = blocked([model.get("name", ""), v.get("name", ""), *model.get("tags", []), *v.get("trainedWords", [])])
+        if hit:
+            return False, f"REFUSE {model.get('name')}: blocklist '{hit}'"
+        if (model.get("type") or "").lower() in ("lora", "locon", "dora"):
+            meta = home / "cache" / "loras"
+            meta.mkdir(parents=True, exist_ok=True)
+            for f in v.get("files", []):
+                if f.get("name", "").endswith(".safetensors"):
+                    (meta / f"{f['name']}.json").write_text(json.dumps({
+                        "modelId": model["id"], "modelName": model.get("name"), "versionId": v["id"],
+                        "versionName": v.get("name"), "baseModel": v.get("baseModel"),
+                        "trainedWords": v.get("trainedWords", []),
+                        "url": f"https://civitai.com/models/{model['id']}?modelVersionId={v['id']}"}, indent=2))
+        return True, f"ok    {model.get('name')} / {v.get('name')} [{model.get('type')}]"
     except Exception as e:
-        part.unlink(missing_ok=True)
-        return f"FAILED {model.get('name')}: {e}"
-    if sub.startswith("loras"):
-        meta = home / "cache" / "loras"
-        meta.mkdir(parents=True, exist_ok=True)
-        (meta / f"{dest.name}.json").write_text(json.dumps({
-            "modelId": model["id"], "modelName": model.get("name"), "versionId": v["id"], "versionName": v.get("name"),
-            "baseModel": v.get("baseModel"), "trainedWords": v.get("trainedWords", []),
-            "url": f"https://civitai.com/models/{model['id']}?modelVersionId={v['id']}"}, indent=2))
-    return f"got   {sub}/{dest.name} ({f.get('sizeKB', 0) / 1024:.0f} MB)"
-
-
-def safe(civ: Civ, comfy: Path, home: Path, ref: str) -> str:
-    try:
-        return one(civ, comfy, home, ref)
-    except Exception as e:
-        return f"FAILED {ref}: {e}"
+        return False, f"REFUSE {ref}: lookup failed ({e})"
 
 
 def main():
     ap = argparse.ArgumentParser(description="Bulk-download Civitai models into ComfyUI's models folders")
     ap.add_argument("refs", nargs="*", help="Civitai model URLs (optionally with modelVersionId) or model ids")
     ap.add_argument("-f", "--file", help="text file with one URL or id per line")
-    ap.add_argument("-j", "--jobs", type=int, default=3)
+    ap.add_argument("-j", "--jobs", type=int, default=4, help="parallel API lookups while screening")
     ap.add_argument("--comfy", default="/workspace/runpod-slim/ComfyUI")
     ap.add_argument("--home", default=os.environ.get("MANGA_HOME", "/workspace/MangaPipeline"))
-    a = ap.parse_args()
+    argv = sys.argv[1:]
+    extra = argv[argv.index("--") + 1:] if "--" in argv else []
+    a = ap.parse_args(argv[:argv.index("--")] if "--" in argv else argv)
+    a.extra = extra
     refs = list(a.refs)
     if a.file:
         refs += [l.split("#")[0].strip() for l in open(a.file, encoding="utf-8")]
@@ -108,10 +90,25 @@ def main():
     if not key:
         log("CIVITAI_API_KEY is not set; Civitai refuses most downloads without it")
     civ = Civ(key)
+    home = Path(a.home)
     with ThreadPoolExecutor(max(1, a.jobs)) as ex:
-        for line in ex.map(lambda r: safe(civ, Path(a.comfy), Path(a.home), r), refs):
-            log(line)
+        results = list(ex.map(lambda r: screen(civ, home, r), refs))
+    allowed = [r for r, (ok, _) in zip(refs, results) if ok]
+    for _, (ok, msg) in zip(refs, results):
+        log(msg)
+    if not allowed:
+        log("nothing to download")
+        return 1 if refs else 0
+    work = home / "civitai-dl"  # the downloader keeps config.json and downloads.log in its cwd
+    work.mkdir(parents=True, exist_ok=True)
+    lst = work / "approved.txt"
+    lst.write_text("\n".join(allowed) + "\n")
+    cmd = [sys.executable, "-m", "civitai_downloader", "--ui", "comfyui", "--sd", a.comfy, "--url-file", str(lst), *a.extra]
+    if key:  # the downloader takes the variable's name and reads the key itself
+        cmd += ["--api-key", "CIVITAI_API_KEY" if os.environ.get("CIVITAI_API_KEY") else "CAI_API_KEY"]
+    log(f"downloading {len(allowed)} of {len(refs)} with civitai-bulk-downloader")
+    return subprocess.call(cmd, cwd=work)
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

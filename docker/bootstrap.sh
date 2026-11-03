@@ -18,6 +18,6 @@ python3 -c "import yaml, requests" 2>/dev/null || PY="$C/.venv-cu128/bin/python"
 BULK=${CIVITAI_BULK_FILE:-${MANGA_HOME:-/workspace/MangaPipeline}/civitai.txt}
 if [ -s "$BULK" ]; then
     echo "--- bulk list $BULK"
-    "$PY" /opt/MangaPipeline/docker/civitai_bulk.py -f "$BULK"
+    /usr/local/bin/civitai-dl -f "$BULK"
 fi
 echo "--- disk"; df -h /workspace | tail -1
