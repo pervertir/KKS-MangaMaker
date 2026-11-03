@@ -13,7 +13,7 @@ official image; `docker/entry.sh` only adds two steps before handing over to the
 3. In the background, `docker/fetch_models.py` downloads what `docker/models.yaml` lists and is
    not on the volume yet: the WAI Illustrious v16 checkpoint, xinsir union ControlNet promax,
    IPAdapter plus + CLIP-H (about 12 GB, Hugging Face, no login), then the Civitai LoRAs
-   (about 6 GB, needs `CIVITAI_API_KEY`). Log: `/workspace/runpod-slim/manga_bootstrap.log`.
+   (about 11 GB, needs `CIVITAI_API_KEY`). Log: `/workspace/runpod-slim/manga_bootstrap.log`.
    ComfyUI sees new files without a restart.
 
 Second and later starts on the same volume skip everything already there, so they take seconds.
@@ -26,7 +26,7 @@ volume, with these environment variables:
 | variable | value |
 |---|---|
 | `CIVITAI_API_KEY` | `{{ RUNPOD_SECRET_civitai_api_key }}` (create the secret once in RunPod > Secrets; the key is never in the image) |
-| `MANGA_LORA_SETS` | `all` (default), `characters`, `acts`, or `none` |
+| `MANGA_LORA_SETS` | `all` (default), or any of `characters`, `acts`, `group` (comma list), or `none` |
 | `MANGA_FETCH_MODELS` | `0` to skip the downloader entirely |
 | `PUBLIC_KEY` | your ssh public key, as with the official image |
 | `JUPYTER_PASSWORD` | optional; otherwise one is generated into `/workspace/runpod-slim/jupyter_password.txt` |
@@ -121,3 +121,7 @@ Left out on purpose:
 Concept LoRAs: missionary (2), doggystyle (2), cowgirl (3 angles), mating press (2), spooning,
 standing sex (2), sex on table, fellatio, paizuri on lap, cross-section, after sex. Non-consent,
 "size difference" and asphyxiation concepts were not included.
+
+Group concepts (`MANGA_LORA_SETS` key `group`, 22 LoRAs): FFM (6), MMF (5 incl. threesome kiss/oral),
+FFMM and FFFM foursomes (3), group sex / orgy (4), double penetration (2), harem (2). Left out:
+NTR, monster/orc, "mob" characters from non-consent anime, gangbang-of-many-men concepts, futa.

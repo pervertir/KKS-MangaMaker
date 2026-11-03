@@ -69,3 +69,31 @@ lora_sets:
       - {model: 1435662, version: 1622830, concept: paizuri on lap}
       - {model: 1654873, version: 1873138, concept: cross-section}
       - {model: 2066654, version: 2950372, concept: after sex}
+
+  # Consensual group scenes (threesomes, foursomes, orgies). Same rule: adult characters only.
+  # Left out: NTR, monster/orc, "mob" scenes from non-consent anime, and gangbang-of-many-men concepts.
+  group:
+    subdir: civitai_concepts
+    items:
+      - {model: 1768433, version: 2001359, concept: ffm kiss and fellatio}
+      - {model: 1771328, version: 2004729, concept: ffm straddling and fellatio}
+      - {model: 1768987, version: 2002029, concept: ffm girl sandwich}
+      - {model: 1772575, version: 2006158, concept: ffm doggystyle front view}
+      - {model: 2073955, version: 2346781, concept: ffm kiss and sex from behind}
+      - {model: 1295320, version: 1575342, concept: ffm hug from behind}
+      - {model: 1891220, version: 3274773, concept: mmf threesome}
+      - {model: 1358972, version: 1535137, concept: mmf missionary paizuri}
+      - {model: 1362410, version: 1539166, concept: mmf cowgirl paizuri}
+      - {model: 1887996, version: 2137007, concept: threesome missionary kiss}
+      - {model: 2631589, version: 2954660, concept: threesome oral}
+      - {model: 846848, version: 1615299, concept: ffmm foursome}
+      - {model: 1761136, version: 1993097, concept: fffm foursome doggystyle}
+      - {model: 1764000, version: 1996271, concept: fffm foursome from behind}
+      - {model: 1755980, version: 1987286, concept: group sex scene}
+      - {model: 1602758, version: 1813761, concept: orgy helper}
+      - {model: 629203, version: 1206877, concept: group sex}
+      - {model: 2285466, version: 2572163, concept: large orgy}
+      - {model: 482827, version: 1295238, concept: double penetration}
+      - {model: 2353626, version: 2647171, concept: double penetration concept}
+      - {model: 949418, version: 1974704, concept: harem cooperative}
+      - {model: 2070980, version: 2343381, concept: harem throne}
