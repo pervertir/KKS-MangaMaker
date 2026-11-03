@@ -22,7 +22,7 @@ reactor_swap_model: inswapper_128.onnx
 
 lora_subdir: civitai_characters
 base_model_preference: [Illustrious, NoobAI, SDXL 1.0, Pony]
-civitai_api_key_env: [CIVITAI_API_KEY, CAI_API_KEY]
+civitai_api_key_env: [CIVITAI_API_KEY, CAI_API_KEY, CIVIT_AI_KEY]
 civitai_nsfw: true
 
 defaults:

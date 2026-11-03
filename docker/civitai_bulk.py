@@ -86,7 +86,7 @@ def main():
     if a.file:
         refs += [l.split("#")[0].strip() for l in open(a.file, encoding="utf-8")]
     refs = [r for r in refs if r]
-    key = next((os.environ[k].strip() for k in ("CIVITAI_API_KEY", "CAI_API_KEY") if os.environ.get(k)), None)
+    key = next((os.environ[k].strip() for k in ("CIVITAI_API_KEY", "CAI_API_KEY", "CIVIT_AI_KEY") if os.environ.get(k)), None)
     if not key:
         log("CIVITAI_API_KEY is not set; Civitai refuses most downloads without it")
     civ = Civ(key)
@@ -105,7 +105,7 @@ def main():
     lst.write_text("\n".join(allowed) + "\n")
     cmd = [sys.executable, "-m", "civitai_downloader", "--ui", "comfyui", "--sd", a.comfy, "--url-file", str(lst), *a.extra]
     if key:  # the downloader takes the variable's name and reads the key itself
-        cmd += ["--api-key", "CIVITAI_API_KEY" if os.environ.get("CIVITAI_API_KEY") else "CAI_API_KEY"]
+        cmd += ["--api-key", next(k for k in ("CIVITAI_API_KEY", "CAI_API_KEY", "CIVIT_AI_KEY") if os.environ.get(k))]
     log(f"downloading {len(allowed)} of {len(refs)} with civitai-bulk-downloader")
     return subprocess.call(cmd, cwd=work, stdin=subprocess.DEVNULL)  # never wait on its key prompt
 

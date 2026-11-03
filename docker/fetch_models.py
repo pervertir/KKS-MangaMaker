@@ -174,7 +174,7 @@ def main():
 
     cfg = yaml.safe_load(open(a.manifest, encoding="utf-8"))
     comfy, home = Path(a.comfy), Path(a.home)
-    key = next((os.environ[k].strip() for k in ("CIVITAI_API_KEY", "CAI_API_KEY") if os.environ.get(k)), None)
+    key = next((os.environ[k].strip() for k in ("CIVITAI_API_KEY", "CAI_API_KEY", "CIVIT_AI_KEY") if os.environ.get(k)), None)
     if not a.check and not a.no_base:
         fetch_base(comfy, cfg.get("base", []))
     sets = [s.strip() for s in a.sets.split(",") if s.strip()]
