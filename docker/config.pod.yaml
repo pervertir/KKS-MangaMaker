@@ -1,0 +1,50 @@
+# MangaPipeline configuration INSIDE the RunPod image (copied over config.yaml at build).
+# ComfyUI runs in the same container, so the pipeline talks to it on localhost and writes LoRAs
+# straight into its models folder. To drive another ComfyUI instead (a second pod, or any server),
+# set COMFYUI_URL=https://<pod-id>-8188.proxy.runpod.net; LoRAs then have to exist on that server.
+
+target: local
+comfy_url: http://127.0.0.1:8188
+comfy_root: /workspace/runpod-slim/ComfyUI
+python: python3
+
+# On the pod these live on the network volume (upload with FileBrowser on :8080, runpodctl send, or scp).
+cap_dir: /workspace/MangaPipeline/cap
+templates_dir: /workspace/MangaPipeline/Templates
+bubbles_subdir: Thought and Speech Bubbles
+
+checkpoint: waiIllustriousSDXL_v160.safetensors
+controlnet: xinsir_controlnet_union-sdxl-1-promax.safetensors
+controlnet_union_type: openpose
+ipadapter: ip-adapter-plus_sdxl_vit-h.safetensors
+clip_vision: clip_vision_h.safetensors
+reactor_swap_model: inswapper_128.onnx
+
+lora_subdir: civitai_characters
+base_model_preference: [Illustrious, NoobAI, SDXL 1.0, Pony]
+civitai_api_key_env: [CIVITAI_API_KEY, CAI_API_KEY]
+civitai_nsfw: true
+
+defaults:
+  style: flat_anime
+  steps: 26
+  cfg: 5.5
+  sampler: euler_ancestral
+  scheduler: normal
+  controlnet_strength: 0.9
+  controlnet_end: 0.85
+  ipadapter_weight: 0.4
+  ipadapter_weight_type: linear
+  lora_weight: 0.8
+  batch: 1
+  seed: -1
+
+compose:
+  font: /usr/share/fonts/truetype/comic-neue/ComicNeue-Regular.ttf
+  font_bold: /usr/share/fonts/truetype/comic-neue/ComicNeue-Bold.ttf
+  min_font_px: 14
+  max_font_px: 96
+  line_spacing: 1.15
+  bubble_default: "001"
+  bubble_size: 0.38
+  page_max_font_px: 56

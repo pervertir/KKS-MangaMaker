@@ -27,6 +27,27 @@ def _slug(s: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]+", "_", s).strip("_")[:80]
 
 
+# LoRAs whose name, tags, version name or trigger words contain any of these (whole words) are never
+# picked or downloaded: no minors, child-era versions, or young-looking styles. Child characters of
+# the series this project uses are listed by name. config.yaml `lora_blocklist` adds more.
+BLOCKLIST = [
+    "loli", "lolicon", "shota", "shotacon", "child", "children", "kid", "kids", "toddler", "underage",
+    "minor", "preteen", "teen", "teenager", "young girl", "young boy", "little girl", "little boy",
+    "genin", "academy", "elementary school", "middle school", "daughter", "age regression", "aged down",
+    "younger", "boruto uzumaki", "sarada", "himawari", "mitsuki", "kawaki", "chocho", "inojin",
+    "shikadai", "hanabi",
+]
+
+
+def blocked(texts, extra=()) -> str | None:
+    """First blocklist phrase found in any of texts (whole words), else None."""
+    hay = " " + " ".join(" ".join(_tokens(t or "")) for t in texts) + " "
+    for phrase in list(BLOCKLIST) + list(extra or []):
+        if " " + " ".join(_tokens(phrase)) + " " in hay:
+            return phrase
+    return None
+
+
 class CivitaiError(Exception):
     pass
 
@@ -39,6 +60,7 @@ class Civitai:
         self.key = cfg.civitai_key()
         self.pref = [b.lower() for b in cfg.get("base_model_preference", ["Illustrious"])]
         self.subdir = cfg.get("lora_subdir", "civitai_characters")
+        self.extra_block = cfg.get("lora_blocklist", []) or []
         self.index_path = cfg.cache_dir / "lora_index.json"
         self.index = json.loads(self.index_path.read_text()) if self.index_path.exists() else {}
         self.meta_dir = cfg.cache_dir / "loras"
@@ -76,6 +98,9 @@ class Civitai:
 
     def pick(self, name: str, series: str = "") -> dict | None:
         """Best matching LoRA as {model, version, file, score} or None. Whole-word matching."""
+        hit = blocked([name, series], self.extra_block)
+        if hit:
+            raise CivitaiError(f"'{name}' is on the LoRA blocklist ({hit}); no LoRA is looked up for it")
         name_toks = _tokens(name)
         series_toks = [t for t in _tokens(series) if t not in name_toks]
         if not name_toks:
@@ -108,6 +133,10 @@ class Civitai:
                 nm = sum(t in toks for t in name_toks)
                 if nm == 0 or name_toks[0] not in toks:
                     continue
+                hit = blocked([m.get("name", ""), v.get("name", ""), *m.get("tags", []), *v.get("trainedWords", [])], self.extra_block)
+                if hit:
+                    self.log(f"[civitai] skip {m.get('name')} (blocklist: {hit})")
+                    continue
                 sm = sum(t in toks for t in series_toks)
                 if len(name_toks) == 1 and series_toks and sm == 0 and len(name_toks[0]) <= 4:
                     continue  # a short single name ("Rem") without the series is too ambiguous
@@ -139,6 +168,9 @@ class Civitai:
             v = versions[0]
         files = [f for f in v.get("files", []) if f.get("name", "").endswith(".safetensors")]
         f = next((x for x in files if x.get("primary")), files[0])
+        hit = blocked([model.get("name", ""), v.get("name", ""), *model.get("tags", []), *v.get("trainedWords", [])], self.extra_block)
+        if hit:
+            raise CivitaiError(f"Civitai model {model_id} is on the LoRA blocklist ({hit})")
         return {"model": model, "version": v, "file": f, "score": 999, "rank": self._version_rank(v.get("baseModel", ""))}
 
     # ------------------------------------------------------------------ store
