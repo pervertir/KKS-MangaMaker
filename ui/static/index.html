@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MangaMaker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bangers&family=Comic+Neue:wght@400;700&family=Patrick+Hand&family=Kalam:wght@400;700&family=Indie+Flower&family=Architects+Daughter&family=Luckiest+Guy&family=Permanent+Marker&family=Shojumaru&family=Rubik+Wet+Paint&family=Creepster&family=Bungee+Shade&family=Anton&family=Black+Ops+One&family=Rampart+One&family=Dela+Gothic+One&family=Reggae+One&family=RocknRoll+One&family=Potta+One&family=Yusei+Magic&family=Mochiy+Pop+One&family=Hachi+Maru+Pop&family=Zen+Maru+Gothic:wght@400;700&family=Kosugi+Maru&family=Zen+Kurenaido&family=Kaisei+Decol:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header id="menubar">
+  <div class="brand">漫 MangaMaker</div>
+  <nav id="menus"></nav>
+  <div class="spacer"></div>
+  <div id="docname" title="Project"></div>
+  <button id="podpill" class="pill" title="RunPod ComfyUI">pod …</button>
+</header>
+
+<div id="optionsbar"></div>
+
+<main id="workspace">
+  <aside id="toolbar"></aside>
+
+  <section id="center">
+    <div id="stage">
+      <canvas id="canvas"></canvas>
+      <textarea id="inlineedit" spellcheck="false"></textarea>
+      <div id="dropmark"></div>
+    </div>
+    <div id="overview" hidden>
+      <div class="ovhead">
+        <b id="ovtitle">Book</b>
+        <span class="hint">Click a page to edit it. Drag to reorder. Spreads follow the reading direction.</span>
+        <div class="spacer"></div>
+        <label class="hint"><input type="checkbox" id="ovspreads" checked> Spreads</label>
+        <button id="ovadd">＋ Page</button>
+        <button class="primary" id="ovclose">Back to page</button>
+      </div>
+      <div id="ovgrid"></div>
+    </div>
+  </section>
+
+  <aside id="pagenav">
+    <div class="dockhead">
+      <span id="pagecount">Pages</span>
+      <span class="headbtns">
+        <button id="ovbtn" title="Whole-book overview (Tab)">▦</button>
+        <button id="addpage" title="Add page after this one">＋</button>
+      </span>
+    </div>
+    <div id="pages"></div>
+  </aside>
+
+  <aside id="dock">
+    <div class="dockpanel" id="propspanel">
+      <div class="dockhead"><span id="propstitle">Page</span></div>
+      <div id="props" class="dockbody"></div>
+    </div>
+    <div class="dockpanel" id="layerspanel">
+      <div class="dockhead">Layers
+        <span class="headbtns">
+          <button data-act="layerUp" title="Bring forward ( ] )">▲</button>
+          <button data-act="layerDown" title="Send backward ( [ )">▼</button>
+          <button data-act="duplicate" title="Duplicate (Ctrl+D)">⧉</button>
+          <button data-act="remove" title="Delete (Del)">🗑</button>
+        </span>
+      </div>
+      <div id="layers" class="dockbody"></div>
+    </div>
+    <div class="dockpanel grow" id="librarypanel">
+      <div class="dockhead tabs" id="libtabs"></div>
+      <div id="libtools"></div>
+      <div id="library" class="dockbody"></div>
+    </div>
+  </aside>
+</main>
+
+<footer id="statusbar">
+  <span id="st-zoom">100%</span>
+  <span id="st-pos"></span>
+  <span id="st-msg"></span>
+  <div class="spacer"></div>
+  <button id="jobsbtn" class="ghost">Jobs</button>
+</footer>
+
+<div id="jobsdrawer" hidden>
+  <div class="drawerhead">Jobs <button class="ghost" id="jobsclose">✕</button></div>
+  <div id="joblist"></div>
+  <pre id="joblog"></pre>
+</div>
+
+<div id="modal" hidden><div id="modalbox"></div></div>
+<div id="menu-pop" hidden></div>
+<div id="toasts"></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
