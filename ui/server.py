@@ -194,7 +194,14 @@ def pose_library() -> dict:
             build_h_library(CFG.h_anim_dir, hlib)
         except Exception as e:  # noqa: BLE001
             sys.stderr.write(f"[ui] H-scene poses not built: {e}\n")
-    for f in (lib, hlib, POSES / "custom.json"):
+    hmods = POSES / "h_mods_library.json"
+    if not hmods.exists() and CFG.h_mods_dir.is_dir():
+        try:
+            from mp.khanim import build_mod_library
+            build_mod_library(CFG.h_mods_dir, hmods)
+        except Exception as e:  # noqa: BLE001
+            sys.stderr.write(f"[ui] mod H positions not built: {e}\n")
+    for f in (lib, hlib, hmods, POSES / "custom.json"):
         if f.exists():
             poses += json.loads(f.read_text(encoding="utf-8")).get("poses", [])
     from mp.kkpose import KINDS, pose_kind
@@ -538,7 +545,7 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == "/api/pod":
                 return self.json(pod_status())
             if u.path == "/api/poses":
-                return self.cached_json("poses", pose_library, deps=[POSES / "library.json", POSES / "h_library.json", POSES / "custom.json", CFG.studio_pose_dir])
+                return self.cached_json("poses", pose_library, deps=[POSES / "library.json", POSES / "h_library.json", POSES / "h_mods_library.json", POSES / "custom.json", CFG.studio_pose_dir])
             if u.path == "/api/guide":
                 return self.file(ROOT / "docs" / "SCRIPT_WIZARD.md", "text/markdown; charset=utf-8")
             if u.path == "/api/cast":

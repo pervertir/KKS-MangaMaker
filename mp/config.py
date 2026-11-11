@@ -79,6 +79,10 @@ class Config:
         return _abs(HERE, self.raw.get("h_anim_dir", "../abdata/h/anim"))
 
     @property
+    def h_mods_dir(self) -> Path:
+        return _abs(HERE, self.raw.get("h_mods_dir", "../mods/Sideloader Modpack - Animations"))
+
+    @property
     def templates_dir(self) -> Path:
         return _abs(HERE, self.raw["templates_dir"])
 

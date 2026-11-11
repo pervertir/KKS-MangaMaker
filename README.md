@@ -221,7 +221,9 @@ from the game's H animations (`abdata/h/anim`), which are Unity animation clips 
 `mp/khanim.py` decodes one frame of each position's main loop for every actor and stores the actors
 together as a group pose, turned to the side view that separates the bodies best. Build them once with
 `./mangapipe poses build-h` (needs `pip install UnityPy`); they are written to `poses/h_library.json`,
-which is not committed. In the Pose tab, **Turn everyone** rotates a whole group while keeping it together.
+which is not committed. `./mangapipe poses build-h-mods` does the same for the named positions that
+AnimationLoader mods add (`mods/Sideloader Modpack - Animations`; 155 in this install) into
+`poses/h_mods_library.json`. In the Pose tab, **Turn everyone** rotates a whole group while keeping it together.
 
 Paths to the game (captures, templates, poses) can be overridden per machine in an untracked
 `config.local.yaml` next to `config.yaml`.
