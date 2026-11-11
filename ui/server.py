@@ -243,10 +243,33 @@ def save_pose_shot(body: dict) -> dict:
             line = "prompt: " + json.dumps(str(body["prompt"]), ensure_ascii=False)
             text = re.sub(r"(?m)^prompt:.*$", lambda m: line, text) if re.search(r"(?m)^prompt:", text) else text + line + "\n"
         side.write_text(text, encoding="utf-8")
+    if body.get("count_tag") and side.suffix != ".json":
+        t = side.read_text(encoding="utf-8")
+        line = "count_tag: " + json.dumps(str(body["count_tag"]))
+        t = re.sub(r"(?m)^count_tag:.*$", lambda m: line, t) if re.search(r"(?m)^count_tag:", t) else t.replace("\nidentity:", "\n" + line + "\nidentity:", 1)
+        side.write_text(t, encoding="utf-8")
+    apply_reference(d, chars)
     png = body["png"].split(",", 1)[-1]
     Image.open(io.BytesIO(base64.b64decode(png))).convert("RGB").save(d / "pose.png")
     (d / "pose_scene.json").write_text(json.dumps(body.get("scene") or {}, indent=1), encoding="utf-8")
     return {"ok": True, "pose": mp_ref(d / "pose.png")}
+
+
+def apply_reference(d: Path, chars: list[dict]) -> None:
+    """A single-character shot whose character has a reference sheet gets that character's front view
+    as reference.png, so `identity: auto` falls back to IPAdapter when no LoRA is found. (A sheet is
+    drawn front | three-quarter | back, so the front view is its leftmost third.) Never overwrites a
+    reference the shot already has."""
+    if len(chars) != 1 or not chars[0].get("ref") or (d / "reference.png").exists():
+        return
+    try:
+        src = resolve_ref(str(chars[0]["ref"]))
+    except (ValueError, FileNotFoundError):
+        return
+    with Image.open(src) as im:
+        w, h = im.size
+        front = im.crop((0, 0, w // 3, h)) if w > h * 1.2 else im.copy()
+        front.convert("RGB").save(d / "reference.png")
 
 
 def projects() -> list[str]:
@@ -596,6 +619,7 @@ class Handler(BaseHTTPRequestHandler):
                 if body.get("keep"):   # made by the script wizard: the editor letters the page, no sample line
                     text = re.sub(r"(?ms)^dialogue:\n.*\Z", "dialogue: []\n", text)
                 side.write_text(text, encoding="utf-8")
+                apply_reference(d, chars)
                 return self.json({"ok": True})
             if u.path == "/api/cast":
                 CAST.write_text(json.dumps(self.jbody().get("cast", []), indent=1, ensure_ascii=False), encoding="utf-8")
