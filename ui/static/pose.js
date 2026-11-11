@@ -511,7 +511,8 @@ function poseForPanel(l) {
 }
 
 function poseKey(e) {
-  if (["INPUT", "TEXTAREA", "SELECT"].includes(e.target.tagName)) return;
+  if (inField(e)) return;
+  if (["INPUT", "SELECT"].includes(e.target.tagName) && ["Delete", "Backspace"].includes(e.key)) e.target.blur();
   const mod = e.metaKey || e.ctrlKey, c = pcur();
   if (mod && e.shiftKey && e.key.toLowerCase() === "p") { e.preventDefault(); setMode("page"); return; }
   if (e.key === "`") { toggleJobs(); return; }
@@ -519,8 +520,8 @@ function poseKey(e) {
   if (mod && e.key.toLowerCase() === "y") { e.preventDefault(); predo(); return; }
   if (mod && e.key.toLowerCase() === "s") { e.preventDefault(); savePoseShot(false); return; }
   if (mod && e.key.toLowerCase() === "d" && c) { e.preventDefault(); const d = { ...deep(c), id: uid(), x: Math.min(0.95, c.x + 0.12) }; P.scene.chars.push(d); P.sel = d.id; pcommit("Duplicated"); return; }
-  if (!c) return;
-  if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); P.scene.chars = P.scene.chars.filter(q => q !== c); P.sel = null; pcommit("Character removed"); return; }
+  if (!c) { if (e.key === "Delete" || e.key === "Backspace") status("Click a character to select it, then Delete removes it"); return; }
+  if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); P.scene.chars = P.scene.chars.filter(q => q !== c); P.sel = null; pcommit("Character removed"); toast(`Removed ${c.name || c.label} — ⌘Z brings it back`); return; }
   if (e.key === "Escape") { P.sel = null; renderPoseSide(); pdraw(); return; }
   if (e.key.toLowerCase() === "m" && !mod) { c.flip = !c.flip; pcommit("Mirrored"); return; }
   if (e.key.startsWith("Arrow")) {

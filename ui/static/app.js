@@ -1034,7 +1034,28 @@ function setTool(t) {
   stage.classList.toggle("hand", t === "hand");
   renderOptions();
 }
-const inField = e => ["INPUT", "TEXTAREA", "SELECT"].includes(e.target.tagName) || e.target.isContentEditable;
+/* typing fields keep their keys; sliders, checkboxes, colour wells and dropdowns don't swallow Delete */
+const NONTEXT = ["range", "checkbox", "radio", "color", "button", "submit", "file"];
+const inField = e => {
+  const t = e.target;
+  if (t.isContentEditable || t.tagName === "TEXTAREA") return true;
+  if (t.tagName === "INPUT") return !NONTEXT.includes(t.type);
+  if (t.tagName === "SELECT") return !["Delete", "Backspace", "Escape"].includes(e.key);
+  return false;
+};
+/* where the last click was, so Delete removes the right kind of thing: a page in the page strip or
+   the book overview, otherwise the selected layer */
+let deleteScope = "layers";
+document.addEventListener("pointerdown", e => {
+  deleteScope = e.target.closest("#pagenav, #overview") ? "pages" : e.target.closest("#stage, #layers, #props, #toolbar") ? "layers" : deleteScope;
+}, true);
+function deleteSelected() {
+  if (deleteScope === "pages" || (!selL() && document.activeElement?.closest?.("#pagenav, #overview"))) return pageOps.del(true);
+  const l = selL();
+  if (!l) return status("Nothing selected to delete");
+  if (l.locked) return toast("That layer is locked: unlock it first (⌘L)", "err");
+  act.remove(); toast(`Deleted ${layerName(l)} — ⌘Z brings it back`);
+}
 const center = () => { const r = stage.getBoundingClientRect(); return [r.width / 2, r.height / 2]; };
 const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
 /* One table drives the key handler, the menus' hints and the cheat sheet (press ?).
@@ -1069,8 +1090,8 @@ const SHORTCUTS = [
   ["Edit", "mod+v", "Paste layer (works across pages)", () => act.paste()],
   ["Edit", "mod+d", "Duplicate layer", () => act.duplicate()],
   ["Edit", "mod+j", "Duplicate layer", () => act.duplicate()],
-  ["Edit", "delete", "Delete layer", () => act.remove()],
-  ["Edit", "backspace", "Delete layer", () => act.remove()],
+  ["Edit", "delete", "Delete selected layer (or page, after clicking the page strip)", () => deleteSelected()],
+  ["Edit", "backspace", "Delete selected layer (or page, after clicking the page strip)", () => deleteSelected()],
   ["Edit", "escape", "Deselect / leave mode", () => act.escape()],
   ["Edit", "enter", "Type in bubble / reposition render", () => act.enter()],
   ["Edit", "arrows", "Nudge 1 px (Shift: 10 px)", null],
@@ -1733,8 +1754,9 @@ function gotoPage(i) { if (S.adjust) exitAdjust(); S.page = clamp(i, 0, S.doc.pa
 const pageOps = {
   add() { S.doc.pages.splice(S.page + 1, 0, { id: uid(), bg: "#ffffff", layers: [] }); S.page++; commit("Page added"); renderPages(); requestDraw(); if ($("#overview").hidden) layoutDialog(); },
   dup() { const c = deep(page()); c.id = uid(); c.layers.forEach(l => l.id = uid()); S.doc.pages.splice(S.page + 1, 0, c); S.page++; commit("Page duplicated"); renderPages(); requestDraw(); },
-  del() { if (S.doc.pages.length < 2) return toast("A project needs one page"); if (!confirm(`Delete page ${S.page + 1}?`)) return;
-    S.doc.pages.splice(S.page, 1); S.page = Math.max(0, S.page - 1); commit("Page deleted"); renderPages(); requestDraw(); },
+  del(fromKey) { if (S.doc.pages.length < 2) return toast("A project needs one page"); if (!fromKey && !confirm(`Delete page ${S.page + 1}?`)) return;
+    const n = S.page + 1; S.doc.pages.splice(S.page, 1); S.page = Math.max(0, S.page - 1); S.sel = null; commit("Page deleted");
+    renderPages(); if (!$("#overview").hidden) renderOverview(); refreshPanels(); requestDraw(); toast(`Deleted page ${n} — ⌘Z brings it back`); },
   left() { if (S.page < 1) return; const p = S.doc.pages.splice(S.page, 1)[0]; S.doc.pages.splice(--S.page, 0, p); commit(); renderPages(); },
   right() { if (S.page >= S.doc.pages.length - 1) return; const p = S.doc.pages.splice(S.page, 1)[0]; S.doc.pages.splice(++S.page, 0, p); commit(); renderPages(); },
 };
