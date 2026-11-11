@@ -191,6 +191,8 @@ def pose_library() -> dict:
         if f.exists():
             poses += json.loads(f.read_text(encoding="utf-8")).get("poses", [])
     from mp.kkpose import KINDS, pose_kind
+    for p in poses:
+        p.pop("feet", None)   # not drawn by the editor
     for p in poses:   # older libraries and saved poses get a type too
         if not p.get("kind") and p.get("body"):
             p["kind"] = pose_kind(p, " ".join([p.get("group", ""), p.get("name", "")]))
@@ -382,6 +384,23 @@ def pod_status() -> dict:
 
 
 # ------------------------------------------------------------------------------- http
+_GZ: dict[str, bytes] = {}
+_JSON_CACHE: dict[str, tuple] = {}
+
+
+def _gzip(body: bytes, key: str | None) -> bytes:
+    """gzip level 6; responses with an ETag are compressed once and kept."""
+    import gzip
+    if key and key in _GZ:
+        return _GZ[key]
+    out = gzip.compress(body, 6, mtime=0)
+    if key:
+        if len(_GZ) > 64:
+            _GZ.clear()
+        _GZ[key] = out
+    return out
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "MangaMaker/1"
 
@@ -389,13 +408,43 @@ class Handler(BaseHTTPRequestHandler):
         if not self.path.startswith(("/img", "/api/jobs", "/static")):
             sys.stderr.write("[ui] " + fmt % args + "\n")
 
-    def send(self, code: int, body: bytes, ctype: str, cache: bool = False):
+    def send(self, code: int, body: bytes, ctype: str, cache: bool = False, etag: str | None = None):
+        """cache=True: immutable for a day (images, fonts). etag: revalidate (code, index, catalogs), so a
+        reload costs a 304 instead of the whole file. Text over 1.5 KB is gzipped when the browser asks."""
+        if etag and self.headers.get("If-None-Match") == etag:
+            self.send_response(304)
+            self.send_header("ETag", etag)
+            self.end_headers()
+            return
+        gz = len(body) > 1500 and "gzip" in (self.headers.get("Accept-Encoding") or "") and \
+            ctype.split(";")[0] in ("application/json", "text/javascript", "text/css", "text/html", "image/svg+xml")
+        if gz:
+            body = _gzip(body, etag)
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "max-age=86400" if cache else "no-store")
+        if gz:
+            self.send_header("Content-Encoding", "gzip")
+            self.send_header("Vary", "Accept-Encoding")
+        if etag:
+            self.send_header("ETag", etag)
+        self.send_header("Cache-Control", "max-age=86400" if cache else "no-cache" if etag else "no-store")
         self.end_headers()
         self.wfile.write(body)
+
+    def file(self, p: Path, ctype: str):
+        st = p.stat()
+        self.send(200, p.read_bytes(), ctype, etag=f'"{st.st_mtime_ns:x}-{st.st_size:x}"')
+
+    def cached_json(self, name: str, build, deps: list[Path]):
+        """A JSON answer rebuilt only when one of `deps` changes (mtimes), served with an ETag."""
+        sig = "|".join(f"{d}:{d.stat().st_mtime_ns if d.exists() else 0}" for d in deps)
+        hit = _JSON_CACHE.get(name)
+        if not hit or hit[0] != sig:
+            body = json.dumps(build(), separators=(",", ":")).encode()
+            hit = (sig, body, '"' + hashlib.sha1(body).hexdigest()[:16] + '"')
+            _JSON_CACHE[name] = hit
+        return self.send(200, hit[1], "application/json", etag=hit[2])
 
     def json(self, data, code: int = 200):
         self.send(code, json.dumps(data).encode(), "application/json")
@@ -414,13 +463,13 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == "/favicon.ico":
                 return self.send(200, (STATIC / "favicon.svg").read_bytes(), "image/svg+xml", cache=True)
             if u.path in ("/", "/index.html"):
-                return self.send(200, (STATIC / "index.html").read_bytes(), "text/html; charset=utf-8")
+                return self.file(STATIC / "index.html", "text/html; charset=utf-8")
             if u.path.startswith("/static/"):
                 p = (STATIC / unquote(u.path[len("/static/"):])).resolve()
                 if STATIC.resolve() not in p.parents or not p.is_file():
                     return self.json({"error": "not found"}, 404)
                 ctype = {".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml"}.get(p.suffix, "application/octet-stream")
-                return self.send(200, p.read_bytes(), ctype + "; charset=utf-8")
+                return self.file(p, ctype + "; charset=utf-8")
             if u.path == "/font":
                 comp = CFG.compose
                 f = Path(comp.get("font_bold") if q.get("bold") else comp.get("font"))
@@ -430,10 +479,11 @@ class Handler(BaseHTTPRequestHandler):
                 data, ctype = sized(p, int(q["w"]) if q.get("w") else None)
                 return self.send(200, data, ctype, cache=True)
             if u.path == "/api/catalog":
-                return self.json({"bubbles": bubbles(), "layouts": layouts(), "assets": assets(),
+                return self.cached_json("catalog", lambda: {"bubbles": bubbles(), "layouts": layouts(), "assets": assets(),
                                   "styles": list(CFG.styles), "reading": "rtl", "page": [PAGE_W, PAGE_H],
                                   "maxFont": int(CFG.compose.get("page_max_font_px", 56)),
-                                  "scripts": sorted(p.name for p in (ROOT / "scripts").glob("*.y*ml"))})
+                                  "scripts": sorted(p.name for p in (ROOT / "scripts").glob("*.y*ml"))},
+                    deps=[ROOT / "scripts", UPLOADS, CFG.path, TPL])
             if u.path == "/api/shots":
                 return self.json(shots())
             if u.path == "/api/projects":
@@ -447,7 +497,7 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == "/api/pod":
                 return self.json(pod_status())
             if u.path == "/api/poses":
-                return self.json(pose_library())
+                return self.cached_json("poses", pose_library, deps=[POSES / "library.json", POSES / "custom.json", CFG.studio_pose_dir])
             if u.path == "/api/cast":
                 return self.json({"cast": json.loads(CAST.read_text(encoding="utf-8")) if CAST.exists() else []})
             if u.path == "/api/pose/scene":

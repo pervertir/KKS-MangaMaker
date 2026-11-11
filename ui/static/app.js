@@ -173,12 +173,24 @@ function fit(text, l, maxW, maxH, maxPx) {
   fitCache.set(key, res);
   return res;
 }
+/* Web fonts beyond the three defaults are fetched the first time a layer uses one (the Japanese
+   families alone are ~400 KB of CSS), so the editor opens without downloading every face. */
+const LAZY_FONTS = {"Patrick Hand": "family=Patrick+Hand", "Kalam": "family=Kalam:wght@400;700", "Indie Flower": "family=Indie+Flower", "Architects Daughter": "family=Architects+Daughter", "Luckiest Guy": "family=Luckiest+Guy", "Permanent Marker": "family=Permanent+Marker", "Shojumaru": "family=Shojumaru", "Rubik Wet Paint": "family=Rubik+Wet+Paint", "Creepster": "family=Creepster", "Bungee Shade": "family=Bungee+Shade", "Black Ops One": "family=Black+Ops+One", "Rampart One": "family=Rampart+One", "Dela Gothic One": "family=Dela+Gothic+One", "Reggae One": "family=Reggae+One", "RocknRoll One": "family=RocknRoll+One", "Potta One": "family=Potta+One", "Yusei Magic": "family=Yusei+Magic", "Mochiy Pop One": "family=Mochiy+Pop+One", "Hachi Maru Pop": "family=Hachi+Maru+Pop", "Zen Maru Gothic": "family=Zen+Maru+Gothic:wght@400;700", "Kosugi Maru": "family=Kosugi+Maru", "Zen Kurenaido": "family=Zen+Kurenaido", "Kaisei Decol": "family=Kaisei+Decol:wght@400;700"};
+const fontLinks = new Map();
+function loadFontCss(family) {
+  const q = LAZY_FONTS[family]; if (!q || fontLinks.has(family)) return fontLinks.get(family) || Promise.resolve();
+  const pr = new Promise(res => {
+    const ln = h("link", { rel: "stylesheet", href: `https://fonts.googleapis.com/css2?${q}&display=swap` });
+    ln.onload = ln.onerror = () => res(); document.head.append(ln);
+  });
+  fontLinks.set(family, pr); return pr;
+}
 const fontsAsked = new Set();
 function ensureFont(l) {
   const f = fontStr(l, 40);
   if (fontsAsked.has(f)) return;
   fontsAsked.add(f);
-  document.fonts.load(f, "あA").then(() => { fitCache.clear(); requestDraw(); schedThumbs(); });
+  loadFontCss(l.font).then(() => document.fonts.load(f, "あA")).then(() => { fitCache.clear(); requestDraw(); schedThumbs(); });
 }
 function drawText(ctx, l, cx, cy, maxW, maxH, maxPx, color) {
   const text = l.text || "";
@@ -1375,7 +1387,8 @@ function textBlock(l) {
 }
 function fontRows(l) {
   return [
-    select("Font", FONTS, () => l.font || "MMComic", v => l.font = v),
+    (() => { const r = select("Font", FONTS, () => l.font || "MMComic", v => l.font = v);   // fetch the faces when the list opens
+      $("select", r)?.addEventListener("pointerdown", () => Object.keys(LAZY_FONTS).forEach(loadFontCss), { once: true }); return r; })(),
     h("div", { class: "row" }, h("label", {}, "Size"),
       h("input", { type: "number", min: 0, value: l.fontSize || 0, style: "width:64px", onchange: e => { l.fontSize = +e.target.value; commit(); requestDraw(); } }),
       h("span", { class: "hint" }, "0 = fit"), check("Bold", () => l.bold, v => l.bold = v), check("Italic", () => l.italic, v => l.italic = v)),
@@ -1524,7 +1537,18 @@ function svgBtn(name, cls, title, fn) {
   const b = h("button", { class: "ib " + (cls || ""), title, onclick: e => { e.stopPropagation(); fn(); } }); b.innerHTML = svgIcon(name); return b;
 }
 /* a small picture of the layer itself, like Photoshop's layer thumbnails */
+const THUMBS = new Map();   // layer id -> {key, canvas}: redrawn only when the layer changes
 function layerThumb(l) {
+  const refs = [l.image?.ref, l.type === "bubble" ? bubbleMeta(l.bubble)?.ref : null].filter(Boolean);
+  const loaded = refs.map(r => [0, ...LEVELS].map(w => IMG.get(r + "|" + w)?.complete ? 1 : 0).join("")).join("/");
+  const key = JSON.stringify(l) + "|" + loaded;
+  const hit = THUMBS.get(l.id);
+  if (hit && hit.key === key) return hit.canvas;
+  const c = paintLayerThumb(l); THUMBS.set(l.id, { key, canvas: c });
+  if (THUMBS.size > 600) THUMBS.delete(THUMBS.keys().next().value);
+  return c;
+}
+function paintLayerThumb(l) {
   const T = 34, c = h("canvas", { class: "lthumb", width: T * 2, height: T * 2 });
   const g = c.getContext("2d"), pad = 2;
   const w = Math.max(1, l.w), hh = Math.max(1, l.h), s = (T * 2 - pad * 2) / Math.max(w, hh);

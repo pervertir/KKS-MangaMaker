@@ -234,7 +234,7 @@ def keypoints(fk: dict[int, tuple]) -> dict:
     hip = (allp[8] + allp[11]) / 2
     allp[:, 0] -= hip[0]
     allp[:, 2] -= hip[2]
-    allp = np.round(allp, 4)
+    allp = np.round(allp, 3)   # millimetres: finer adds bytes, not visible detail
     return {"body": allp[:18].tolist(), "hands": [allp[18:39].tolist(), allp[39:60].tolist()],
             "feet": [allp[60:63].tolist(), allp[63:66].tolist()]}
 
@@ -253,6 +253,7 @@ def build_library(src: Path, out: Path) -> dict:
             continue
         parts = rel.parent.parts
         name = p["name"] or f.stem
+        kp.pop("feet", None)
         poses.append({"id": rel.with_suffix("").as_posix(), "name": name,
                       "pack": (parts[0] if parts else "Poses").strip(" ~"),
                       "group": "/".join(parts[1:]), "kind": pose_kind(kp, " ".join([*parts[1:], name, f.stem])), **kp})

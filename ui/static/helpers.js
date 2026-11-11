@@ -268,4 +268,6 @@ function toggleTips() { try { localStorage.setItem("mm.tips", TIPS_ON() ? "0" : 
   buildMenus();
   loadCast();
   setTimeout(() => showTip(S.tool), 1500);
+  // fetch the pose library while the editor is idle, so the Pose tab opens instantly
+  (window.requestIdleCallback || (f => setTimeout(f, 2500)))(() => loadPoseLib().then(() => status("")), { timeout: 5000 });
 })();
