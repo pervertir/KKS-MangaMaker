@@ -166,7 +166,7 @@ async function castDialog() {
       const inp = (k, ph, wid) => h("input", { value: c[k] || "", placeholder: ph, style: wid ? `width:${wid}` : "", oninput: e => c[k] = e.target.value });
       const g = h("select", { onchange: e => c.gender = e.target.value }, h("option", { value: "girl" }, "Girl"), h("option", { value: "boy" }, "Boy")); g.value = c.gender || "girl";
       const poseSel = h("select", { onchange: e => c.pose = e.target.value }, h("option", { value: "" }, "—"),
-        ...(P.lib || []).filter(p => p.pack === "Basic" || p.pack === "My poses").map(p => h("option", { value: p.id }, p.name)));
+        ...(P.lib || []).filter(p => !p.members && (p.pack === "Basic" || p.pack === "My poses")).map(p => h("option", { value: p.id }, p.name)));
       poseSel.value = c.pose || "";
       tbl.append(h("div", { class: "castrow" }, inp("name", "Rem"), inp("series", "Re:Zero"), inp("lora", "auto"), inp("tags", "blue hair, maid outfit"), g, poseSel,
         h("button", { class: "ghost", title: "Remove", onclick: () => { list.splice(i, 1); draw(); } }, "🗑")));

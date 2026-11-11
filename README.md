@@ -207,8 +207,11 @@ up, waist up, chest up, close-up), set the camera (low, high, dutch tilt) and st
 The pose library is `poses/library.json`: the Koikatsu Sunshine studio poses converted to OpenPose
 keypoints (3D, so figures can be turned) by our own forward kinematics in `mp/kkpose.py`; nothing
 from the game is copied. Rebuild it from an install with `./mangapipe poses build [--src DIR]`
-(default `studio_pose_dir`, `../UserData/studio/pose`). Twelve basic poses are built in, and figures
-you edit can be kept under *My poses* (`poses/custom.json`).
+(default `studio_pose_dir`, `../UserData/studio/pose`). Twelve basic poses are built in. **Save pose** keeps the selected
+figure (with its turn, mirror and joint edits) and **Save group pose** keeps every figure in the scene
+with its place, as one entry; both land under *My poses* (`poses/custom.json`), and a group pose drops
+all its figures in at once (replacing the scene's figures, names carried over, or beside them).
+The library is filtered by pose type (standing, sitting, kneeling, lying, ...).
 
 Paths to the game (captures, templates, poses) can be overridden per machine in an untracked
 `config.local.yaml` next to `config.yaml`.

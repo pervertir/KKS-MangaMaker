@@ -297,6 +297,7 @@ async function loadPoseLib() {
     const r = await api("/api/poses");
     P.lib = r.poses;
     P.byId = new Map(P.lib.map(p => [p.id, p]));
+    P.lib.filter(p => p.members).forEach(registerGroup);
     // sorted by what the pose is, not who made it: built-in ones first inside each type
     const order = r.kinds || [];
     P.lib.sort((a, b) => (order.indexOf(a.kind) - order.indexOf(b.kind)) || ((a.pack === "Basic" ? 0 : 1) - (b.pack === "Basic" ? 0 : 1)));
@@ -311,6 +312,16 @@ function paintThumb(cv) {
   const pose = P.byId.get(cv.dataset.id); if (!pose) return;
   const g = cv.getContext("2d"), W = cv.width, H = cv.height;
   g.fillStyle = "#000"; g.fillRect(0, 0, W, H);
+  if (pose.members) {                                  // group: every figure where it stood, fitted to the tile
+    const a = pose.aspect || 0.7, fw = Math.min(W, H * a), fh = fw / a, ox = (W - fw) / 2, oy = (H - fh) / 2;
+    pose.members.forEach((m, i) => {
+      const pr = project({ pose: `${pose.id}#${i}`, x: m.x, y: m.y, scale: m.scale, yaw: 0, pitch: 0, roll: 0, flip: false, edits: {} }, fw, fh);
+      if (!pr) return;
+      const sh = p => [p[0] + ox, p[1] + oy, p[2]];
+      drawSkeleton(g, { body: pr.body.map(sh), hands: pr.hands.map(hd => hd.map(sh)), k: pr.k }, 0.4, { hands: false });
+    });
+    return;
+  }
   const fake = { pose: pose.id, x: 0.5, y: 0.5, scale: 1, yaw: 0, pitch: 0, roll: 0, flip: false, edits: {} };
   let pr = project(fake, W, H); const b = bounds(pr);       // fit the figure into the tile
   const f = Math.min(W * 0.9 / b.w, H * 0.9 / b.h);
@@ -338,7 +349,7 @@ function renderPoseLib() {
     if (grp !== lastGroup && f !== grp) { list.append(h("div", { class: "psgroup" }, grp)); lastGroup = grp; }
     const cv = h("canvas", { width: 96, height: 128, "data-id": p.id });
     const el = h("div", { class: "pstile", title: `${p.name} · ${grp}\nClick: use for the selected character (or add one). Drag onto the canvas to add.`,
-      draggable: true, onclick: () => usePose(p.id) }, cv, h("div", { class: "cap" }, p.name));
+      draggable: true, onclick: () => p.members ? useGroup(p) : usePose(p.id) }, cv, h("div", { class: "cap" }, (p.members ? `👥${p.members.length} ` : "") + p.name));
     el.addEventListener("dragstart", e => e.dataTransfer.setData("application/x-pose", p.id));
     list.append(el); thumbObs.observe(cv);
   }
@@ -394,7 +405,8 @@ function renderPoseSide(valuesOnly) {
       h("button", { class: "ghost", title: "Delete", onclick: e => { e.stopPropagation(); S2.chars = S2.chars.filter(q => q !== c); if (P.sel === c.id) P.sel = null; pcommit("Character removed"); } }, "🗑")));
   }
   if (!S2.chars.length) list.append(h("div", { class: "hint" }, "Click a pose in the library (or drag it onto the canvas) to add a character."));
-  side.append(list, h("div", { class: "btnrow" }, h("button", { onclick: () => { P.sel = null; usePose(P.byId.has("basic/Standing") ? "basic/Standing" : P.lib[0].id); } }, "＋ Character")));
+  side.append(list, h("div", { class: "btnrow" }, h("button", { onclick: () => { P.sel = null; usePose(P.byId.has("basic/Standing") ? "basic/Standing" : P.lib[0].id); } }, "＋ Character"),
+    h("button", { disabled: !S2.chars.length, onclick: saveGroupPose, title: "Save every figure in this scene, posed and placed, as one group pose under My poses" }, "Save group pose")));
   // selected character
   const c = pcur();
   if (c) {
@@ -422,7 +434,7 @@ function renderPoseSide(valuesOnly) {
       h("div", { class: "btnrow" },
         h("button", { onclick: () => { const i = S2.chars.indexOf(c); S2.chars.splice(i, 1); S2.chars.push(c); pcommit("To front"); } }, "To front"),
         h("button", { onclick: () => { const i = S2.chars.indexOf(c); S2.chars.splice(i, 1); S2.chars.unshift(c); pcommit("To back"); } }, "To back"),
-        h("button", { onclick: saveAsMyPose, title: "Keep this figure (with your joint edits) in the library under My poses" }, "Save to My poses")),
+        h("button", { onclick: saveAsMyPose, title: "Keep this figure (with your joint edits) in the library under My poses" }, "Save pose")),
       h("p", { class: "hint" }, "Drag a joint to fine-tune it (wrist drags the hand along). Drag the body to move, the corner square to scale, the dot on top to rotate. " +
         "Scroll = size, Shift+scroll = turn. Arrows nudge, M mirrors, Del deletes."));
   }
@@ -440,22 +452,57 @@ async function loadRef(f) {
 }
 
 /* bake the selected figure's current 2D look back into 3D-ish points: joint edits move x/y, depth stays */
+/* bake a figure as it looks now (turn, tilt, rotation, mirror and joint edits) into library points
+   (metres, floor at y = 0, hips centred), plus where it stands on the canvas */
+function bakeChar(c) {
+  const { w: W, h: H } = P.scene, pr = project(c, W, H), k = pr.k;
+  const hipX = (pr.body[8][0] + pr.body[11][0]) / 2;
+  const floorY = Math.max(...pr.body.map(p => p[1]), ...pr.hands.flat().map(p => p[1]));
+  const to3 = p => [+((p[0] - hipX) / k).toFixed(4), +((floorY - p[1]) / k).toFixed(4), +(p[2] || 0).toFixed(4)];
+  return { body: pr.body.map(to3), hands: pr.hands.map(hd => hd.map(to3)), x: +(hipX / W).toFixed(4), y: +(floorY / H).toFixed(4), scale: +c.scale.toFixed(4) };
+}
 async function saveAsMyPose() {
-  const c = pcur(); if (!c) return;
+  const c = pcur(); if (!c) return toast("Select a character first", "err");
   const name = prompt("Name for this pose", (P.byId.get(c.pose)?.name || "Pose") + " (edited)"); if (!name) return;
-  const fake = { ...deep(c), x: 0.5, y: 0.5, scale: 1, roll: 0 };
-  const W = 1000, H = 1000, pr = project(fake, W, H), k = pr.k;
-  const hipY = (pr.body[8][1] + pr.body[11][1]) / 2, hipX = (pr.body[8][0] + pr.body[11][0]) / 2;
-  const to3 = p => [+((p[0] - hipX) / k).toFixed(4), +(-(p[1] - hipY) / k).toFixed(4), +(p[2] || 0).toFixed(4)];
-  let body = pr.body.map(to3), hands = pr.hands.map(hd => hd.map(to3));
-  const minY = Math.min(...body.map(p => p[1]), ...hands.flat().map(p => p[1]));
-  const lift = p => [p[0], +(p[1] - minY).toFixed(4), p[2]];
-  body = body.map(lift); hands = hands.map(hd => hd.map(lift));
+  const b = bakeChar(c);
   try {
-    const e = await post("/api/poses/custom", { name, body, hands });
+    const e = await post("/api/poses/custom", { name, body: b.body, hands: b.hands });
     P.lib.unshift(e); P.byId.set(e.id, e);
-    c.pose = e.id; c.edits = {}; c.yaw = 0; c.pitch = 0; c.flip = false; pcommit("Saved to My poses"); renderPoseLib();
+    Object.assign(c, { pose: e.id, edits: {}, yaw: 0, pitch: 0, roll: 0, flip: false, x: b.x, y: b.y });
+    pcommit("Saved to My poses"); renderPoseLib();
   } catch (e) { toast(e.message, "err"); }
+}
+/* the whole scene as one reusable group pose: every visible figure, its pose and its place */
+async function saveGroupPose() {
+  const cs = P.scene.chars.filter(c => !c.hidden);
+  if (!cs.length) return toast("Add characters first", "err");
+  const name = prompt(`Name for this group pose (${cs.length} figure${cs.length > 1 ? "s" : ""})`, P.shot || "Group pose"); if (!name) return;
+  const members = cs.map(c => { const b = bakeChar(c); return { body: b.body, hands: b.hands, x: b.x, y: b.y, scale: b.scale, label: c.name || c.label, gender: c.gender || "girl" }; });
+  try {
+    const e = await post("/api/poses/custom", { name, members, aspect: P.scene.w / P.scene.h });
+    registerGroup(e); P.lib.unshift(e); if (!P.packs.includes(e.kind)) P.packs.unshift(e.kind);
+    P.filter.pack = "@mine"; $("#pspack").dataset.sig = ""; renderPoseLib();
+    toast(`Saved "${name}" with ${members.length} figure${members.length > 1 ? "s" : ""} under My poses`, "ok");
+  } catch (e) { toast(e.message, "err"); }
+}
+function registerGroup(g) {
+  (g.members || []).forEach((m, i) => P.byId.set(`${g.id}#${i}`, { id: `${g.id}#${i}`, name: `${g.name} ${i + 1}`, kind: g.kind, body: m.body, hands: m.hands }));
+  P.byId.set(g.id, g);
+}
+/* drop a group pose in: replace the scene's figures (keeping their names in order) or add beside them */
+function useGroup(g) {
+  const cs = P.scene.chars;
+  const replace = !cs.length || confirm(`Use "${g.name}" for the scene? OK replaces the current figures (names carry over, left to right); Cancel adds the group beside them.`);
+  const names = replace ? [...cs].sort((a, b) => a.x - b.x) : [];
+  const fresh = g.members.map((m, i) => {
+    const c = newChar(`${g.id}#${i}`, m.x, m.y);
+    Object.assign(c, { scale: m.scale, gender: m.gender || "girl", label: m.label || c.label });
+    const old = names[i]; if (old) Object.assign(c, { name: old.name, series: old.series, tags: old.tags, gender: old.gender || c.gender, label: old.label });
+    if (!replace) c.x = clamp(c.x * 0.5 + 0.5, 0.05, 0.95);
+    return c;
+  });
+  P.scene.chars = replace ? fresh : [...cs, ...fresh];
+  P.sel = fresh[0]?.id || null; pcommit(`Group pose: ${g.name}`);
 }
 function downloadPose() {
   const a = h("a", { href: renderPosePNG().toDataURL("image/png"), download: `${P.shot || "pose"}_openpose.png` }); a.click();
@@ -549,6 +596,7 @@ function poseKey(e) {
   st.addEventListener("dragover", e => { if (e.dataTransfer.types.includes("application/x-pose")) e.preventDefault(); });
   st.addEventListener("drop", e => {
     const id = e.dataTransfer.getData("application/x-pose"); if (!id) return; e.preventDefault();
+    const grp = P.byId.get(id); if (grp?.members) return useGroup(grp);
     const r = cv.getBoundingClientRect(); usePose(id, pToScene(e.clientX - r.left, e.clientY - r.top));
   });
   new ResizeObserver(() => { if (S.mode === "pose") pfit(); }).observe(st);

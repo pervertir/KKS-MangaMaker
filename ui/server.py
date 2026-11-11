@@ -192,9 +192,9 @@ def pose_library() -> dict:
             poses += json.loads(f.read_text(encoding="utf-8")).get("poses", [])
     from mp.kkpose import KINDS, pose_kind
     for p in poses:   # older libraries and saved poses get a type too
-        if not p.get("kind"):
+        if not p.get("kind") and p.get("body"):
             p["kind"] = pose_kind(p, " ".join([p.get("group", ""), p.get("name", "")]))
-    return {"poses": poses, "kinds": KINDS}
+    return {"poses": poses, "kinds": ["Group poses", *KINDS]}
 
 
 def save_custom_pose(pose: dict) -> dict:
@@ -205,7 +205,12 @@ def save_custom_pose(pose: dict) -> dict:
     entry = {"id": pid, "name": name, "pack": "My poses", "group": "",
              **{k: pose[k] for k in ("body", "hands", "feet") if k in pose}}
     from mp.kkpose import pose_kind
-    entry["kind"] = pose.get("kind") or pose_kind(entry, name)
+    if pose.get("members"):   # a group pose: several figures with their places on the canvas
+        keep = ("body", "hands", "x", "y", "scale", "label", "gender")
+        entry.update(id=pid.replace("custom/", "group/", 1), kind="Group poses", aspect=float(pose.get("aspect") or 0.7),
+                     members=[{k: m[k] for k in keep if k in m} for m in pose["members"] if m.get("body")])
+    else:
+        entry["kind"] = pose.get("kind") or pose_kind(entry, name)
     data["poses"].append(entry)
     POSES.mkdir(parents=True, exist_ok=True)
     f.write_text(json.dumps(data, separators=(",", ":"), ensure_ascii=False), encoding="utf-8")
