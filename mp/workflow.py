@@ -27,7 +27,8 @@ def decide_identity(shot: dict, loras: list[dict]) -> str:
     return want
 
 
-def build_prompt(shot: dict, style: dict, loras: list[dict]) -> tuple[str, str]:
+def character_parts(shot: dict, loras: list[dict]) -> list[str]:
+    """Per character, in characters[] order: LoRA triggers (or "Name \\(series\\)") plus its tags."""
     parts = []
     for c, l in zip(shot["characters"], loras):
         bits = []
@@ -41,6 +42,11 @@ def build_prompt(shot: dict, style: dict, loras: list[dict]) -> tuple[str, str]:
         if c.get("tags"):
             bits.append(c["tags"])
         parts.append(", ".join(bits))
+    return parts
+
+
+def build_prompt(shot: dict, style: dict, loras: list[dict]) -> tuple[str, str]:
+    parts = character_parts(shot, loras)
     n = len(shot["characters"])
     count = {1: "1girl, solo" if shot.get("solo_tag", True) else "", 2: "2girls"}.get(n, "")
     if shot.get("count_tag") is not None:
@@ -51,7 +57,9 @@ def build_prompt(shot: dict, style: dict, loras: list[dict]) -> tuple[str, str]:
 
 
 def build_graph(shot: dict, cfg, loras: list[dict], identity: str, pose_name: str, ref_name: str | None,
-                size: tuple[int, int], seed: int) -> dict:
+                size: tuple[int, int], seed: int, regions: list[tuple[int, int, str]] | None = None,
+                depth_name: str | None = None) -> dict:
+    """regions: [(x0, x1, prompt)] left to right; each prompt is applied only inside its column."""
     g = {}
     nid = [0]
 
@@ -75,6 +83,15 @@ def build_graph(shot: dict, cfg, loras: list[dict], identity: str, pose_name: st
     pos_text, neg_text = build_prompt(shot, style, loras)
     pos = add("CLIPTextEncode", text=pos_text, clip=clip)
     neg = add("CLIPTextEncode", text=neg_text, clip=clip)
+    if regions:
+        w, h = size
+        for x0, x1, text in regions:
+            rc = add("CLIPTextEncode", text=", ".join(p for p in [style["positive"], text] if p), clip=clip)
+            canvas = add("SolidMask", value=0.0, width=w, height=h)
+            col = add("SolidMask", value=1.0, width=max(8, x1 - x0), height=h)
+            m = add("MaskComposite", destination=[canvas, 0], source=[col, 0], x=x0, y=0, operation="add")
+            rm = add("ConditioningSetMask", conditioning=[rc, 0], mask=[m, 0], strength=1.0, set_cond_area="default")
+            pos = add("ConditioningCombine", conditioning_1=[pos, 0], conditioning_2=[rm, 0])
 
     pose_img = add("LoadImage", image=pose_name)
     cn = add("ControlNetLoader", control_net_name=cfg["controlnet"])
@@ -83,6 +100,13 @@ def build_graph(shot: dict, cfg, loras: list[dict], identity: str, pose_name: st
                    image=[pose_img, 0], strength=float(shot["controlnet_strength"]), start_percent=0.0,
                    end_percent=float(shot["controlnet_end"]), vae=vae)
     pos_c, neg_c = [cn_apply, 0], [cn_apply, 1]
+    if depth_name:  # second pass on the same union model: body volumes and contact that bones alone miss
+        depth_img = add("LoadImage", image=depth_name)
+        dcn = add("SetUnionControlNetType", control_net=[cn, 0], type="depth")
+        d_apply = add("ControlNetApplyAdvanced", positive=pos_c, negative=neg_c, control_net=[dcn, 0], image=[depth_img, 0],
+                      strength=float(shot.get("depth_strength", 0.5)), start_percent=0.0,
+                      end_percent=float(shot.get("depth_end", 0.5)), vae=vae)
+        pos_c, neg_c = [d_apply, 0], [d_apply, 1]
 
     ref_img = None
     if ref_name:
