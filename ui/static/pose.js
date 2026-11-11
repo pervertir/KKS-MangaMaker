@@ -294,9 +294,13 @@ async function loadPoseLib() {
   if (P.lib) return;
   status("Loading poses…");
   try {
-    P.lib = (await api("/api/poses")).poses;
+    const r = await api("/api/poses");
+    P.lib = r.poses;
     P.byId = new Map(P.lib.map(p => [p.id, p]));
-    P.packs = [...new Set(P.lib.map(p => p.pack))];
+    // sorted by what the pose is, not who made it: built-in ones first inside each type
+    const order = r.kinds || [];
+    P.lib.sort((a, b) => (order.indexOf(a.kind) - order.indexOf(b.kind)) || ((a.pack === "Basic" ? 0 : 1) - (b.pack === "Basic" ? 0 : 1)));
+    P.packs = order.filter(k => P.lib.some(p => p.kind === k));
   } catch (e) { toast("Pose library: " + e.message, "err"); P.lib = []; }
   status("");
 }
@@ -318,24 +322,27 @@ function renderPoseLib() {
   const box = $("#pslib"); if (!box) return;
   const list = $("#pslist"), q = P.filter.q.toLowerCase();
   const sel = $("#pspack");
-  if (sel.options.length !== P.packs.length + 1) {
-    sel.innerHTML = ""; sel.append(h("option", { value: "" }, `All packs (${P.lib.length})`));
-    for (const k of P.packs) sel.append(h("option", { value: k }, `${k} (${P.lib.filter(p => p.pack === k).length})`));
-    sel.value = P.filter.pack;
+  const hasMine = P.lib.some(p => p.pack === "My poses");
+  const opts = [["", `All types (${P.lib.length})`], ...(hasMine ? [["@mine", `My poses (${P.lib.filter(p => p.pack === "My poses").length})`]] : []),
+    ...P.packs.map(k => [k, `${k} (${P.lib.filter(p => p.kind === k).length})`])];
+  if (sel.dataset.sig !== opts.map(o => o[1]).join("|")) {
+    sel.innerHTML = ""; for (const [v, t] of opts) sel.append(h("option", { value: v }, t));
+    sel.dataset.sig = opts.map(o => o[1]).join("|"); sel.value = P.filter.pack;
   }
   list.innerHTML = "";
-  const hits = P.lib.filter(p => (!P.filter.pack || p.pack === P.filter.pack) && (!q || (p.name + " " + p.group + " " + p.pack).toLowerCase().includes(q)));
+  const f = P.filter.pack;
+  const hits = P.lib.filter(p => (!f || (f === "@mine" ? p.pack === "My poses" : p.kind === f)) && (!q || (p.name + " " + p.kind).toLowerCase().includes(q)));
   let lastGroup = null;
   for (const p of hits.slice(0, 600)) {
-    const grp = (P.filter.pack ? "" : p.pack + (p.group ? " › " : "")) + p.group;
-    if (grp !== lastGroup) { list.append(h("div", { class: "psgroup" }, grp || p.pack)); lastGroup = grp; }
+    const grp = p.kind || "Other";
+    if (grp !== lastGroup && f !== grp) { list.append(h("div", { class: "psgroup" }, grp)); lastGroup = grp; }
     const cv = h("canvas", { width: 96, height: 128, "data-id": p.id });
-    const el = h("div", { class: "pstile", title: `${p.name}\n${p.pack}${p.group ? " › " + p.group : ""}\nClick: use for the selected character (or add one). Drag onto the canvas to add.`,
+    const el = h("div", { class: "pstile", title: `${p.name} · ${grp}\nClick: use for the selected character (or add one). Drag onto the canvas to add.`,
       draggable: true, onclick: () => usePose(p.id) }, cv, h("div", { class: "cap" }, p.name));
     el.addEventListener("dragstart", e => e.dataTransfer.setData("application/x-pose", p.id));
     list.append(el); thumbObs.observe(cv);
   }
-  if (hits.length > 600) list.append(h("div", { class: "hint" }, `${hits.length - 600} more: narrow the search.`));
+  if (hits.length > 600) list.append(h("div", { class: "hint" }, `${hits.length - 600} more: pick a type or search.`));
   if (!hits.length) list.append(h("div", { class: "hint" }, "No poses match."));
 }
 function usePose(id, at) {
@@ -446,7 +453,7 @@ async function saveAsMyPose() {
   body = body.map(lift); hands = hands.map(hd => hd.map(lift));
   try {
     const e = await post("/api/poses/custom", { name, body, hands });
-    P.lib.unshift(e); P.byId.set(e.id, e); if (!P.packs.includes("My poses")) P.packs.unshift("My poses");
+    P.lib.unshift(e); P.byId.set(e.id, e);
     c.pose = e.id; c.edits = {}; c.yaw = 0; c.pitch = 0; c.flip = false; pcommit("Saved to My poses"); renderPoseLib();
   } catch (e) { toast(e.message, "err"); }
 }

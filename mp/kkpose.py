@@ -252,9 +252,10 @@ def build_library(src: Path, out: Path) -> dict:
             failed.append(f"{rel}: {e}")
             continue
         parts = rel.parent.parts
-        poses.append({"id": rel.with_suffix("").as_posix(), "name": p["name"] or f.stem,
+        name = p["name"] or f.stem
+        poses.append({"id": rel.with_suffix("").as_posix(), "name": name,
                       "pack": (parts[0] if parts else "Poses").strip(" ~"),
-                      "group": "/".join(parts[1:]), **kp})
+                      "group": "/".join(parts[1:]), "kind": pose_kind(kp, " ".join([*parts[1:], name, f.stem])), **kp})
     lib = {"version": 1, "source": "Koikatsu studio poses", "count": len(poses), "poses": poses}
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(lib, separators=(",", ":"), ensure_ascii=False), encoding="utf-8")
@@ -282,4 +283,69 @@ BASIC = {
 
 
 def basic_poses() -> list[dict]:
-    return [{"id": "basic/" + n, "name": n, "pack": "Basic", "group": "", **keypoints(fk)} for n, fk in BASIC.items()]
+    out = []
+    for n, fk in BASIC.items():
+        kp = keypoints(fk)
+        kind = {"Sitting (floor, legs crossed)": "Sitting on the floor", "Leaning forward": "Bending", "T-pose": "Standing"}.get(n) or pose_kind(kp, n)
+        out.append({"id": "basic/" + n, "name": n, "pack": "Basic", "group": "", "kind": kind, **kp})
+    return out
+
+
+# ------------------------------------------------------------------------------ pose types
+# What kind of pose it is (for the library's filter): words in the pack folders and pose names first,
+# since pose makers usually sort by it, then the skeleton's shape.
+KINDS = ["Standing", "Walking & running", "Fighting", "Dance & pole", "Sitting", "Sitting on the floor", "Kneeling",
+         "Crouching", "All fours", "Lying", "Bending", "Upside down", "Other"]
+_WORDS = [
+    ("All fours", r"all.?fours|四つん這い|わんわん|doggy|crawl"),
+    ("Lying", r"\blie\b|\blying|\blay|\blays\b|prone|supine|on.?back|bed\b|寝|仰向け|うつ伏せ|横たわ"),
+    ("Kneeling", r"kneel|膝立|seiza|正座"),
+    ("Crouching", r"squat|crouch|しゃが|蹲"),
+    ("Sitting", r"\bsit|seated|chair|bench|座|椅子"),
+    ("Fighting", r"combat|fight|brawl|sword|katana|\bktn\b|lancer|caster|gun|pistol|rifle|kick|punch|battle|stance|attack|\bspear|\bbow\b"),
+    ("Dance & pole", r"\bdanc|pole|ballet|gymnast|balance.?beam|yoga|cheer"),
+    ("Walking & running", r"\bwalk|\brun\b|running|dash|stride|jump|sprint|歩|走"),
+    ("Standing", r"\bstand|standing|立|model|show"),
+]
+
+
+def _shape_kind(kp: dict) -> str:
+    b = kp["body"]
+    hip = [(b[8][k] + b[11][k]) / 2 for k in range(3)]
+    neck = b[1]
+    tv = [neck[k] - hip[k] for k in range(3)]
+    up = tv[1] / (math.sqrt(sum(v * v for v in tv)) or 1)
+    knee_lo, knee_hi = min(b[9][1], b[12][1]), max(b[9][1], b[12][1])
+    ank_hi = max(b[10][1], b[13][1])
+    wrist_lo = min(b[4][1], b[7][1])
+    if up < -0.3:
+        return "Upside down"
+    if up < 0.45:
+        if wrist_lo < 0.15 and knee_lo < 0.18:
+            return "All fours"
+        return "Lying" if neck[1] < 0.5 else "Bending"
+    if hip[1] > 0.72:
+        if ank_hi > 0.35 or knee_hi > 0.62:
+            return "Fighting"
+        stride = abs(b[10][2] - b[13][2]) + abs(b[10][0] - b[13][0]) * 0.3
+        return "Walking & running" if stride > 0.32 else "Standing"
+    if knee_hi < 0.18 or (knee_lo < 0.16 and hip[1] > 0.35):
+        return "Kneeling"
+    if hip[1] < 0.3:
+        return "Sitting on the floor"
+    if knee_hi > hip[1] + 0.08 and hip[1] < 0.5:
+        return "Crouching"
+    return "Sitting" if knee_hi > hip[1] - 0.15 else "Crouching"
+
+
+def pose_kind(kp: dict, words: str = "") -> str:
+    import re
+    shape = _shape_kind(kp)
+    for kind, pat in _WORDS:
+        if re.search(pat, words, re.I):
+            if kind == "Sitting":     # the skeleton tells a chair from the floor
+                return shape if shape in ("Sitting on the floor", "Kneeling", "Lying", "Crouching") else "Sitting"
+            if kind == "Standing" and shape not in ("Standing", "Walking & running", "Fighting"):
+                return shape          # a "standing" pack that holds a sitting pose
+            return kind
+    return shape

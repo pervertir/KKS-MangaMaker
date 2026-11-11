@@ -190,7 +190,11 @@ def pose_library() -> dict:
     for f in (lib, POSES / "custom.json"):
         if f.exists():
             poses += json.loads(f.read_text(encoding="utf-8")).get("poses", [])
-    return {"poses": poses}
+    from mp.kkpose import KINDS, pose_kind
+    for p in poses:   # older libraries and saved poses get a type too
+        if not p.get("kind"):
+            p["kind"] = pose_kind(p, " ".join([p.get("group", ""), p.get("name", "")]))
+    return {"poses": poses, "kinds": KINDS}
 
 
 def save_custom_pose(pose: dict) -> dict:
@@ -200,6 +204,8 @@ def save_custom_pose(pose: dict) -> dict:
     pid = "custom/" + re.sub(r"[^A-Za-z0-9_\-]+", "_", name) + "_" + uuid.uuid4().hex[:6]
     entry = {"id": pid, "name": name, "pack": "My poses", "group": "",
              **{k: pose[k] for k in ("body", "hands", "feet") if k in pose}}
+    from mp.kkpose import pose_kind
+    entry["kind"] = pose.get("kind") or pose_kind(entry, name)
     data["poses"].append(entry)
     POSES.mkdir(parents=True, exist_ok=True)
     f.write_text(json.dumps(data, separators=(",", ":"), ensure_ascii=False), encoding="utf-8")
