@@ -29,7 +29,8 @@ from mp.page import PageError, build_script, layout_sheet  # noqa: E402
 from mp.remote import RemoteError  # noqa: E402
 from mp.sidecar import ShotError, load_shot, write_example  # noqa: E402
 from mp.studio import grab, prepare_pose, prepare_reference  # noqa: E402
-from mp.workflow import build_graph, build_prompt, decide_identity, new_seed  # noqa: E402
+from mp.multichar import pose_columns, refine_heads  # noqa: E402
+from mp.workflow import build_graph, build_prompt, character_parts, decide_identity, new_seed  # noqa: E402
 
 
 def log(msg: str):
@@ -76,8 +77,27 @@ def render(shot: dict, cfg: Config, seed: int | None, dry_run: bool, refresh: bo
 
     pose_name = comfy.upload(pose_cn, "manga", f"{shot['shot']}_pose.png")
     ref_name = comfy.upload(ref_cn, "manga", f"{shot['shot']}_ref.png") if ref_cn else None
+    depth_name = None
+    if shot.get("_depth_path") is not None:
+        depth_cn = shot["_out"] / "depth_cn.png"
+        prepare_pose(shot["_depth_path"], depth_cn, (w, h))  # same fit and black padding as the pose
+        depth_name = comfy.upload(depth_cn, "manga", f"{shot['shot']}_depth.png")
+        log(f"[depth] {shot['_depth_path'].name} -> {w}x{h}")
 
-    graph = build_graph(shot, cfg, loras, identity, pose_name, ref_name, (w, h), the_seed)
+    multi = len(shot["characters"]) > 1 and shot.get("head_inpaint", True) and any(l["lora"] for l in loras)
+    base_loras = loras
+    if multi:  # every LoRA at once would blend the faces; the head pass restores each identity
+        scale = float(shot.get("multi_lora_base_scale", 0.6))
+        base_loras = [{**l, "weight": float(l["weight"]) * scale} for l in loras]
+    regions = None
+    if multi:
+        cols = pose_columns(pose_cn, len(shot["characters"]))
+        if cols:
+            regions = [(x0, x1, part) for (x0, x1), part in zip(cols, character_parts(shot, loras))]
+            log("[regions] " + ", ".join(f"{c['name']} x={x0}-{x1}" for c, (x0, x1, _) in zip(shot["characters"], regions)))
+        else:
+            log("[regions] could not split the pose into one column per character; prompting globally")
+    graph = build_graph(shot, cfg, base_loras, identity, pose_name, ref_name, (w, h), the_seed, regions, depth_name)
     style = cfg.style(shot.get("style", "flat_anime"))
     pos, neg = build_prompt(shot, style, loras)
     (shot["_out"] / "workflow_api.json").write_text(json.dumps(graph, indent=2))
@@ -102,6 +122,15 @@ def render(shot: dict, cfg: Config, seed: int | None, dry_run: bool, refresh: bo
     stem = f"render_{the_seed}"
     files = comfy.download_outputs(hist, shot["_out"], stem)
     log(f"[comfy] done in {time.time() - t0:.0f}s -> " + ", ".join(f.name for f in files))
+    if multi:
+        refined = []
+        for f in files:
+            r = refine_heads(comfy, shot, cfg, loras, character_parts(shot, loras), f, the_seed, log)
+            if r:  # the refined image takes the render's name; the base is kept as *_base.png
+                f.rename(f.with_name(f.stem + "_base.png"))
+                r.rename(f)
+            refined.append(f)
+        files = refined
     return files
 
 

@@ -8,7 +8,7 @@ runpod:
   container_disk_gb: 60
   gpu: "NVIDIA GeForce RTX 4090"
   data_center: EU-RO-1
-  network_volume_id: mc60e9gkm5      # 50 GB "manga-comfy" volume; models persist here
+  network_volume_id:                 # "manga-comfy" (mc60e9gkm5) was deleted 2026-11-03; models live on the global volume (/workspace-global)
   comfy_dir: /workspace/runpod-slim/ComfyUI
   ssh_key: ~/.runpod/ssh/runpodctl-ssh-key
 comfy_url: http://127.0.0.1:8188     # used only when target: local
@@ -21,7 +21,7 @@ templates_dir: ../UserData/cap/Comics/Templates
 bubbles_subdir: Thought and Speech Bubbles
 
 # Models (filenames as ComfyUI lists them). Change here if you swap checkpoints.
-checkpoint: waiIllustriousSDXL_v160.safetensors   # on the pod (HF mirror); local has v170
+checkpoint: waiIllustriousSDXL_v170.safetensors   # WAI-illustrious v17 (Civitai); v160 is still on the pod as a fallback
 controlnet: xinsir_controlnet_union-sdxl-1-promax.safetensors
 controlnet_union_type: openpose
 ipadapter: ip-adapter-plus_sdxl_vit-h.safetensors
