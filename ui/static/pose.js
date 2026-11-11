@@ -320,6 +320,23 @@ function psWheel(e) {
   pdraw(); renderPoseSide(true);
 }
 
+/* Turn every figure together about the scene's vertical axis, keeping where they stand relative to each
+   other in depth (c.z, metres) as well as across: how a group pose is viewed from the side or behind. */
+function turnAll(deg) {
+  const { w: W, h: H } = P.scene, a = deg * Math.PI / 180, ca = Math.cos(a), sa = Math.sin(a);
+  const cs = P.scene.chars.filter(c => !c.hidden); if (!cs.length) return;
+  const ks = cs.map(c => c.scale * H / FIG_H), k = ks.reduce((x, y) => x + y, 0) / ks.length;
+  const X = cs.map(c => (c.x * W - W / 2) / k), cx = X.reduce((x, y) => x + y, 0) / X.length;
+  const cz = cs.reduce((x, c) => x + (c.z || 0), 0) / cs.length;
+  cs.forEach((c, i) => {
+    const x = X[i] - cx, z = (c.z || 0) - cz;
+    c.x = (W / 2 + (cx + x * ca + z * sa) * k) / W; c.z = cz - x * sa + z * ca;
+    c.yaw = ((c.yaw + deg + 540) % 360) - 180;
+  });
+  // keep figures that move to the front drawn on top
+  P.scene.chars.sort((p, q) => (p.z || 0) - (q.z || 0));
+}
+
 /* ---------------------------------------------------------------- shot presets */
 /* Framing = how much of the body fills the frame, measured from the top of the head down
    (fractions of the figure's height). The camera words manga storyboards use. */
@@ -363,7 +380,10 @@ function presetSection() {
   return [h("div", { class: "section" }, "Shot presets"),
     h("div", { class: "hint", style: "margin-top:0" }, "Framing"), btns(FRAMINGS, it => applyFraming(it[1])),
     h("div", { class: "hint" }, "Camera"), btns(ANGLES, it => applyAngle(it[1], it[2])),
-    h("div", { class: "hint" }, "Staging"), btns(ARRANGE, it => applyArrange(it[0]))];
+    h("div", { class: "hint" }, "Staging"), btns(ARRANGE, it => applyArrange(it[0])),
+    h("div", { class: "hint" }, "Turn everyone (keeps a group pose together)"),
+    h("div", { class: "btnrow" }, ...[["⟲ 90°", -90], ["⟲ 45°", -45], ["⟳ 45°", 45], ["⟳ 90°", 90], ["180°", 180]].map(([t, d]) =>
+      h("button", { onclick: () => { if (!P.scene.chars.length) return toast("Add characters first", "err"); turnAll(d); pcommit("Turned everyone " + d + "°"); } }, t)))];
 }
 
 /* ---------------------------------------------------------------- library */
@@ -574,9 +594,18 @@ function useGroup(g) {
   const cs = P.scene.chars;
   const replace = !cs.length || confirm(`Use "${g.name}" for the scene? OK replaces the current figures (names carry over, left to right); Cancel adds the group beside them.`);
   const names = replace ? [...cs].sort((a, b) => a.x - b.x) : [];
+  const ga = g.aspect || 0.7;
+  if (replace && !P.panel) {                       // a free scene takes the group's shape
+    const best = ASPECTS.map(([v]) => v.split("x").map(Number)).sort((p, q) => Math.abs(p[0] / p[1] - ga) - Math.abs(q[0] / q[1] - ga))[0];
+    [P.scene.w, P.scene.h] = best; requestAnimationFrame(pfit);
+  }
+  const sa = P.scene.w / P.scene.h;
+  // member places are fractions of the group's own canvas; keep the real spacing on this one
+  const fitS = Math.min(1, sa / ga * 1.0);
   const fresh = g.members.map((m, i) => {
-    const c = newChar(`${g.id}#${i}`, m.x, m.y);
-    Object.assign(c, { scale: m.scale, gender: m.gender || "girl", label: m.label || c.label });
+    const c = newChar(`${g.id}#${i}`, 0.5 + (m.x - 0.5) * ga / sa * fitS, m.y);
+    m = { ...m, scale: m.scale * fitS };
+    Object.assign(c, { scale: m.scale, z: m.z || 0, gender: m.gender || "girl", label: m.label || c.label });
     const old = names[i]; if (old) Object.assign(c, { name: old.name, series: old.series, tags: old.tags, gender: old.gender || c.gender, label: old.label });
     if (!replace) c.x = clamp(c.x * 0.5 + 0.5, 0.05, 0.95);
     return c;

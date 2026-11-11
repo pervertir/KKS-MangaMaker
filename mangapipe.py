@@ -252,7 +252,7 @@ def main(argv=None):
     p = sub.add_parser("page");    p.add_argument("script", type=Path); p.add_argument("--page", type=int, action="append"); p.add_argument("--pdf", action="store_true"); p.add_argument("--out", type=Path)
     p = sub.add_parser("layouts"); p.add_argument("--ltr", action="store_true"); p.add_argument("--out", type=Path)
     p = sub.add_parser("pod");     p.add_argument("action", choices=["create", "setup", "restart", "status", "url", "start", "stop", "remove", "ssh"]); p.add_argument("cmdline", nargs="?", default="")
-    p = sub.add_parser("poses");   p.add_argument("action", choices=["build"]); p.add_argument("--src", type=Path); p.add_argument("--out", type=Path)
+    p = sub.add_parser("poses");   p.add_argument("action", choices=["build", "build-h"]); p.add_argument("--src", type=Path); p.add_argument("--out", type=Path)
     p = sub.add_parser("run");     p.add_argument("shot_dir", type=Path); p.add_argument("--seed", type=int); p.add_argument("--dry-run", action="store_true"); p.add_argument("--no-compose", action="store_true"); p.add_argument("--refresh-lora", action="store_true")
     a = ap.parse_args(argv)
     cfg = Config(a.config)
@@ -279,6 +279,11 @@ def main(argv=None):
             return 0
         if a.cmd == "pod":
             return pod_cmd(cfg, a.action, a.cmdline)
+        if a.cmd == "poses" and a.action == "build-h":
+            from mp.khanim import build_h_library   # needs: pip install UnityPy
+            r = build_h_library(a.src or cfg.h_anim_dir, a.out or Path(__file__).resolve().parent / "poses" / "h_library.json", log)
+            log(f"{r['count']} H-scene group poses -> {r['path']}  {r['by_kind']}")
+            return 0
         if a.cmd == "poses":
             from mp.kkpose import build_library
             src = a.src or cfg.studio_pose_dir

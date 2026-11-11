@@ -187,7 +187,14 @@ def pose_library() -> dict:
     if not lib.exists() and CFG.studio_pose_dir.is_dir():
         build_library(CFG.studio_pose_dir, lib)
     poses = basic_poses()
-    for f in (lib, POSES / "custom.json"):
+    hlib = POSES / "h_library.json"
+    if not hlib.exists() and CFG.h_anim_dir.is_dir():
+        try:   # needs UnityPy; without it the H positions are simply not offered
+            from mp.khanim import build_h_library
+            build_h_library(CFG.h_anim_dir, hlib)
+        except Exception as e:  # noqa: BLE001
+            sys.stderr.write(f"[ui] H-scene poses not built: {e}\n")
+    for f in (lib, hlib, POSES / "custom.json"):
         if f.exists():
             poses += json.loads(f.read_text(encoding="utf-8")).get("poses", [])
     from mp.kkpose import KINDS, pose_kind
@@ -196,7 +203,9 @@ def pose_library() -> dict:
     for p in poses:   # older libraries and saved poses get a type too
         if not p.get("kind") and p.get("body"):
             p["kind"] = pose_kind(p, " ".join([p.get("group", ""), p.get("name", "")]))
-    return {"poses": poses, "kinds": ["Group poses", *KINDS]}
+    from mp.khanim import CATEGORIES
+    adult = list(dict.fromkeys(CATEGORIES.values()))
+    return {"poses": poses, "kinds": ["Group poses", *KINDS, *adult]}
 
 
 def save_custom_pose(pose: dict) -> dict:
@@ -208,7 +217,7 @@ def save_custom_pose(pose: dict) -> dict:
              **{k: pose[k] for k in ("body", "hands", "feet") if k in pose}}
     from mp.kkpose import pose_kind
     if pose.get("members"):   # a group pose: several figures with their places on the canvas
-        keep = ("body", "hands", "x", "y", "scale", "label", "gender")
+        keep = ("body", "hands", "x", "y", "scale", "z", "label", "gender")
         entry.update(id=pid.replace("custom/", "group/", 1), kind="Group poses", aspect=float(pose.get("aspect") or 0.7),
                      members=[{k: m[k] for k in keep if k in m} for m in pose["members"] if m.get("body")])
     else:
@@ -529,7 +538,7 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == "/api/pod":
                 return self.json(pod_status())
             if u.path == "/api/poses":
-                return self.cached_json("poses", pose_library, deps=[POSES / "library.json", POSES / "custom.json", CFG.studio_pose_dir])
+                return self.cached_json("poses", pose_library, deps=[POSES / "library.json", POSES / "h_library.json", POSES / "custom.json", CFG.studio_pose_dir])
             if u.path == "/api/cast":
                 return self.json({"cast": json.loads(CAST.read_text(encoding="utf-8")) if CAST.exists() else []})
             if u.path == "/api/pose/scene":
