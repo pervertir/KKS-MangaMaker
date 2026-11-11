@@ -719,8 +719,15 @@ function snapBox(box, moving, thr) {
 /* ================================================================ pointer */
 const DRAG_TOOLS = { panel: 1, caption: 1, text: 1, sfx: 1, bubble: 1, vbubble: 1, tone: 1, speed: 1 };
 let spaceDown = false;
+cv.addEventListener("contextmenu", e => {
+  e.preventDefault();
+  const r = cv.getBoundingClientRect(), hit = hitLayer(toPage(e.clientX - r.left, e.clientY - r.top));
+  if (hit) { S.sel = hit.id; refreshPanels(); requestDraw(); }
+  popMenu(e.clientX, e.clientY, layerMenu());
+});
 cv.addEventListener("pointerdown", e => {
   if (!S.doc) return;
+  if (e.button === 2) return;
   hideInline(true);
   try { cv.setPointerCapture(e.pointerId); } catch { }
   const r = cv.getBoundingClientRect(), sp = { x: e.clientX - r.left, y: e.clientY - r.top }, p = toPage(sp.x, sp.y);
@@ -1050,8 +1057,8 @@ document.addEventListener("pointerdown", e => {
   deleteScope = e.target.closest("#pagenav, #overview") ? "pages" : e.target.closest("#stage, #layers, #props, #toolbar") ? "layers" : deleteScope;
 }, true);
 function deleteSelected() {
-  if (deleteScope === "pages" || (!selL() && document.activeElement?.closest?.("#pagenav, #overview"))) return pageOps.del(true);
-  const l = selL();
+  const l = selL();                         // a selected layer always wins; a page only when no layer is selected
+  if (!l && (deleteScope === "pages" || !$("#overview").hidden)) return pageOps.del(true);
   if (!l) return status("Nothing selected to delete");
   if (l.locked) return toast("That layer is locked: unlock it first (⌘L)", "err");
   act.remove(); toast(`Deleted ${layerName(l)} — ⌘Z brings it back`);
@@ -1258,6 +1265,7 @@ const act = {
     layers().splice(layers().indexOf(l) + 1, 0, b); commit("Split panel"); requestDraw();
   },
 };
+$("#laydel").onclick = () => deleteSelected();
 document.addEventListener("click", e => { const b = e.target.closest("[data-act]"); if (b && act[b.dataset.act]) act[b.dataset.act](); });
 
 /* ================================================================ layouts */
@@ -1503,6 +1511,35 @@ function layerName(l) {
   const t = (l.text || "").replace(/\s+/g, " ").trim();
   return (l.sfx ? "SFX" : l.type === "bubble" || l.type === "vbubble" ? "Bubble" : l.type === "caption" ? "Caption" : "Text") + (t ? ` · ${t}` : "");
 }
+/* monochrome line icons (currentColor), so they follow the theme instead of emoji colours */
+const UI_ICON = {
+  eye: '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+  eyeOff: '<path d="M3 3l18 18M10.6 5.1A10 10 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.2 4.2M6.6 6.6C3.8 8.4 2 12 2 12s3.6 7 10 7a9.6 9.6 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/>',
+  lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+  unlock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.5-2"/>',
+  trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
+};
+function svgIcon(name) { return `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${UI_ICON[name]}</svg>`; }
+function svgBtn(name, cls, title, fn) {
+  const b = h("button", { class: "ib " + (cls || ""), title, onclick: e => { e.stopPropagation(); fn(); } }); b.innerHTML = svgIcon(name); return b;
+}
+/* a small picture of the layer itself, like Photoshop's layer thumbnails */
+function layerThumb(l) {
+  const T = 34, c = h("canvas", { class: "lthumb", width: T * 2, height: T * 2 });
+  const g = c.getContext("2d"), pad = 2;
+  const w = Math.max(1, l.w), hh = Math.max(1, l.h), s = (T * 2 - pad * 2) / Math.max(w, hh);
+  g.fillStyle = "#d4d4da"; g.fillRect(0, 0, T * 2, T * 2);
+  g.save(); g.translate(T - (l.x + w / 2) * s, T - (l.y + hh / 2) * s); g.scale(s, s);
+  try { drawLayer(g, { ...l, visible: true, opacity: 1 }, { rs: s, export: true }); } catch { }
+  g.restore();
+  return c;
+}
+function layerMenu() {
+  return [["Delete", deleteSelected, "Del", !selL()], ["Duplicate", act.duplicate, sc("Duplicate layer")], null,
+    ["Bring forward", act.layerUp, sc("Bring forward")], ["Send backward", act.layerDown, sc("Send backward")],
+    ["Bring to front", act.toFront, sc("Bring to front")], ["Send to back", act.toBack, sc("Send to back")], null,
+    ["Lock / unlock", act.toggleLock, sc("Lock / unlock")], ["Hide / show", act.toggleHide, sc("Hide / show")]];
+}
 function renderLayers() {
   const box = $("#layers"); box.innerHTML = "";
   const ls = layers();
@@ -1518,10 +1555,12 @@ function renderLayers() {
         const id = e.dataTransfer.getData("text/layer"), src = ls.find(q => q.id === id); if (!src || src === l) return;
         ls.splice(ls.indexOf(src), 1); ls.splice(ls.indexOf(l) + 1, 0, src); commit("Reordered"); requestDraw();
       } },
-      h("button", { class: l.visible ? "" : "offv", title: "Show/hide", onclick: e => { e.stopPropagation(); l.visible = !l.visible; commit(); requestDraw(); } }, "👁"),
-      h("span", { class: "ic" }, TYPE_IC[l.type]),
+      svgBtn(l.visible ? "eye" : "eyeOff", l.visible ? "" : "offv", "Show / hide", () => { l.visible = !l.visible; commit(); requestDraw(); }),
+      layerThumb(l),
       h("span", { class: "nm" }, layerName(l)),
-      h("button", { class: l.locked ? "" : "offv", title: "Lock", onclick: e => { e.stopPropagation(); l.locked = !l.locked; commit(); requestDraw(); } }, "🔒"));
+      svgBtn(l.locked ? "lock" : "unlock", l.locked ? "" : "offv", l.locked ? "Unlock" : "Lock", () => { l.locked = !l.locked; commit(); requestDraw(); }),
+      svgBtn("trash", "del", "Delete layer (Delete)", () => { S.sel = l.id; deleteSelected(); }));
+    row.addEventListener("contextmenu", e => { e.preventDefault(); S.sel = l.id; refreshPanels(); requestDraw(); popMenu(e.clientX, e.clientY, layerMenu()); });
     box.append(row);
   });
   if (!ls.length) box.append(h("div", { class: "hint" }, "Empty page. Choose a layout or draw panels with P."));

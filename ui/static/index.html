@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MangaMaker</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bangers&family=Comic+Neue:wght@400;700&family=Patrick+Hand&family=Kalam:wght@400;700&family=Indie+Flower&family=Architects+Daughter&family=Luckiest+Guy&family=Permanent+Marker&family=Shojumaru&family=Rubik+Wet+Paint&family=Creepster&family=Bungee+Shade&family=Anton&family=Black+Ops+One&family=Rampart+One&family=Dela+Gothic+One&family=Reggae+One&family=RocknRoll+One&family=Potta+One&family=Yusei+Magic&family=Mochiy+Pop+One&family=Hachi+Maru+Pop&family=Zen+Maru+Gothic:wght@400;700&family=Kosugi+Maru&family=Zen+Kurenaido&family=Kaisei+Decol:wght@400;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/app.css">
@@ -65,7 +66,7 @@
           <button data-act="layerUp" title="Bring forward ( ] )">▲</button>
           <button data-act="layerDown" title="Send backward ( [ )">▼</button>
           <button data-act="duplicate" title="Duplicate (Ctrl+D)">⧉</button>
-          <button data-act="remove" title="Delete (Del)">🗑</button>
+          <button id="laydel" title="Delete the selected layer (Delete)"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>
         </span>
       </div>
       <div id="layers" class="dockbody"></div>

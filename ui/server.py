@@ -411,6 +411,8 @@ class Handler(BaseHTTPRequestHandler):
         u = urlparse(self.path)
         q = {k: v[0] for k, v in parse_qs(u.query).items()}
         try:
+            if u.path == "/favicon.ico":
+                return self.send(200, (STATIC / "favicon.svg").read_bytes(), "image/svg+xml", cache=True)
             if u.path in ("/", "/index.html"):
                 return self.send(200, (STATIC / "index.html").read_bytes(), "text/html; charset=utf-8")
             if u.path.startswith("/static/"):

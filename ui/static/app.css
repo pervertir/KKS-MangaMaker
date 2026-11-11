@@ -145,6 +145,11 @@ textarea.big { width: 100%; min-height: 64px; resize: vertical; font-family: MMC
 .layer:hover { background: var(--panel2); }
 .layer.on { background: #34466a; }
 .layer .ic { width: 18px; text-align: center; color: var(--muted); }
+.layer .lthumb { width: 34px; height: 34px; flex: none; border-radius: 3px; border: 1px solid var(--line); background: #fff; }
+.layer button.ib { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; padding: 0; color: #c9c9d1; }
+.layer button.ib:hover { color: #fff; background: #ffffff14; }
+.layer button.del { opacity: 0; } .layer:hover button.del, .layer.on button.del { opacity: .75; }
+.layer button.del:hover { color: var(--danger); opacity: 1; }
 .layer .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .layer button { padding: 0 4px; background: transparent; border: none; color: var(--muted); font-size: 12px; }
 .layer button.offv { opacity: .35; }
