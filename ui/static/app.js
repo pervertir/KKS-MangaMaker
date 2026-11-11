@@ -594,6 +594,7 @@ function draw() {
   // overlays
   const px = 1 / v.s;
   if (S.showOrder) drawPanelOrder(px);
+  if (S.showPrint) drawPrintGuides(px);
   if (S.drag?.creating) {
     const c = S.drag.creating;
     ctx.save(); ctx.setLineDash([6 * px, 4 * px]); ctx.strokeStyle = "#4c8dff"; ctx.lineWidth = 1.5 * px;
@@ -606,6 +607,17 @@ function draw() {
   }
   const s = selL();
   if (s && !ad) drawSelection(s, px);
+}
+/* print guides on the 1800x2700 page (B5-ish tankobon at 350 dpi): trim 3 mm in from the edge (the bleed),
+   safe area 5 mm inside the trim. Art that must survive the cut stays inside the green line. */
+function drawPrintGuides(px) {
+  const mm = W() / 182 * 1, bleed = 3 * mm, safe = bleed + 5 * mm;
+  ctx.save(); ctx.lineWidth = 1.5 * px; ctx.setLineDash([10 * px, 6 * px]);
+  ctx.strokeStyle = "#ff4f7b"; ctx.strokeRect(bleed, bleed, W() - 2 * bleed, H() - 2 * bleed);
+  ctx.strokeStyle = "#3ccf8e"; ctx.strokeRect(safe, safe, W() - 2 * safe, H() - 2 * safe);
+  ctx.setLineDash([]); ctx.fillStyle = "#ff4f7b"; ctx.font = `${12 * px}px sans-serif`;
+  ctx.fillText("trim", bleed + 4 * px, bleed - 4 * px); ctx.fillStyle = "#3ccf8e"; ctx.fillText("safe area", safe + 4 * px, safe + 14 * px);
+  ctx.restore();
 }
 function drawPanelOrder(px) {
   const order = panelOrder(layers());
@@ -1015,6 +1027,7 @@ function buildToolbar() {
   tb.append(h("div", { class: "spacer" }), h("button", { title: "Keyboard shortcuts (?)", onclick: shortcutSheet, style: "font-size:13px;font-weight:700" }, "?"));
 }
 function setTool(t) {
+  if (t === "bubble" && !S.cat?.bubbles?.length) { t = "vbubble"; status("No bubble templates installed: using drawn bubbles"); }
   S.tool = t; if (S.adjust) exitAdjust();
   $$("#toolbar button").forEach(b => b.classList.toggle("on", b.dataset.tool === t));
   stage.classList.toggle("hand", t === "hand");
@@ -1096,6 +1109,7 @@ const SHORTCUTS = [
   ["View", "m", "Show / hide panel order", () => { S.showOrder = !S.showOrder; requestView(); }],
   ["View", ";", "Snapping on / off", () => { S.showGuides = !S.showGuides; renderOptions(); toast("Snapping " + (S.showGuides ? "on" : "off")); }],
   ["View", "space", "Pan while held", null],
+  ["View", "mod+;", "Print guides on / off", () => { S.showPrint = !S.showPrint; requestView(); }],
   // pipeline
   ["Pipeline", "mod+u", "Shots (edit, grab, render)", () => shotDialog(selL()?.shot || null)],
   ["Pipeline", "`", "Jobs log", () => toggleJobs()],
@@ -1246,6 +1260,30 @@ function applyLayout(rects, label) {
   page().layers = [...fresh, ...keep];
   S.sel = null; commit("Layout " + label); requestDraw(); renderPages();
 }
+/* classic manga page grids, built in so a page can be laid out with no template pack installed:
+   rows of relative widths, then relative row heights */
+const PRESET_LAYOUTS = [
+  ["Splash", [[1]], [1]], ["Two tiers", [[1], [1]], [1, 1]], ["Three tiers", [[1], [1], [1]], [1, 1, 1]],
+  ["4-koma", [[1], [1], [1], [1]], [1, 1, 1, 1]], ["Classic six", [[1, 1], [1, 1], [1, 1]], [1, 1, 1]],
+  ["Establishing + 4", [[1], [1, 1], [1, 1]], [1.3, 1, 1]], ["1 · 2 · 1", [[1], [1, 1], [1]], [1, 1.2, 1]],
+  ["Action stack", [[2, 1], [1], [1, 2]], [1, 1.4, 1]], ["Dialogue grid", [[1, 1, 1], [1, 1], [1, 1, 1]], [1, 1.2, 1]],
+  ["Big reveal", [[1, 1], [1]], [1, 2.2]], ["Tall + stack", [[1], [1, 1, 1]], [2, 1]], ["Nine grid", [[1, 1, 1], [1, 1, 1], [1, 1, 1]], [1, 1, 1]],
+];
+function presetThumb(rows, hs) {
+  const c = document.createElement("canvas"); c.width = 120; c.height = 180;
+  const g = c.getContext("2d"); g.fillStyle = "#fff"; g.fillRect(0, 0, 120, 180);
+  g.strokeStyle = "#111"; g.lineWidth = 2;
+  for (const [x, y, w, hh] of gridRects(rows, hs)) g.strokeRect(x / W() * 120, y / H() * 180, w / W() * 120, hh / H() * 180);
+  return c;
+}
+function presetTiles(onPick) {
+  const t = h("div", { class: "tiles" });
+  for (const [name, rows, hs] of PRESET_LAYOUTS) {
+    const ord = S.doc.reading === "rtl" ? rows.map(r => [...r].reverse()) : rows;
+    t.append(h("div", { class: "tile page", title: name, onclick: () => onPick(gridRects(ord, hs), name) }, presetThumb(ord, hs), h("div", { class: "cap" }, name)));
+  }
+  return t;
+}
 function layoutDialog() {
   const box = modal("Page layout", "");
   const grid = h("div", { class: "layoutgrid" });
@@ -1266,6 +1304,8 @@ function layoutDialog() {
         applyLayout(gridRects(rows, hs, +mIn.value, +gIn.value), "grid"); closeModal();
       } }, "Apply grid")),
     h("p", { class: "hint" }, "Applying a layout replaces this page's panels. Renders already placed move into the new panels in reading order; bubbles and text stay."),
+    h("div", { class: "section" }, "Built-in"), presetTiles((r, n) => { applyLayout(r, n); closeModal(); }),
+    S.cat.layouts.length ? h("div", { class: "section" }, "Template pack") : null,
     grid);
 }
 
@@ -1495,6 +1535,7 @@ function renderLibrary() {
     return;
   }
   if (S.libTab === "bubbles") {
+    if (!S.cat.bubbles.length) { lib.append(h("div", { class: "hint" }, "No bubble templates installed (templates_dir in config). The drawn bubble tool (O) needs none.")); return; }
     lib.append(h("div", { class: "hint" }, "Click to pick for the bubble tool (or to swap the selected bubble). Drag onto the page to place."));
     const t = h("div", { class: "tiles" });
     for (const b of S.cat.bubbles) {
@@ -1509,7 +1550,10 @@ function renderLibrary() {
     lib.append(t); return;
   }
   if (S.libTab === "layouts") {
-    lib.append(h("div", { class: "hint" }, "Click to apply to this page (renders already placed carry over in reading order)."));
+    lib.append(h("div", { class: "hint" }, "Click to apply to this page (renders already placed carry over in reading order)."),
+      h("div", { class: "section" }, "Built-in"), presetTiles((r, n) => applyLayout(r, n)));
+    if (!S.cat.layouts.length) return;
+    lib.append(h("div", { class: "section" }, "Template pack"));
     const t = h("div", { class: "tiles" });
     for (const L of S.cat.layouts) t.append(h("div", { class: "tile page", title: `Template ${L.n}: ${L.rects.length} panels`,
       onclick: () => applyLayout(L.rects, "#" + L.n) }, h("img", { src: thumb(L.ref, 160), loading: "lazy" }), h("div", { class: "cap" }, `#${L.n} · ${L.rects.length}`)));
@@ -1717,7 +1761,8 @@ const MENUS = {
   View: () => [["Fit page", fitView, sc("Fit page")], ["Actual pixels", () => zoomAt(1 / S.view.s, ...center()), sc("Actual pixels")],
     ["Zoom in", () => zoomAt(1.25, ...center()), sc("Zoom in")], ["Zoom out", () => zoomAt(0.8, ...center()), sc("Zoom out")], null,
     [(S.showOrder ? "Hide" : "Show") + " panel order", () => { S.showOrder = !S.showOrder; requestView(); }, sc("Show / hide panel order")],
-    [(S.showGuides ? "Disable" : "Enable") + " snapping", () => { S.showGuides = !S.showGuides; renderOptions(); }, sc("Snapping on / off")]],
+    [(S.showGuides ? "Disable" : "Enable") + " snapping", () => { S.showGuides = !S.showGuides; renderOptions(); }, sc("Snapping on / off")],
+    [(S.showPrint ? "Hide" : "Show") + " print guides (trim / safe area)", () => { S.showPrint = !S.showPrint; requestView(); }, sc("Print guides on / off")]],
   Pipeline: () => [["Pose studio", () => setMode("pose"), sc("Pose studio")], ["Pose the selected panel…", () => poseForPanel(selL()), "", selL()?.type !== "panel"], null, ["Shots…", () => shotDialog(selL()?.shot || null), sc("Shots (edit, grab, render)")], ["New shot…", () => shotDialog(null, true)], null,
     ["Pod status", () => refreshPod(true)], ["Open ComfyUI on the pod", () => S.pod?.url ? window.open(S.pod.url, "_blank") : toast("Pod URL unknown"), "", !S.pod?.url],
     ["Start pod", () => podAction("start")], ["Stop pod (ends GPU billing)", () => podAction("stop")], null, ["Jobs", () => toggleJobs(true), sc("Jobs log")]],
@@ -1988,7 +2033,8 @@ new ResizeObserver(resize).observe(stage);
     const doc = newDoc("Chapter 1");
     const L = S.cat.layouts.find(l => l.n === 13) || S.cat.layouts[0];
     loadDoc(doc, "");
-    if (L) { applyLayout(L.rects, "#" + L.n); S.undo = []; S.dirty = false; setName(""); }
+    if (L) applyLayout(L.rects, "#" + L.n); else applyLayout(gridRects(...PRESET_LAYOUTS[6].slice(1)), PRESET_LAYOUTS[6][0]);
+    S.undo = []; S.dirty = false; setName("");
   }
   localStorage.removeItem("mm.autosave");
   refreshPod(); setInterval(refreshPod, 30000);

@@ -95,8 +95,10 @@ _lock = threading.Lock()
 
 
 def _cached_json(name: str, build):
+    """Catalog built once per template folder (the key changes when templates_dir does)."""
+    tag = hashlib.sha1(str(TPL.resolve()).encode()).hexdigest()[:8]
     with _lock:
-        dest = CACHE / name
+        dest = CACHE / f"{Path(name).stem}_{tag}.json"
         if dest.exists():
             return json.loads(dest.read_text())
         data = build()

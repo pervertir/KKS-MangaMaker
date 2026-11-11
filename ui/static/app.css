@@ -260,3 +260,4 @@ kbd { font: 11px ui-monospace, Menlo, monospace; background: #1b1b1e; border: 1p
 .pschar:hover { background: var(--panel2); } .pschar.on { border-color: var(--accent); background: #2f3a52; }
 .pschar .hint { margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 110px; }
 .pschar button { padding: 0 4px; }
+.tile canvas { max-width: 92%; max-height: 92%; pointer-events: none; box-shadow: 0 0 0 1px #ccc; }
