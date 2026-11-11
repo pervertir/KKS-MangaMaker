@@ -51,7 +51,7 @@ class Comfy:
                     problems.append(f"node {nid} ({ct}): unknown input '{k}'")
                     continue
                 typ = allinputs[k][0]
-                if ct == "LoadImage" and k == "image":
+                if ct in ("LoadImage", "LoadImageMask") and k == "image":
                     continue  # uploaded into input/<subfolder>/, which the combo list does not show
                 if isinstance(typ, list) and not isinstance(v, list):
                     if v not in typ:

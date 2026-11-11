@@ -113,6 +113,10 @@ def load_shot(shot_dir: Path, cfg) -> dict:
     if ref and shot["_reference_path"] is None:
         raise ShotError(f"reference image listed but missing: {shot_dir / ref}")
 
+    # Optional depth capture (xukmi Depth item, same camera): adds a depth ControlNet pass.
+    depth = shot.get("depth", "depth.png")
+    shot["_depth_path"] = (shot_dir / depth) if depth and (shot_dir / depth).exists() else None
+
     if shot["identity"] not in ("auto", "lora", "ipadapter", "reactor", "none"):
         raise ShotError(f"identity must be auto|lora|ipadapter|reactor|none, got {shot['identity']}")
     out = shot_dir / "out"
