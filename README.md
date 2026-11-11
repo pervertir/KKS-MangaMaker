@@ -164,7 +164,10 @@ top (or Ctrl/⌘+Shift+P):
   six, ...) and print guides (trim and safe area, View menu) need no template pack.
 - **Pose**: builds the OpenPose image for a shot instead of a CharaStudio capture. Pick a pose from the
   library (click, or drag onto the canvas) for each character, then turn, tilt, rotate, size and mirror
-  it, and drag single joints to fine-tune (the wrist carries the hand). Each figure gets a name and
+  it, and pose by dragging: a hand or foot pulls its whole arm or leg along (IK with soft limits:
+  bones keep their length, reach eases out at full extension, elbows and knees keep the side they bend
+  to), an elbow or knee swings from the shoulder or hip, and the nose turns the head. Alt-drag moves a
+  single joint. The selection box has the same scale and rotation handles as a page layer. Each figure gets a name and
   series (LoRA lookup as usual) or stays unnamed (`generic: true`, described by its appearance tags),
   plus girl/boy for the `1girl, 1boy` count tags. **Save & render** writes `shots/<name>/pose.png`,
   `pose_scene.json` (reopen and edit it later) and the sidecar's characters and prompt, then renders

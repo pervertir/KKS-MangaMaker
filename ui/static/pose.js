@@ -6,7 +6,7 @@
 const P = {
   lib: null, byId: new Map(), packs: [], filter: { q: "", pack: "" },
   scene: null, sel: null, joint: null, undo: [], redo: [], shot: "", panel: null,
-  view: { s: 1, ox: 0, oy: 0 }, drag: null, showHands: true, dirty: false,
+  view: { s: 1, ox: 0, oy: 0 }, drag: null, showHands: true, dirty: false, ik: true,
 };
 
 /* OpenPose drawing tables (COCO-18 body as ControlNet's preprocessors draw it) */
@@ -143,11 +143,15 @@ function pdrawNow() {
     drawSkeleton(g, pr, unit, { alpha: c.hidden ? 0.15 : 1, hands: P.showHands });
     if (c.id === P.sel) {
       const b = bounds(pr);
-      g.strokeStyle = "#4c8dff"; g.lineWidth = 1.5 / s; g.setLineDash([6 / s, 4 / s]); g.strokeRect(b.x, b.y, b.w, b.h); g.setLineDash([]);
-      // scale handle (bottom-right) and rotate handle (top)
-      g.fillStyle = "#4c8dff"; g.fillRect(b.x + b.w - 5 / s, b.y + b.h - 5 / s, 10 / s, 10 / s);
-      g.beginPath(); g.arc(b.x + b.w / 2, b.y - 18 / s, 6 / s, 0, Math.PI * 2); g.fill();
-      g.beginPath(); g.moveTo(b.x + b.w / 2, b.y); g.lineTo(b.x + b.w / 2, b.y - 12 / s); g.stroke();
+      // same look as a selected layer on the page: box, 8 square handles, rotation knob on a stem
+      g.strokeStyle = "#4c8dff"; g.lineWidth = 1.5 / s; g.strokeRect(b.x, b.y, b.w, b.h);
+      const rr = 5 / s;
+      for (const [hx, hy] of HANDLES) {
+        const x = b.x + (hx + 1) / 2 * b.w, y = b.y + (hy + 1) / 2 * b.h;
+        g.fillStyle = "#fff"; g.fillRect(x - rr, y - rr, rr * 2, rr * 2); g.strokeRect(x - rr, y - rr, rr * 2, rr * 2);
+      }
+      g.beginPath(); g.moveTo(b.x + b.w / 2, b.y); g.lineTo(b.x + b.w / 2, b.y - 34 / s); g.stroke();
+      g.fillStyle = "#4c8dff"; g.beginPath(); g.arc(b.x + b.w / 2, b.y - 34 / s, 6 / s, 0, Math.PI * 2); g.fill();
       // joints get a ring so they read as draggable
       g.strokeStyle = "#fff"; g.lineWidth = 1.2 / s;
       for (const p of pr.body) { g.beginPath(); g.arc(p[0], p[1], 7 / s, 0, Math.PI * 2); g.stroke(); }
@@ -168,6 +172,64 @@ function jointPos(pr, key) {
 }
 const jointLabel = key => typeof key === "number" ? JOINT_NAMES[key] : `${key[1] === "L" ? "left" : "right"} hand point ${key.slice(2)}`;
 
+/* ---------------------------------------------------------------- IK */
+/* Drag a hand or foot and the arm or leg follows (two-bone IK in the picture plane), drag an elbow or
+   knee and the limb swings from the shoulder or hip, drag the nose and the head turns about the neck.
+   Soft constraints: bones keep their length, reach eases out near full extension instead of snapping
+   straight, a limb never folds through itself (it keeps the side it bends to), and nothing collapses
+   to zero length. Alt-drag moves a single joint freely. Works on the figure as projected, so it can
+   be combined with turning, mirroring and the joint edits. */
+const LIMB_CHAINS = [[2, 3, 4], [5, 6, 7], [8, 9, 10], [11, 12, 13]];
+const v2 = (a, b) => [b[0] - a[0], b[1] - a[1]], len2 = v => Math.hypot(v[0], v[1]) || 1e-6;
+function setFinal(c, base, key, pos, k) {
+  // the edit that puts joint `key` at `pos`, minus whatever its carrier (nose for the face) adds
+  let carry = [0, 0];
+  for (const [src, deps] of Object.entries(CARRY)) if (deps.includes(key) && c.edits[src]) carry = c.edits[src];
+  c.edits[key] = [(pos[0] - base[key][0]) / k - carry[0], (pos[1] - base[key][1]) / k - carry[1]];
+}
+function ikDrag(d, c, pt) {
+  if (typeof d.key !== "number") return false;
+  const { w, h } = P.scene, cur = d.pr.body, k = d.pr.k;
+  const base = project({ ...d.orig, edits: {} }, w, h).body;
+  c.edits = deep(d.orig.edits);
+  const chain = LIMB_CHAINS.find(ch => ch.includes(d.key) && ch[0] !== d.key);
+  if (chain) {
+    const [ri, mi, ei] = chain, R = cur[ri], M = cur[mi], E = cur[ei];
+    const L1 = len2(v2(R, M)), L2 = len2(v2(M, E));
+    if (d.key === ei) {                                       // end effector: two-bone solve
+      let t = v2(R, [pt.x, pt.y]), dist = len2(t);
+      const u = [t[0] / dist, t[1] / dist], dmax = L1 + L2, knee = 0.96 * dmax, dmin = Math.abs(L1 - L2) + 0.06 * dmax;
+      if (dist > knee) dist = knee + (dmax - knee) * (1 - Math.exp(-(dist - knee) / (dmax - knee)));   // soft reach
+      dist = Math.max(dist, dmin);
+      const a = (L1 * L1 - L2 * L2 + dist * dist) / (2 * dist), hh = Math.sqrt(Math.max(0, L1 * L1 - a * a));
+      const side = Math.sign(u[0] * (M[1] - R[1]) - u[1] * (M[0] - R[0])) || d.side || 1;       // keep the bend side
+      d.side = side;
+      const n = [-u[1] * side, u[0] * side];
+      const mid = [R[0] + u[0] * a + n[0] * hh, R[1] + u[1] * a + n[1] * hh], end = [R[0] + u[0] * dist, R[1] + u[1] * dist];
+      setFinal(c, base, mi, mid, k); setFinal(c, base, ei, end, k);
+      return true;
+    }
+    // middle joint: swing the upper bone from the root, the lower bone keeps its direction
+    const t = v2(R, [pt.x, pt.y]), tl = len2(t);
+    const mid = [R[0] + t[0] / tl * L1, R[1] + t[1] / tl * L1], dm = v2(M, mid);
+    setFinal(c, base, mi, mid, k); setFinal(c, base, ei, [E[0] + dm[0], E[1] + dm[1]], k);
+    return true;
+  }
+  if (d.key === 0 || [14, 15, 16, 17].includes(d.key)) {    // head: rotate the face points about the neck
+    const N = cur[1], a0 = Math.atan2(cur[d.key][1] - N[1], cur[d.key][0] - N[0]), a1 = Math.atan2(pt.y - N[1], pt.x - N[0]);
+    let da = a1 - a0; da = Math.atan2(Math.sin(da), Math.cos(da));
+    da = Math.sign(da) * Math.min(Math.abs(da), 1.4);                   // soft limit ~80° either way
+    const cs = Math.cos(da), sn = Math.sin(da);
+    delete c.edits[0];                                                   // face points get their own edits below
+    for (const i of [0, 14, 15, 16, 17]) {
+      const q = v2(N, cur[i]);
+      setFinal(c, base, i, [N[0] + q[0] * cs - q[1] * sn, N[1] + q[0] * sn + q[1] * cs], k);
+    }
+    return true;
+  }
+  return false;                                                          // neck, hips: plain joint move
+}
+
 /* ---------------------------------------------------------------- pointer */
 function phit(pt) {
   const { w, h } = P.scene, r = 9 / P.view.s;
@@ -176,8 +238,12 @@ function phit(pt) {
     const pr = project(c, w, h);
     if (pr) {
       const b = bounds(pr);
-      if (Math.hypot(pt.x - (b.x + b.w), pt.y - (b.y + b.h)) < r * 1.3) return { kind: "scale", c, pr, b };
-      if (Math.hypot(pt.x - (b.x + b.w / 2), pt.y - (b.y - 18 / P.view.s)) < r * 1.3) return { kind: "rotate", c, pr, b };
+      if (Math.hypot(pt.x - (b.x + b.w / 2), pt.y - (b.y - 34 / P.view.s)) < r * 1.2) return { kind: "rotate", c, pr, b };
+      for (const [hx, hy] of HANDLES) {
+        const x = b.x + (hx + 1) / 2 * b.w, y = b.y + (hy + 1) / 2 * b.h;
+        if (Math.abs(pt.x - x) < r && Math.abs(pt.y - y) < r)       // scale about the opposite handle
+          return { kind: "scale", c, pr, b, anchor: [b.x + (1 - hx) / 2 * b.w, b.y + (1 - hy) / 2 * b.h], hx, hy };
+      }
       let best = null, bd = r;
       pr.body.forEach((p, i) => { const d = Math.hypot(p[0] - pt.x, p[1] - pt.y); if (d < bd) { bd = d; best = i; } });
       if (P.showHands) pr.hands.forEach((hd, s) => hd.forEach((p, i) => { if (i === 0) return; const d = Math.hypot(p[0] - pt.x, p[1] - pt.y); if (d < bd * 0.8) { bd = d; best = `h${s ? "R" : "L"}${i}`; } }));
@@ -207,7 +273,8 @@ function psMove(e) {
   const d = P.drag;
   if (!d) {
     const hit = phit(pt);
-    pcv().style.cursor = !hit ? "default" : hit.kind === "joint" ? "crosshair" : hit.kind === "scale" ? "nwse-resize" : hit.kind === "rotate" ? "grab" : "move";
+    pcv().style.cursor = !hit ? "default" : hit.kind === "joint" ? "crosshair" : hit.kind === "rotate" ? "grab" : hit.kind === "move" ? "move"
+      : (hit.hx === 0 ? "ns-resize" : hit.hy === 0 ? "ew-resize" : hit.hx === hit.hy ? "nwse-resize" : "nesw-resize");
     const hj = hit?.kind === "joint" ? hit.key : null;
     if (hj !== P.hoverJoint) { P.hoverJoint = hj; P.joint = hj != null; pdraw(); }
     return;
@@ -216,17 +283,21 @@ function psMove(e) {
   d.moved = true;
   if (d.kind === "move") { c.x = d.orig.x + dx / w; c.y = d.orig.y + dy / h; }
   else if (d.kind === "scale") {
-    const ax = c.x * w, ay = c.y * h;
-    const f = Math.hypot(pt.x - ax, pt.y - ay) / Math.max(1, Math.hypot(d.start.x - ax, d.start.y - ay));
-    c.scale = clamp(d.orig.scale * f, 0.05, 4);
+    // uniform (a figure can't stretch), about the opposite handle, like a layer with Shift held
+    const [axp, ayp] = d.anchor;
+    const along = (q) => d.hx === 0 ? Math.abs(q.y - ayp) : d.hy === 0 ? Math.abs(q.x - axp) : Math.hypot(q.x - axp, q.y - ayp);
+    let f = along(pt) / Math.max(1, along(d.start));
+    f = clamp(d.orig.scale * f, 0.05, 4) / d.orig.scale;
+    c.scale = d.orig.scale * f;
+    c.x = (axp + (d.orig.x * w - axp) * f) / w; c.y = (ayp + (d.orig.y * h - ayp) * f) / h;
   } else if (d.kind === "rotate") {
     const b = d.b, cx = b.x + b.w / 2, cy = b.y + b.h / 2;
     const a0 = Math.atan2(d.start.y - cy, d.start.x - cx), a1 = Math.atan2(pt.y - cy, pt.x - cx);
     let deg = d.orig.roll + (a1 - a0) * 180 / Math.PI; if (e.shiftKey) deg = Math.round(deg / 15) * 15;
     c.roll = ((deg + 540) % 360) - 180;
   } else if (d.kind === "joint") {
-    const k = d.pr.k, e0 = d.orig.edits[d.key] || [0, 0];
-    c.edits[d.key] = [e0[0] + dx / k, e0[1] + dy / k];
+    if (P.ik && !e.altKey && ikDrag(d, c, pt)) { /* the limb followed */ }
+    else { const k = d.pr.k, e0 = d.orig.edits[d.key] || [0, 0]; c.edits[d.key] = [e0[0] + dx / k, e0[1] + dy / k]; }
   }
   pdraw();
 }
@@ -387,7 +458,9 @@ function renderPoseSide(valuesOnly) {
     prow("Shot", h("input", { value: P.shot, placeholder: "ch1_s01", style: "flex:1", onchange: e => { P.shot = e.target.value.trim(); pdraw(); } })),
     h("div", { class: "row col" }, h("label", {}, "Prompt (scene, action, expression)"),
       h("textarea", { rows: 3, value: S2.prompt || "", placeholder: "classroom, after school, both smiling, looking at each other", onchange: e => { S2.prompt = e.target.value; pcommit(); } })),
-    h("div", { class: "row" }, h("label", { class: "chk" }, h("input", { type: "checkbox", checked: P.showHands, onchange: e => { P.showHands = e.target.checked; pdraw(); } }), " Hands"),
+    h("div", { class: "row" }, h("label", { class: "chk", title: "Drag a hand or foot and the whole arm or leg follows; Alt-drag moves one joint" },
+        h("input", { type: "checkbox", checked: P.ik, onchange: e => { P.ik = e.target.checked; } }), " IK limbs"),
+      h("label", { class: "chk" }, h("input", { type: "checkbox", checked: P.showHands, onchange: e => { P.showHands = e.target.checked; pdraw(); } }), " Hands"),
       h("label", { class: "chk" }, "Guide ", h("input", { type: "file", accept: "image/*", style: "width:120px", onchange: e => loadRef(e.target.files[0]) })),
       P.ref ? h("input", { type: "range", min: 0, max: 1, step: 0.05, value: P.refAlpha, title: "Guide opacity (never exported)", oninput: e => { P.refAlpha = +e.target.value; pdraw(); } }) : null));
   side.append(...presetSection());
@@ -435,7 +508,8 @@ function renderPoseSide(valuesOnly) {
         h("button", { onclick: () => { const i = S2.chars.indexOf(c); S2.chars.splice(i, 1); S2.chars.push(c); pcommit("To front"); } }, "To front"),
         h("button", { onclick: () => { const i = S2.chars.indexOf(c); S2.chars.splice(i, 1); S2.chars.unshift(c); pcommit("To back"); } }, "To back"),
         h("button", { onclick: saveAsMyPose, title: "Keep this figure (with your joint edits) in the library under My poses" }, "Save pose")),
-      h("p", { class: "hint" }, "Drag a joint to fine-tune it (wrist drags the hand along). Drag the body to move, the corner square to scale, the dot on top to rotate. " +
+      h("p", { class: "hint" }, "Drag a hand or foot and the limb follows (IK); drag an elbow or knee to swing it; drag the nose to turn the head. Alt-drag moves one joint. " +
+        "Drag the body to move, a square handle to scale, the knob on top to rotate (Shift snaps 15°). " +
         "Scroll = size, Shift+scroll = turn. Arrows nudge, M mirrors, Del deletes."));
   }
   // output
