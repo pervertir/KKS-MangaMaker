@@ -125,7 +125,11 @@ def render(shot: dict, cfg: Config, seed: int | None, dry_run: bool, refresh: bo
     if multi:
         refined = []
         for f in files:
-            r = refine_heads(comfy, shot, cfg, loras, character_parts(shot, loras), f, the_seed, log)
+            try:
+                r = refine_heads(comfy, shot, cfg, loras, character_parts(shot, loras), f, the_seed, log)
+            except Exception as e:  # noqa: BLE001  (a missing SAM model must not cost the finished render)
+                log(f"[heads] skipped: {str(e).splitlines()[0][:160]}  (run `mangapipe pod setup` to install SAM 3.1)")
+                r = None
             if r:  # the refined image takes the render's name; the base is kept as *_base.png
                 f.rename(f.with_name(f.stem + "_base.png"))
                 r.rename(f)

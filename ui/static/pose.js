@@ -71,7 +71,13 @@ function project(c, W, H) {
     const wrist = off(s === 0 ? 7 : 4);
     return hd.map((p, i) => { const o = off(`h${s ? "R" : "L"}${i}`); return add(p, [wrist[0] + o[0], wrist[1] + o[1]]); });
   });
-  return { body, hands, k };
+  // like a real pose detector: face points turned away from the camera are not drawn (a back view has
+  // no nose or eyes), which is what tells the model the figure faces away
+  const hide = new Set(), nz = body[1][2];
+  if (body[0][2] < nz - 0.01) hide.add(0);
+  for (const i of [14, 15]) if (body[i][2] < nz - 0.005) hide.add(i);
+  for (const i of [16, 17]) if (body[i][2] < nz - 0.09) hide.add(i);
+  return { body, hands, k, hide };
 }
 function bounds(pr) {
   let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
@@ -87,13 +93,13 @@ function drawSkeleton(g, pr, unit, opt = {}) {
   g.globalAlpha = opt.alpha ?? 1;
   for (let i = 0; i < LIMBS.length; i++) {               // limbs: soft ellipses, like the preprocessors
     const [a, b] = LIMBS[i], A = pr.body[a], B = pr.body[b];
-    if (!A || !B) continue;
+    if (!A || !B || pr.hide?.has(a) || pr.hide?.has(b)) continue;
     const mx = (A[0] + B[0]) / 2, my = (A[1] + B[1]) / 2, len = Math.hypot(B[0] - A[0], B[1] - A[1]) / 2, ang = Math.atan2(B[1] - A[1], B[0] - A[0]);
     g.globalAlpha = (opt.alpha ?? 1) * 0.6; g.fillStyle = KCOL[i];
     g.beginPath(); g.ellipse(mx, my, Math.max(len, 0.1), stick, ang, 0, Math.PI * 2); g.fill();
   }
   g.globalAlpha = opt.alpha ?? 1;
-  pr.body.forEach((p, i) => { g.fillStyle = KCOL[i]; g.beginPath(); g.arc(p[0], p[1], rad, 0, Math.PI * 2); g.fill(); });
+  pr.body.forEach((p, i) => { if (pr.hide?.has(i)) return; g.fillStyle = KCOL[i]; g.beginPath(); g.arc(p[0], p[1], rad, 0, Math.PI * 2); g.fill(); });
   if (opt.hands !== false) for (const hd of pr.hands) {
     if (!hd.length) continue;
     g.lineWidth = Math.max(1, unit * 2);

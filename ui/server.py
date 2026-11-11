@@ -248,6 +248,14 @@ def save_pose_shot(body: dict) -> dict:
         line = "count_tag: " + json.dumps(str(body["count_tag"]))
         t = re.sub(r"(?m)^count_tag:.*$", lambda m: line, t) if re.search(r"(?m)^count_tag:", t) else t.replace("\nidentity:", "\n" + line + "\nidentity:", 1)
         side.write_text(t, encoding="utf-8")
+    if isinstance(body.get("extra"), dict) and side.suffix != ".json":   # plain sidecar keys, e.g. head_inpaint: false
+        t = side.read_text(encoding="utf-8")
+        for k, v in body["extra"].items():
+            if not re.fullmatch(r"[a-z_]{1,40}", str(k)):
+                continue
+            line = f"{k}: {json.dumps(v)}"
+            t = re.sub(rf"(?m)^{k}:.*$", lambda m: line, t) if re.search(rf"(?m)^{k}:", t) else t.replace("\nidentity:", "\n" + line + "\nidentity:", 1)
+        side.write_text(t, encoding="utf-8")
     apply_reference(d, chars)
     png = body["png"].split(",", 1)[-1]
     Image.open(io.BytesIO(base64.b64decode(png))).convert("RGB").save(d / "pose.png")
@@ -258,7 +266,7 @@ def save_pose_shot(body: dict) -> dict:
 def apply_reference(d: Path, chars: list[dict]) -> None:
     """A single-character shot whose character has a reference sheet gets that character's front view
     as reference.png, so `identity: auto` falls back to IPAdapter when no LoRA is found. (A sheet is
-    drawn front | three-quarter | back, so the front view is its leftmost third.) Never overwrites a
+    drawn front | turned | turned, so the front view is its leftmost third.) Never overwrites a
     reference the shot already has."""
     if len(chars) != 1 or not chars[0].get("ref") or (d / "reference.png").exists():
         return
@@ -268,7 +276,8 @@ def apply_reference(d: Path, chars: list[dict]) -> None:
         return
     with Image.open(src) as im:
         w, h = im.size
-        front = im.crop((0, 0, w // 3, h)) if w > h * 1.2 else im.copy()
+        # the front figure stands at 20% of the width (see makeRefSheet); crop around it, not a blind third
+        front = im.crop((int(w * 0.04), 0, int(w * 0.36), h)) if w > h * 1.2 else im.copy()
         front.convert("RGB").save(d / "reference.png")
 
 
@@ -682,7 +691,10 @@ def with_characters(text: str, chars: list[dict]) -> str:
         lines.append(f"    tags: {q(c.get('tags', ''))}" + ("" if c.get("tags") else "                  # appearance tags used when no LoRA is found"))
         return "\n".join(lines) + "\n"
     block = "characters:                  # left to right in the frame\n" + "".join(one(c) for c in chars)
-    start = text.index("characters:\n")
+    m = re.search(r"(?m)^characters:.*\n", text)   # the line may carry a comment after a first rewrite
+    if not m:
+        raise ValueError("no characters block")
+    start = m.start()
     end = text.index("\nidentity:", start) + 1
     return text[:start] + block + "\n" + text[end:]
 
