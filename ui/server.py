@@ -95,8 +95,10 @@ _lock = threading.Lock()
 
 
 def _cached_json(name: str, build):
+    """Catalog built once per template folder (the key changes when templates_dir does)."""
+    tag = hashlib.sha1(str(TPL.resolve()).encode()).hexdigest()[:8]
     with _lock:
-        dest = CACHE / name
+        dest = CACHE / f"{Path(name).stem}_{tag}.json"
         if dest.exists():
             return json.loads(dest.read_text())
         data = build()
@@ -166,10 +168,85 @@ def shots() -> list[dict]:
             "yaml": side.read_text(encoding="utf-8") if side else "",
             "pose": mp_ref(d / "pose.png") if (d / "pose.png").exists() else None,
             "reference": mp_ref(d / "reference.png") if (d / "reference.png").exists() else None,
+            "scene": (d / "pose_scene.json").exists(),
             "renders": [mp_ref(f) for f in by_time("render_*.png")],
             "finals": [mp_ref(f) for f in by_time("final_*.png")],
         })
     return out
+
+
+POSES = ROOT / "poses"
+CAST = ROOT / "cast.json"   # the character sheet: reused across shots and projects
+
+
+def pose_library() -> dict:
+    """Built-in basics + the converted studio library (built on first use when the install is
+    reachable) + poses saved from the editor."""
+    from mp.kkpose import basic_poses, build_library
+    lib = POSES / "library.json"
+    if not lib.exists() and CFG.studio_pose_dir.is_dir():
+        build_library(CFG.studio_pose_dir, lib)
+    poses = basic_poses()
+    for f in (lib, POSES / "custom.json"):
+        if f.exists():
+            poses += json.loads(f.read_text(encoding="utf-8")).get("poses", [])
+    from mp.kkpose import KINDS, pose_kind
+    for p in poses:
+        p.pop("feet", None)   # not drawn by the editor
+    for p in poses:   # older libraries and saved poses get a type too
+        if not p.get("kind") and p.get("body"):
+            p["kind"] = pose_kind(p, " ".join([p.get("group", ""), p.get("name", "")]))
+    return {"poses": poses, "kinds": ["Group poses", *KINDS]}
+
+
+def save_custom_pose(pose: dict) -> dict:
+    f = POSES / "custom.json"
+    data = json.loads(f.read_text(encoding="utf-8")) if f.exists() else {"version": 1, "poses": []}
+    name = str(pose.get("name") or "My pose").strip()[:80]
+    pid = "custom/" + re.sub(r"[^A-Za-z0-9_\-]+", "_", name) + "_" + uuid.uuid4().hex[:6]
+    entry = {"id": pid, "name": name, "pack": "My poses", "group": "",
+             **{k: pose[k] for k in ("body", "hands", "feet") if k in pose}}
+    from mp.kkpose import pose_kind
+    if pose.get("members"):   # a group pose: several figures with their places on the canvas
+        keep = ("body", "hands", "x", "y", "scale", "label", "gender")
+        entry.update(id=pid.replace("custom/", "group/", 1), kind="Group poses", aspect=float(pose.get("aspect") or 0.7),
+                     members=[{k: m[k] for k in keep if k in m} for m in pose["members"] if m.get("body")])
+    else:
+        entry["kind"] = pose.get("kind") or pose_kind(entry, name)
+    data["poses"].append(entry)
+    POSES.mkdir(parents=True, exist_ok=True)
+    f.write_text(json.dumps(data, separators=(",", ":"), ensure_ascii=False), encoding="utf-8")
+    return entry
+
+
+def save_pose_shot(body: dict) -> dict:
+    """Pose studio -> shot folder: pose.png (OpenPose skeletons on black), pose_scene.json (the editable
+    scene) and the sidecar's characters/prompt, so `run` renders it with no Studio capture at all."""
+    import base64
+    d = shot_dir(body["name"], must_exist=False)
+    chars = body.get("characters") or [{"name": "", "series": ""}]
+    side = next((d / n for n in SIDECAR_NAMES if (d / n).exists()), None)
+    if side is None:
+        side = write_example(d, str(chars[0]["name"]).strip(), str(chars[0].get("series", "")).strip())
+        text = side.read_text(encoding="utf-8")
+        text = text.replace("reference: reference.png    # optional: F11 render of the real character, same camera\n", "")
+        text = text.replace('  - text: "Replace me."\n    bubble: "001"\n    at: [0.70, 0.12]\n    size: 0.40\n    flip: false\n', "  []\n")
+        text = text.replace("dialogue:\n  []", "dialogue: []    # the editor letters the page; add lines here for `mangapipe compose`")
+        side.write_text(text, encoding="utf-8")
+    text = side.read_text(encoding="utf-8")
+    if side.suffix != ".json":
+        try:
+            text = with_characters(text, chars)
+        except ValueError:
+            pass
+        if body.get("prompt") is not None:
+            line = "prompt: " + json.dumps(str(body["prompt"]), ensure_ascii=False)
+            text = re.sub(r"(?m)^prompt:.*$", lambda m: line, text) if re.search(r"(?m)^prompt:", text) else text + line + "\n"
+        side.write_text(text, encoding="utf-8")
+    png = body["png"].split(",", 1)[-1]
+    Image.open(io.BytesIO(base64.b64decode(png))).convert("RGB").save(d / "pose.png")
+    (d / "pose_scene.json").write_text(json.dumps(body.get("scene") or {}, indent=1), encoding="utf-8")
+    return {"ok": True, "pose": mp_ref(d / "pose.png")}
 
 
 def projects() -> list[str]:
@@ -307,6 +384,23 @@ def pod_status() -> dict:
 
 
 # ------------------------------------------------------------------------------- http
+_GZ: dict[str, bytes] = {}
+_JSON_CACHE: dict[str, tuple] = {}
+
+
+def _gzip(body: bytes, key: str | None) -> bytes:
+    """gzip level 6; responses with an ETag are compressed once and kept."""
+    import gzip
+    if key and key in _GZ:
+        return _GZ[key]
+    out = gzip.compress(body, 6, mtime=0)
+    if key:
+        if len(_GZ) > 64:
+            _GZ.clear()
+        _GZ[key] = out
+    return out
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "MangaMaker/1"
 
@@ -314,13 +408,43 @@ class Handler(BaseHTTPRequestHandler):
         if not self.path.startswith(("/img", "/api/jobs", "/static")):
             sys.stderr.write("[ui] " + fmt % args + "\n")
 
-    def send(self, code: int, body: bytes, ctype: str, cache: bool = False):
+    def send(self, code: int, body: bytes, ctype: str, cache: bool = False, etag: str | None = None):
+        """cache=True: immutable for a day (images, fonts). etag: revalidate (code, index, catalogs), so a
+        reload costs a 304 instead of the whole file. Text over 1.5 KB is gzipped when the browser asks."""
+        if etag and self.headers.get("If-None-Match") == etag:
+            self.send_response(304)
+            self.send_header("ETag", etag)
+            self.end_headers()
+            return
+        gz = len(body) > 1500 and "gzip" in (self.headers.get("Accept-Encoding") or "") and \
+            ctype.split(";")[0] in ("application/json", "text/javascript", "text/css", "text/html", "image/svg+xml")
+        if gz:
+            body = _gzip(body, etag)
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "max-age=86400" if cache else "no-store")
+        if gz:
+            self.send_header("Content-Encoding", "gzip")
+            self.send_header("Vary", "Accept-Encoding")
+        if etag:
+            self.send_header("ETag", etag)
+        self.send_header("Cache-Control", "max-age=86400" if cache else "no-cache" if etag else "no-store")
         self.end_headers()
         self.wfile.write(body)
+
+    def file(self, p: Path, ctype: str):
+        st = p.stat()
+        self.send(200, p.read_bytes(), ctype, etag=f'"{st.st_mtime_ns:x}-{st.st_size:x}"')
+
+    def cached_json(self, name: str, build, deps: list[Path]):
+        """A JSON answer rebuilt only when one of `deps` changes (mtimes), served with an ETag."""
+        sig = "|".join(f"{d}:{d.stat().st_mtime_ns if d.exists() else 0}" for d in deps)
+        hit = _JSON_CACHE.get(name)
+        if not hit or hit[0] != sig:
+            body = json.dumps(build(), separators=(",", ":")).encode()
+            hit = (sig, body, '"' + hashlib.sha1(body).hexdigest()[:16] + '"')
+            _JSON_CACHE[name] = hit
+        return self.send(200, hit[1], "application/json", etag=hit[2])
 
     def json(self, data, code: int = 200):
         self.send(code, json.dumps(data).encode(), "application/json")
@@ -336,14 +460,16 @@ class Handler(BaseHTTPRequestHandler):
         u = urlparse(self.path)
         q = {k: v[0] for k, v in parse_qs(u.query).items()}
         try:
+            if u.path == "/favicon.ico":
+                return self.send(200, (STATIC / "favicon.svg").read_bytes(), "image/svg+xml", cache=True)
             if u.path in ("/", "/index.html"):
-                return self.send(200, (STATIC / "index.html").read_bytes(), "text/html; charset=utf-8")
+                return self.file(STATIC / "index.html", "text/html; charset=utf-8")
             if u.path.startswith("/static/"):
                 p = (STATIC / unquote(u.path[len("/static/"):])).resolve()
                 if STATIC.resolve() not in p.parents or not p.is_file():
                     return self.json({"error": "not found"}, 404)
                 ctype = {".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml"}.get(p.suffix, "application/octet-stream")
-                return self.send(200, p.read_bytes(), ctype + "; charset=utf-8")
+                return self.file(p, ctype + "; charset=utf-8")
             if u.path == "/font":
                 comp = CFG.compose
                 f = Path(comp.get("font_bold") if q.get("bold") else comp.get("font"))
@@ -353,10 +479,11 @@ class Handler(BaseHTTPRequestHandler):
                 data, ctype = sized(p, int(q["w"]) if q.get("w") else None)
                 return self.send(200, data, ctype, cache=True)
             if u.path == "/api/catalog":
-                return self.json({"bubbles": bubbles(), "layouts": layouts(), "assets": assets(),
+                return self.cached_json("catalog", lambda: {"bubbles": bubbles(), "layouts": layouts(), "assets": assets(),
                                   "styles": list(CFG.styles), "reading": "rtl", "page": [PAGE_W, PAGE_H],
                                   "maxFont": int(CFG.compose.get("page_max_font_px", 56)),
-                                  "scripts": sorted(p.name for p in (ROOT / "scripts").glob("*.y*ml"))})
+                                  "scripts": sorted(p.name for p in (ROOT / "scripts").glob("*.y*ml"))},
+                    deps=[ROOT / "scripts", UPLOADS, CFG.path, TPL])
             if u.path == "/api/shots":
                 return self.json(shots())
             if u.path == "/api/projects":
@@ -369,6 +496,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json(json.loads(p.read_text()) if p.exists() else {"error": "not found"}, 200 if p.exists() else 404)
             if u.path == "/api/pod":
                 return self.json(pod_status())
+            if u.path == "/api/poses":
+                return self.cached_json("poses", pose_library, deps=[POSES / "library.json", POSES / "custom.json", CFG.studio_pose_dir])
+            if u.path == "/api/cast":
+                return self.json({"cast": json.loads(CAST.read_text(encoding="utf-8")) if CAST.exists() else []})
+            if u.path == "/api/pose/scene":
+                p = shot_dir(q.get("name", "")) / "pose_scene.json"
+                return self.json(json.loads(p.read_text()) if p.exists() else {"error": "no scene"}, 200 if p.exists() else 404)
             if u.path.startswith("/api/jobs/"):
                 job = JOBS.get(u.path.rsplit("/", 1)[-1])
                 if not job:
@@ -452,12 +586,38 @@ class Handler(BaseHTTPRequestHandler):
                 if d.exists():
                     return self.json({"error": "a shot with that name exists"}, 400)
                 chars = [c for c in (body.get("characters") or []) if str(c.get("name", "")).strip()]
-                if not chars:
-                    chars = [{"name": body.get("character") or "Character", "series": body.get("series") or ""}]
+                if not chars and body.get("character"):
+                    chars = [{"name": body["character"], "series": body.get("series") or ""}]
+                chars = chars or [{"name": "", "series": ""}]   # unnamed: generic, described by tags
                 side = write_example(d, str(chars[0]["name"]).strip(), str(chars[0].get("series", "")).strip())
-                if len(chars) > 1:
-                    side.write_text(with_characters(side.read_text(encoding="utf-8"), chars), encoding="utf-8")
+                text = with_characters(side.read_text(encoding="utf-8"), chars)
+                if body.get("prompt"):
+                    text = re.sub(r"(?m)^prompt:.*$", lambda m: "prompt: " + json.dumps(str(body["prompt"]), ensure_ascii=False), text)
+                if body.get("keep"):   # made by the script wizard: the editor letters the page, no sample line
+                    text = re.sub(r"(?ms)^dialogue:\n.*\Z", "dialogue: []\n", text)
+                side.write_text(text, encoding="utf-8")
                 return self.json({"ok": True})
+            if u.path == "/api/cast":
+                CAST.write_text(json.dumps(self.jbody().get("cast", []), indent=1, ensure_ascii=False), encoding="utf-8")
+                return self.json({"ok": True})
+            if u.path == "/api/shot/style":
+                body = self.jbody()
+                if body.get("style") not in CFG.styles:
+                    return self.json({"error": "unknown style"}, 400)
+                for name in body.get("names") or []:
+                    d = shot_dir(name)
+                    side = next((d / n for n in SIDECAR_NAMES if (d / n).exists()), None)
+                    if side is None or side.suffix == ".json":
+                        continue
+                    t = side.read_text(encoding="utf-8")
+                    line = f"style: {body['style']}"
+                    t = re.sub(r"(?m)^style:.*$", line, t) if re.search(r"(?m)^style:", t) else t + line + "\n"
+                    side.write_text(t, encoding="utf-8")
+                return self.json({"ok": True})
+            if u.path == "/api/pose/shot":
+                return self.json(save_pose_shot(self.jbody()))
+            if u.path == "/api/poses/custom":
+                return self.json(save_custom_pose(self.jbody()))
             if u.path == "/api/jobs":
                 body = self.jbody()
                 cmd = body.get("cmd")
@@ -483,13 +643,21 @@ class Handler(BaseHTTPRequestHandler):
 def with_characters(text: str, chars: list[dict]) -> str:
     """Swap the template's one-character block for several, in frame order (leftmost first)."""
     q = lambda v: json.dumps(str(v).strip(), ensure_ascii=False)
-    block = "characters:                  # left to right in the frame\n" + "".join(
-        f"  - name: {q(c['name'])}\n"
-        f"    series: {q(c.get('series', ''))}\n"
-        "    lora: auto                # auto | none | file.safetensors | https://civitai.com/models/...\n"
-        "    lora_weight: 0.8\n"
-        "    tags: \"\"                  # appearance tags used when no LoRA is found\n"
-        for c in chars)
+    def one(c):
+        generic = bool(c.get("generic")) or not str(c.get("name", "")).strip()
+        lines = [f"  - name: {q(c.get('name', ''))}", f"    series: {q(c.get('series', ''))}"]
+        if generic:
+            lines.append("    generic: true             # unnamed: no name tag, no LoRA; describe with tags")
+        lora = str(c.get("lora") or "").strip()
+        if generic and lora in ("", "auto"):
+            lora = "none"
+        lines.append("    lora: " + (q(lora) if lora and lora != "auto" else "auto                # auto | none | file.safetensors | https://civitai.com/models/..."))
+        lines.append("    lora_weight: 0.8")
+        if c.get("gender") in ("girl", "boy"):
+            lines.append(f"    gender: {c['gender']}")
+        lines.append(f"    tags: {q(c.get('tags', ''))}" + ("" if c.get("tags") else "                  # appearance tags used when no LoRA is found"))
+        return "\n".join(lines) + "\n"
+    block = "characters:                  # left to right in the frame\n" + "".join(one(c) for c in chars)
     start = text.index("characters:\n")
     end = text.index("\nidentity:", start) + 1
     return text[:start] + block + "\n" + text[end:]

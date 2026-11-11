@@ -173,12 +173,24 @@ function fit(text, l, maxW, maxH, maxPx) {
   fitCache.set(key, res);
   return res;
 }
+/* Web fonts beyond the three defaults are fetched the first time a layer uses one (the Japanese
+   families alone are ~400 KB of CSS), so the editor opens without downloading every face. */
+const LAZY_FONTS = {"Patrick Hand": "family=Patrick+Hand", "Kalam": "family=Kalam:wght@400;700", "Indie Flower": "family=Indie+Flower", "Architects Daughter": "family=Architects+Daughter", "Luckiest Guy": "family=Luckiest+Guy", "Permanent Marker": "family=Permanent+Marker", "Shojumaru": "family=Shojumaru", "Rubik Wet Paint": "family=Rubik+Wet+Paint", "Creepster": "family=Creepster", "Bungee Shade": "family=Bungee+Shade", "Black Ops One": "family=Black+Ops+One", "Rampart One": "family=Rampart+One", "Dela Gothic One": "family=Dela+Gothic+One", "Reggae One": "family=Reggae+One", "RocknRoll One": "family=RocknRoll+One", "Potta One": "family=Potta+One", "Yusei Magic": "family=Yusei+Magic", "Mochiy Pop One": "family=Mochiy+Pop+One", "Hachi Maru Pop": "family=Hachi+Maru+Pop", "Zen Maru Gothic": "family=Zen+Maru+Gothic:wght@400;700", "Kosugi Maru": "family=Kosugi+Maru", "Zen Kurenaido": "family=Zen+Kurenaido", "Kaisei Decol": "family=Kaisei+Decol:wght@400;700"};
+const fontLinks = new Map();
+function loadFontCss(family) {
+  const q = LAZY_FONTS[family]; if (!q || fontLinks.has(family)) return fontLinks.get(family) || Promise.resolve();
+  const pr = new Promise(res => {
+    const ln = h("link", { rel: "stylesheet", href: `https://fonts.googleapis.com/css2?${q}&display=swap` });
+    ln.onload = ln.onerror = () => res(); document.head.append(ln);
+  });
+  fontLinks.set(family, pr); return pr;
+}
 const fontsAsked = new Set();
 function ensureFont(l) {
   const f = fontStr(l, 40);
   if (fontsAsked.has(f)) return;
   fontsAsked.add(f);
-  document.fonts.load(f, "あA").then(() => { fitCache.clear(); requestDraw(); schedThumbs(); });
+  loadFontCss(l.font).then(() => document.fonts.load(f, "あA")).then(() => { fitCache.clear(); requestDraw(); schedThumbs(); });
 }
 function drawText(ctx, l, cx, cy, maxW, maxH, maxPx, color) {
   const text = l.text || "";
@@ -244,6 +256,7 @@ function drawLayer(ctx, l, opt = {}) {
         const r = r0;
         if (opt.ghost) { ctx.save(); ctx.globalAlpha = 0.3; drawFlipped(ctx, im, r, l.image.flip); ctx.restore(); }
         ctx.save(); ctx.beginPath(); ctx.rect(l.x, l.y, l.w, l.h); ctx.clip();
+        if (l.image.gray) ctx.filter = "grayscale(1) contrast(1.18)";
         drawFlipped(ctx, im, r, l.image.flip);
         ctx.restore();
       } else if (!opt.export) {
@@ -594,6 +607,7 @@ function draw() {
   // overlays
   const px = 1 / v.s;
   if (S.showOrder) drawPanelOrder(px);
+  if (S.showPrint) drawPrintGuides(px);
   if (S.drag?.creating) {
     const c = S.drag.creating;
     ctx.save(); ctx.setLineDash([6 * px, 4 * px]); ctx.strokeStyle = "#4c8dff"; ctx.lineWidth = 1.5 * px;
@@ -606,6 +620,17 @@ function draw() {
   }
   const s = selL();
   if (s && !ad) drawSelection(s, px);
+}
+/* print guides on the 1800x2700 page (B5-ish tankobon at 350 dpi): trim 3 mm in from the edge (the bleed),
+   safe area 5 mm inside the trim. Art that must survive the cut stays inside the green line. */
+function drawPrintGuides(px) {
+  const mm = W() / 182 * 1, bleed = 3 * mm, safe = bleed + 5 * mm;
+  ctx.save(); ctx.lineWidth = 1.5 * px; ctx.setLineDash([10 * px, 6 * px]);
+  ctx.strokeStyle = "#ff4f7b"; ctx.strokeRect(bleed, bleed, W() - 2 * bleed, H() - 2 * bleed);
+  ctx.strokeStyle = "#3ccf8e"; ctx.strokeRect(safe, safe, W() - 2 * safe, H() - 2 * safe);
+  ctx.setLineDash([]); ctx.fillStyle = "#ff4f7b"; ctx.font = `${12 * px}px sans-serif`;
+  ctx.fillText("trim", bleed + 4 * px, bleed - 4 * px); ctx.fillStyle = "#3ccf8e"; ctx.fillText("safe area", safe + 4 * px, safe + 14 * px);
+  ctx.restore();
 }
 function drawPanelOrder(px) {
   const order = panelOrder(layers());
@@ -706,8 +731,15 @@ function snapBox(box, moving, thr) {
 /* ================================================================ pointer */
 const DRAG_TOOLS = { panel: 1, caption: 1, text: 1, sfx: 1, bubble: 1, vbubble: 1, tone: 1, speed: 1 };
 let spaceDown = false;
+cv.addEventListener("contextmenu", e => {
+  e.preventDefault();
+  const r = cv.getBoundingClientRect(), hit = hitLayer(toPage(e.clientX - r.left, e.clientY - r.top));
+  if (hit) { S.sel = hit.id; refreshPanels(); requestDraw(); }
+  popMenu(e.clientX, e.clientY, layerMenu());
+});
 cv.addEventListener("pointerdown", e => {
   if (!S.doc) return;
+  if (e.button === 2) return;
   hideInline(true);
   try { cv.setPointerCapture(e.pointerId); } catch { }
   const r = cv.getBoundingClientRect(), sp = { x: e.clientX - r.left, y: e.clientY - r.top }, p = toPage(sp.x, sp.y);
@@ -1015,12 +1047,34 @@ function buildToolbar() {
   tb.append(h("div", { class: "spacer" }), h("button", { title: "Keyboard shortcuts (?)", onclick: shortcutSheet, style: "font-size:13px;font-weight:700" }, "?"));
 }
 function setTool(t) {
+  if (t === "bubble" && !S.cat?.bubbles?.length) { t = "vbubble"; status("No bubble templates installed: using drawn bubbles"); }
   S.tool = t; if (S.adjust) exitAdjust();
   $$("#toolbar button").forEach(b => b.classList.toggle("on", b.dataset.tool === t));
   stage.classList.toggle("hand", t === "hand");
   renderOptions();
 }
-const inField = e => ["INPUT", "TEXTAREA", "SELECT"].includes(e.target.tagName) || e.target.isContentEditable;
+/* typing fields keep their keys; sliders, checkboxes, colour wells and dropdowns don't swallow Delete */
+const NONTEXT = ["range", "checkbox", "radio", "color", "button", "submit", "file"];
+const inField = e => {
+  const t = e.target;
+  if (t.isContentEditable || t.tagName === "TEXTAREA") return true;
+  if (t.tagName === "INPUT") return !NONTEXT.includes(t.type);
+  if (t.tagName === "SELECT") return !["Delete", "Backspace", "Escape"].includes(e.key);
+  return false;
+};
+/* where the last click was, so Delete removes the right kind of thing: a page in the page strip or
+   the book overview, otherwise the selected layer */
+let deleteScope = "layers";
+document.addEventListener("pointerdown", e => {
+  deleteScope = e.target.closest("#pagenav, #overview") ? "pages" : e.target.closest("#stage, #layers, #props, #toolbar") ? "layers" : deleteScope;
+}, true);
+function deleteSelected() {
+  const l = selL();                         // a selected layer always wins; a page only when no layer is selected
+  if (!l && (deleteScope === "pages" || !$("#overview").hidden)) return pageOps.del(true);
+  if (!l) return status("Nothing selected to delete");
+  if (l.locked) return toast("That layer is locked: unlock it first (⌘L)", "err");
+  act.remove(); toast(`Deleted ${layerName(l)} — ⌘Z brings it back`);
+}
 const center = () => { const r = stage.getBoundingClientRect(); return [r.width / 2, r.height / 2]; };
 const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
 /* One table drives the key handler, the menus' hints and the cheat sheet (press ?).
@@ -1043,6 +1097,7 @@ const SHORTCUTS = [
   ["File", "mod+s", "Save", () => save(), true],
   ["File", "mod+shift+s", "Save as", () => save(true), true],
   ["File", "mod+i", "Import page script", () => importDialog()],
+  ["File", "mod+shift+k", "Script Wizard", () => scriptWizard()],
   ["File", "mod+e", "Export this page", () => exportPages("one"), true],
   ["File", "mod+shift+e", "Export all pages + PDF", () => exportPages("all"), true],
   // edit
@@ -1054,8 +1109,8 @@ const SHORTCUTS = [
   ["Edit", "mod+v", "Paste layer (works across pages)", () => act.paste()],
   ["Edit", "mod+d", "Duplicate layer", () => act.duplicate()],
   ["Edit", "mod+j", "Duplicate layer", () => act.duplicate()],
-  ["Edit", "delete", "Delete layer", () => act.remove()],
-  ["Edit", "backspace", "Delete layer", () => act.remove()],
+  ["Edit", "delete", "Delete selected layer (or page, after clicking the page strip)", () => deleteSelected()],
+  ["Edit", "backspace", "Delete selected layer (or page, after clicking the page strip)", () => deleteSelected()],
   ["Edit", "escape", "Deselect / leave mode", () => act.escape()],
   ["Edit", "enter", "Type in bubble / reposition render", () => act.enter()],
   ["Edit", "arrows", "Nudge 1 px (Shift: 10 px)", null],
@@ -1096,9 +1151,11 @@ const SHORTCUTS = [
   ["View", "m", "Show / hide panel order", () => { S.showOrder = !S.showOrder; requestView(); }],
   ["View", ";", "Snapping on / off", () => { S.showGuides = !S.showGuides; renderOptions(); toast("Snapping " + (S.showGuides ? "on" : "off")); }],
   ["View", "space", "Pan while held", null],
+  ["View", "mod+;", "Print guides on / off", () => { S.showPrint = !S.showPrint; requestView(); }],
   // pipeline
   ["Pipeline", "mod+u", "Shots (edit, grab, render)", () => shotDialog(selL()?.shot || null)],
   ["Pipeline", "`", "Jobs log", () => toggleJobs()],
+  ["Pipeline", "mod+shift+p", "Pose studio", () => setMode(S.mode === "pose" ? "page" : "pose")],
   ["Help", "shift+/", "This cheat sheet", () => shortcutSheet()],
   ["Help", "f1", "This cheat sheet", () => shortcutSheet()],
 ];
@@ -1121,6 +1178,7 @@ function keyLabel(combo) {
 }
 const sc = label => { const r = SHORTCUTS.find(r => r[2] === label); return r ? keyLabel(r[1]) : ""; };
 document.addEventListener("keydown", e => {
+  if (S.mode === "pose" && $("#modal").hidden) return poseKey(e);
   const combo = comboOf(e), row = SC_MAP.get(combo);
   const modalOpen = !$("#modal").hidden;
   if (modalOpen || inField(e)) {
@@ -1219,6 +1277,7 @@ const act = {
     layers().splice(layers().indexOf(l) + 1, 0, b); commit("Split panel"); requestDraw();
   },
 };
+$("#laydel").onclick = () => deleteSelected();
 document.addEventListener("click", e => { const b = e.target.closest("[data-act]"); if (b && act[b.dataset.act]) act[b.dataset.act](); });
 
 /* ================================================================ layouts */
@@ -1244,6 +1303,30 @@ function applyLayout(rects, label) {
   page().layers = [...fresh, ...keep];
   S.sel = null; commit("Layout " + label); requestDraw(); renderPages();
 }
+/* classic manga page grids, built in so a page can be laid out with no template pack installed:
+   rows of relative widths, then relative row heights */
+const PRESET_LAYOUTS = [
+  ["Splash", [[1]], [1]], ["Two tiers", [[1], [1]], [1, 1]], ["Three tiers", [[1], [1], [1]], [1, 1, 1]],
+  ["4-koma", [[1], [1], [1], [1]], [1, 1, 1, 1]], ["Classic six", [[1, 1], [1, 1], [1, 1]], [1, 1, 1]],
+  ["Establishing + 4", [[1], [1, 1], [1, 1]], [1.3, 1, 1]], ["1 · 2 · 1", [[1], [1, 1], [1]], [1, 1.2, 1]],
+  ["Action stack", [[2, 1], [1], [1, 2]], [1, 1.4, 1]], ["Dialogue grid", [[1, 1, 1], [1, 1], [1, 1, 1]], [1, 1.2, 1]],
+  ["Big reveal", [[1, 1], [1]], [1, 2.2]], ["Tall + stack", [[1], [1, 1, 1]], [2, 1]], ["Nine grid", [[1, 1, 1], [1, 1, 1], [1, 1, 1]], [1, 1, 1]],
+];
+function presetThumb(rows, hs) {
+  const c = document.createElement("canvas"); c.width = 120; c.height = 180;
+  const g = c.getContext("2d"); g.fillStyle = "#fff"; g.fillRect(0, 0, 120, 180);
+  g.strokeStyle = "#111"; g.lineWidth = 2;
+  for (const [x, y, w, hh] of gridRects(rows, hs)) g.strokeRect(x / W() * 120, y / H() * 180, w / W() * 120, hh / H() * 180);
+  return c;
+}
+function presetTiles(onPick) {
+  const t = h("div", { class: "tiles" });
+  for (const [name, rows, hs] of PRESET_LAYOUTS) {
+    const ord = S.doc.reading === "rtl" ? rows.map(r => [...r].reverse()) : rows;
+    t.append(h("div", { class: "tile page", title: name, onclick: () => onPick(gridRects(ord, hs), name) }, presetThumb(ord, hs), h("div", { class: "cap" }, name)));
+  }
+  return t;
+}
 function layoutDialog() {
   const box = modal("Page layout", "");
   const grid = h("div", { class: "layoutgrid" });
@@ -1264,6 +1347,8 @@ function layoutDialog() {
         applyLayout(gridRects(rows, hs, +mIn.value, +gIn.value), "grid"); closeModal();
       } }, "Apply grid")),
     h("p", { class: "hint" }, "Applying a layout replaces this page's panels. Renders already placed move into the new panels in reading order; bubbles and text stay."),
+    h("div", { class: "section" }, "Built-in"), presetTiles((r, n) => { applyLayout(r, n); closeModal(); }),
+    S.cat.layouts.length ? h("div", { class: "section" }, "Template pack") : null,
     grid);
 }
 
@@ -1302,7 +1387,8 @@ function textBlock(l) {
 }
 function fontRows(l) {
   return [
-    select("Font", FONTS, () => l.font || "MMComic", v => l.font = v),
+    (() => { const r = select("Font", FONTS, () => l.font || "MMComic", v => l.font = v);   // fetch the faces when the list opens
+      $("select", r)?.addEventListener("pointerdown", () => Object.keys(LAZY_FONTS).forEach(loadFontCss), { once: true }); return r; })(),
     h("div", { class: "row" }, h("label", {}, "Size"),
       h("input", { type: "number", min: 0, value: l.fontSize || 0, style: "width:64px", onchange: e => { l.fontSize = +e.target.value; commit(); requestDraw(); } }),
       h("span", { class: "hint" }, "0 = fit"), check("Bold", () => l.bold, v => l.bold = v), check("Italic", () => l.italic, v => l.italic = v)),
@@ -1395,13 +1481,14 @@ function panelProps(P, l) {
   }
   P.append(h("div", { class: "btnrow" },
     h("button", { onclick: () => shotDialog(l.shot || null) }, "Edit shot…"),
+    h("button", { onclick: () => poseForPanel(l), title: "Pose the characters for this panel (no game needed)" }, "Pose…"),
     l.shot ? h("button", { class: "primary", onclick: () => renderShot(l.shot) }, "Render on pod") : null));
   if (l.image) {
     const I = l.image;
     P.append(h("div", { class: "section" }, "Render in panel"),
       select("Fit", [["cover", "Cover (crop)"], ["contain", "Contain"]], () => I.fit, v => { I.fit = v; I.zoom = 1; }),
       slider("Zoom", () => I.zoom || 1, v => I.zoom = v, I.fit === "contain" ? 0.2 : 1, 5, 0.01, v => v.toFixed(2) + "×"),
-      h("div", { class: "btnrow" }, check("Flip", () => I.flip, v => I.flip = v),
+      h("div", { class: "btnrow" }, check("Flip", () => I.flip, v => I.flip = v), check("B/W", () => I.gray, v => I.gray = v),
         h("button", { onclick: () => enterAdjust(l) }, "Reposition (Enter)"),
         h("button", { onclick: () => { l.image = null; commit("Image removed"); requestDraw(); refreshPanels(); } }, "Remove image")));
   }
@@ -1419,7 +1506,8 @@ function pageProps(P) {
     colorRow("Paper", pg, "bg"),
     h("div", { class: "row" }, h("label", {}, "Max text"), h("input", { type: "number", value: S.doc.maxFont, onchange: e => { S.doc.maxFont = +e.target.value; commit(); requestDraw(); } }),
       h("span", { class: "hint" }, "px, keeps fitted text even")),
-    h("div", { class: "btnrow" }, h("button", { class: "primary", onclick: layoutDialog }, "Choose layout…"),
+    h("div", { class: "btnrow" }, h("button", { class: "primary", onclick: scriptWizard, title: "Write the scene as lines; get pages, panels, bubbles and shots" }, "Script Wizard…"),
+      h("button", { onclick: layoutDialog }, "Choose layout…"),
       h("button", { onclick: () => { S.showOrder = !S.showOrder; requestDraw(); } }, "Toggle panel order")),
     h("p", { class: "hint" }, "Pick a layout, drag renders from Shots onto panels, then letter with B (bubble), T (text), S (SFX), C (caption). " +
       "Double-click a panel to reposition its render, double-click a bubble to type. Space-drag pans, Ctrl/⌘+scroll zooms."));
@@ -1436,6 +1524,46 @@ function layerName(l) {
   const t = (l.text || "").replace(/\s+/g, " ").trim();
   return (l.sfx ? "SFX" : l.type === "bubble" || l.type === "vbubble" ? "Bubble" : l.type === "caption" ? "Caption" : "Text") + (t ? ` · ${t}` : "");
 }
+/* monochrome line icons (currentColor), so they follow the theme instead of emoji colours */
+const UI_ICON = {
+  eye: '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+  eyeOff: '<path d="M3 3l18 18M10.6 5.1A10 10 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-3.2 4.2M6.6 6.6C3.8 8.4 2 12 2 12s3.6 7 10 7a9.6 9.6 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/>',
+  lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+  unlock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.5-2"/>',
+  trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
+};
+function svgIcon(name) { return `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${UI_ICON[name]}</svg>`; }
+function svgBtn(name, cls, title, fn) {
+  const b = h("button", { class: "ib " + (cls || ""), title, onclick: e => { e.stopPropagation(); fn(); } }); b.innerHTML = svgIcon(name); return b;
+}
+/* a small picture of the layer itself, like Photoshop's layer thumbnails */
+const THUMBS = new Map();   // layer id -> {key, canvas}: redrawn only when the layer changes
+function layerThumb(l) {
+  const refs = [l.image?.ref, l.type === "bubble" ? bubbleMeta(l.bubble)?.ref : null].filter(Boolean);
+  const loaded = refs.map(r => [0, ...LEVELS].map(w => IMG.get(r + "|" + w)?.complete ? 1 : 0).join("")).join("/");
+  const key = JSON.stringify(l) + "|" + loaded;
+  const hit = THUMBS.get(l.id);
+  if (hit && hit.key === key) return hit.canvas;
+  const c = paintLayerThumb(l); THUMBS.set(l.id, { key, canvas: c });
+  if (THUMBS.size > 600) THUMBS.delete(THUMBS.keys().next().value);
+  return c;
+}
+function paintLayerThumb(l) {
+  const T = 34, c = h("canvas", { class: "lthumb", width: T * 2, height: T * 2 });
+  const g = c.getContext("2d"), pad = 2;
+  const w = Math.max(1, l.w), hh = Math.max(1, l.h), s = (T * 2 - pad * 2) / Math.max(w, hh);
+  g.fillStyle = "#d4d4da"; g.fillRect(0, 0, T * 2, T * 2);
+  g.save(); g.translate(T - (l.x + w / 2) * s, T - (l.y + hh / 2) * s); g.scale(s, s);
+  try { drawLayer(g, { ...l, visible: true, opacity: 1 }, { rs: s, export: true }); } catch { }
+  g.restore();
+  return c;
+}
+function layerMenu() {
+  return [["Delete", deleteSelected, "Del", !selL()], ["Duplicate", act.duplicate, sc("Duplicate layer")], null,
+    ["Bring forward", act.layerUp, sc("Bring forward")], ["Send backward", act.layerDown, sc("Send backward")],
+    ["Bring to front", act.toFront, sc("Bring to front")], ["Send to back", act.toBack, sc("Send to back")], null,
+    ["Lock / unlock", act.toggleLock, sc("Lock / unlock")], ["Hide / show", act.toggleHide, sc("Hide / show")]];
+}
 function renderLayers() {
   const box = $("#layers"); box.innerHTML = "";
   const ls = layers();
@@ -1451,10 +1579,12 @@ function renderLayers() {
         const id = e.dataTransfer.getData("text/layer"), src = ls.find(q => q.id === id); if (!src || src === l) return;
         ls.splice(ls.indexOf(src), 1); ls.splice(ls.indexOf(l) + 1, 0, src); commit("Reordered"); requestDraw();
       } },
-      h("button", { class: l.visible ? "" : "offv", title: "Show/hide", onclick: e => { e.stopPropagation(); l.visible = !l.visible; commit(); requestDraw(); } }, "👁"),
-      h("span", { class: "ic" }, TYPE_IC[l.type]),
+      svgBtn(l.visible ? "eye" : "eyeOff", l.visible ? "" : "offv", "Show / hide", () => { l.visible = !l.visible; commit(); requestDraw(); }),
+      layerThumb(l),
       h("span", { class: "nm" }, layerName(l)),
-      h("button", { class: l.locked ? "" : "offv", title: "Lock", onclick: e => { e.stopPropagation(); l.locked = !l.locked; commit(); requestDraw(); } }, "🔒"));
+      svgBtn(l.locked ? "lock" : "unlock", l.locked ? "" : "offv", l.locked ? "Unlock" : "Lock", () => { l.locked = !l.locked; commit(); requestDraw(); }),
+      svgBtn("trash", "del", "Delete layer (Delete)", () => { S.sel = l.id; deleteSelected(); }));
+    row.addEventListener("contextmenu", e => { e.preventDefault(); S.sel = l.id; refreshPanels(); requestDraw(); popMenu(e.clientX, e.clientY, layerMenu()); });
     box.append(row);
   });
   if (!ls.length) box.append(h("div", { class: "hint" }, "Empty page. Choose a layout or draw panels with P."));
@@ -1492,6 +1622,7 @@ function renderLibrary() {
     return;
   }
   if (S.libTab === "bubbles") {
+    if (!S.cat.bubbles.length) { lib.append(h("div", { class: "hint" }, "No bubble templates installed (templates_dir in config). The drawn bubble tool (O) needs none.")); return; }
     lib.append(h("div", { class: "hint" }, "Click to pick for the bubble tool (or to swap the selected bubble). Drag onto the page to place."));
     const t = h("div", { class: "tiles" });
     for (const b of S.cat.bubbles) {
@@ -1506,7 +1637,10 @@ function renderLibrary() {
     lib.append(t); return;
   }
   if (S.libTab === "layouts") {
-    lib.append(h("div", { class: "hint" }, "Click to apply to this page (renders already placed carry over in reading order)."));
+    lib.append(h("div", { class: "hint" }, "Click to apply to this page (renders already placed carry over in reading order)."),
+      h("div", { class: "section" }, "Built-in"), presetTiles((r, n) => applyLayout(r, n)));
+    if (!S.cat.layouts.length) return;
+    lib.append(h("div", { class: "section" }, "Template pack"));
     const t = h("div", { class: "tiles" });
     for (const L of S.cat.layouts) t.append(h("div", { class: "tile page", title: `Template ${L.n}: ${L.rects.length} panels`,
       onclick: () => applyLayout(L.rects, "#" + L.n) }, h("img", { src: thumb(L.ref, 160), loading: "lazy" }), h("div", { class: "cap" }, `#${L.n} · ${L.rects.length}`)));
@@ -1683,8 +1817,9 @@ function gotoPage(i) { if (S.adjust) exitAdjust(); S.page = clamp(i, 0, S.doc.pa
 const pageOps = {
   add() { S.doc.pages.splice(S.page + 1, 0, { id: uid(), bg: "#ffffff", layers: [] }); S.page++; commit("Page added"); renderPages(); requestDraw(); if ($("#overview").hidden) layoutDialog(); },
   dup() { const c = deep(page()); c.id = uid(); c.layers.forEach(l => l.id = uid()); S.doc.pages.splice(S.page + 1, 0, c); S.page++; commit("Page duplicated"); renderPages(); requestDraw(); },
-  del() { if (S.doc.pages.length < 2) return toast("A project needs one page"); if (!confirm(`Delete page ${S.page + 1}?`)) return;
-    S.doc.pages.splice(S.page, 1); S.page = Math.max(0, S.page - 1); commit("Page deleted"); renderPages(); requestDraw(); },
+  del(fromKey) { if (S.doc.pages.length < 2) return toast("A project needs one page"); if (!fromKey && !confirm(`Delete page ${S.page + 1}?`)) return;
+    const n = S.page + 1; S.doc.pages.splice(S.page, 1); S.page = Math.max(0, S.page - 1); S.sel = null; commit("Page deleted");
+    renderPages(); if (!$("#overview").hidden) renderOverview(); refreshPanels(); requestDraw(); toast(`Deleted page ${n} — ⌘Z brings it back`); },
   left() { if (S.page < 1) return; const p = S.doc.pages.splice(S.page, 1)[0]; S.doc.pages.splice(--S.page, 0, p); commit(); renderPages(); },
   right() { if (S.page >= S.doc.pages.length - 1) return; const p = S.doc.pages.splice(S.page, 1)[0]; S.doc.pages.splice(++S.page, 0, p); commit(); renderPages(); },
 };
@@ -1694,7 +1829,7 @@ $("#addpage").onclick = () => pageOps.add();
 
 /* ================================================================ menus */
 const MENUS = {
-  File: () => [["New project", newProject, sc("New project")], ["Open…", openDialog, sc("Open project")], ["Save", () => save(), sc("Save")], ["Save as…", () => save(true), sc("Save as")], null,
+  File: () => [["New project", newProject, sc("New project")], ["Script Wizard…", () => scriptWizard(), sc("Script Wizard")], ["Open…", openDialog, sc("Open project")], ["Save", () => save(), sc("Save")], ["Save as…", () => save(true), sc("Save as")], null,
     ["Import page script…", importDialog, sc("Import page script")], null, ["Export this page (PNG)", () => exportPages("one"), sc("Export this page")],
     ["Export all pages + PDF", () => exportPages("all"), sc("Export all pages + PDF")], ["Download this page", downloadPage]],
   Edit: () => [["Undo", undo, sc("Undo"), !S.undo.length], ["Redo", redo, sc("Redo"), !S.redo.length], null,
@@ -1714,8 +1849,9 @@ const MENUS = {
   View: () => [["Fit page", fitView, sc("Fit page")], ["Actual pixels", () => zoomAt(1 / S.view.s, ...center()), sc("Actual pixels")],
     ["Zoom in", () => zoomAt(1.25, ...center()), sc("Zoom in")], ["Zoom out", () => zoomAt(0.8, ...center()), sc("Zoom out")], null,
     [(S.showOrder ? "Hide" : "Show") + " panel order", () => { S.showOrder = !S.showOrder; requestView(); }, sc("Show / hide panel order")],
-    [(S.showGuides ? "Disable" : "Enable") + " snapping", () => { S.showGuides = !S.showGuides; renderOptions(); }, sc("Snapping on / off")]],
-  Pipeline: () => [["Shots…", () => shotDialog(selL()?.shot || null), sc("Shots (edit, grab, render)")], ["New shot…", () => shotDialog(null, true)], null,
+    [(S.showGuides ? "Disable" : "Enable") + " snapping", () => { S.showGuides = !S.showGuides; renderOptions(); }, sc("Snapping on / off")],
+    [(S.showPrint ? "Hide" : "Show") + " print guides (trim / safe area)", () => { S.showPrint = !S.showPrint; requestView(); }, sc("Print guides on / off")]],
+  Pipeline: () => [["Pose studio", () => setMode("pose"), sc("Pose studio")], ["Pose the selected panel…", () => poseForPanel(selL()), "", selL()?.type !== "panel"], null, ["Shots…", () => shotDialog(selL()?.shot || null), sc("Shots (edit, grab, render)")], ["New shot…", () => shotDialog(null, true)], null,
     ["Pod status", () => refreshPod(true)], ["Open ComfyUI on the pod", () => S.pod?.url ? window.open(S.pod.url, "_blank") : toast("Pod URL unknown"), "", !S.pod?.url],
     ["Start pod", () => podAction("start")], ["Stop pod (ends GPU billing)", () => podAction("stop")], null, ["Jobs", () => toggleJobs(true), sc("Jobs log")]],
   Help: () => [["Keyboard shortcuts", shortcutSheet, "?"]],
@@ -1985,7 +2121,8 @@ new ResizeObserver(resize).observe(stage);
     const doc = newDoc("Chapter 1");
     const L = S.cat.layouts.find(l => l.n === 13) || S.cat.layouts[0];
     loadDoc(doc, "");
-    if (L) { applyLayout(L.rects, "#" + L.n); S.undo = []; S.dirty = false; setName(""); }
+    if (L) applyLayout(L.rects, "#" + L.n); else applyLayout(gridRects(...PRESET_LAYOUTS[6].slice(1)), PRESET_LAYOUTS[6][0]);
+    S.undo = []; S.dirty = false; setName("");
   }
   localStorage.removeItem("mm.autosave");
   refreshPod(); setInterval(refreshPod, 30000);

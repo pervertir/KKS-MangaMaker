@@ -99,7 +99,7 @@ def build_refine_graph(shot: dict, cfg, base_name: str, size: tuple[int, int], j
             lo = add("LoraLoader", model=model, clip=clip, lora_name=job["lora"],
                      strength_model=float(job["weight"]), strength_clip=float(job["weight"]))
             model, clip = [lo, 0], [lo, 1]
-        pos = add("CLIPTextEncode", clip=clip, text=", ".join(p for p in [style["positive"], "1girl, solo, portrait, face focus",
+        pos = add("CLIPTextEncode", clip=clip, text=", ".join(p for p in [style["positive"], job.get("who", "1girl") + ", solo, portrait, face focus",
                                                                         job["prompt"], shot.get("head_prompt", "")] if p))
         neg = add("CLIPTextEncode", clip=clip, text=", ".join(p for p in [style["negative"], shot.get("negative", "")] if p))
         crop = add("ImageCrop", image=img, width=w, height=h, x=x, y=y)
@@ -141,6 +141,7 @@ def refine_heads(comfy, shot: dict, cfg, loras: list[dict], prompt_parts: list[s
     for i, (c, l, h) in enumerate(zip(chars, loras, heads)):
         mask_name = comfy.upload(h["mask"], "manga", f"{shot['shot']}_{render.stem}_head{i}.png")
         jobs.append({"lora": l["lora"], "weight": float(c.get("lora_weight", l["weight"])), "prompt": prompt_parts[i],
+                     "who": "1boy" if str(c.get("gender", "girl")).lower() in ("boy", "male", "man") else "1girl",
                      "mask_name": mask_name, "crop": _crop_box(h["box"], W, H, float(shot.get("head_crop_pad", 1.8)))})
     g = build_refine_graph(shot, cfg, base_name, (W, H), jobs, seed)
     problems = comfy.validate(g)

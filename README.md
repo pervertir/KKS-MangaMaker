@@ -154,6 +154,71 @@ pages:
   before rendering.
 - `--page N` (repeatable) rebuilds only those pages.
 
+## MangaMaker editor and the Pose studio (no game needed)
+
+`./mangapipe-ui` opens the page editor on http://127.0.0.1:8765. It has two modes, switched at the
+top (or Ctrl/⌘+Shift+P):
+
+- **Page**: panels, renders, template or drawn bubbles, text, SFX, captions, screentones and speed
+  lines, pages and spreads, export to PNG/PDF. Built-in panel layouts (splash, tiers, 4-koma, classic
+  six, ...) and print guides (trim and safe area, View menu) need no template pack.
+- **Pose**: builds the OpenPose image for a shot instead of a CharaStudio capture. Pick a pose from the
+  library (click, or drag onto the canvas) for each character, then turn, tilt, rotate, size and mirror
+  it, and pose by dragging: a hand or foot pulls its whole arm or leg along (IK with soft limits:
+  bones keep their length, reach eases out at full extension, elbows and knees keep the side they bend
+  to), an elbow or knee swings from the shoulder or hip, and the nose turns the head. Alt-drag moves a
+  single joint. The selection box has the same scale and rotation handles as a page layer. Each figure gets a name and
+  series (LoRA lookup as usual) or stays unnamed (`generic: true`, described by its appearance tags),
+  plus girl/boy for the `1girl, 1boy` count tags. **Save & render** writes `shots/<name>/pose.png`,
+  `pose_scene.json` (reopen and edit it later) and the sidecar's characters and prompt, then renders
+  on the pod. From a panel, **Pose…** opens the studio at that panel's shape and the render lands back
+  in the panel.
+
+**Script Wizard** (button in the top bar, File menu, or ⌘⇧K) is the quickest start: write the scene as plain lines
+and it builds the pages, picks layouts by panel count, places drawn bubbles in reading order with tails
+toward the speaker, and makes one shot per panel with its characters and prompt.
+
+```text
+[Rem] Classroom after school, sunset. Rem waits by the door.   <- a panel: [who, left to right] prompt
+Rem: He said he'd come...                                       <- speech
+Rem (thought): Maybe he forgot.                                 <- thought / shout / whisper
+SFX: TAP TAP
+! [Rem, Subaru] Rem turns around, surprised.                    <- "!" = big panel
+Caption: Five minutes earlier...
+---                                                             <- new page
+```
+
+Helpers for first-time manga makers:
+
+- **Starter templates** (in the Script Wizard, or Help menu): 4-koma, dialogue page, action page and
+  cover, each a short sample script showing good pacing to rewrite.
+- **Check this page** (Page menu, Ctrl/⌘+Shift+C): bubbles read out of order, tails pointing out of
+  their panel, text too small for print, lettering outside the safe area, overlapping bubbles, empty
+  bubbles, panels with no shot or render. Each has Show and a one-click Fix (undoable).
+- **Character sheet** (Pipeline menu, Ctrl/⌘+Shift+U, stored in `cast.json`): name, series, LoRA,
+  looks, girl/boy and a default pose per character, filled into every shot made from a script or the
+  Pose tab so a character stays the same across pages.
+- **Make it manga** (Page menu): sets the page's shots to the `manga_bw` style for the next render,
+  shows placed renders in greyscale, adds light screentone to each panel and suggests sound effects
+  from the prompts and dialogue.
+- **Tips**: a hint card for the active tool (close it, or Help › Hide tips).
+
+In the Pose tab, **Shot presets** frame every figure the way storyboards name shots (full body, knees
+up, waist up, chest up, close-up), set the camera (low, high, dutch tilt) and stage two characters
+(facing, over the shoulder, foreground/background).
+
+The pose library is `poses/library.json`: the Koikatsu Sunshine studio poses converted to OpenPose
+keypoints (3D, so figures can be turned) by our own forward kinematics in `mp/kkpose.py`; nothing
+from the game is copied. Rebuild it from an install with `./mangapipe poses build [--src DIR]`
+(default `studio_pose_dir`, `../UserData/studio/pose`). Twelve basic poses are built in. **Save pose** keeps the selected
+figure (with its turn, mirror and joint edits) and **Save group pose** keeps every figure in the scene
+with its place, as one entry; both land under *My poses* (`poses/custom.json`), and a group pose drops
+all its figures in at once (replacing the scene's figures, names carried over, or beside them).
+The library is filtered by pose type (standing, sitting, kneeling, lying, ...).
+
+Paths to the game (captures, templates, poses) can be overridden per machine in an untracked
+`config.local.yaml` next to `config.yaml`.
+
 ## Commands
 
 | command | does |
@@ -166,6 +231,7 @@ pages:
 | `./mangapipe run DIR [--seed N] [--no-compose]` | everything |
 | `./mangapipe page SCRIPT [--page N] [--pdf] [--out DIR]` | build manga pages from a script |
 | `./mangapipe layouts [--ltr]` | contact sheet of the page templates with panel order |
+| `./mangapipe poses build [--src DIR] [--out F]` | convert the studio pose files into `poses/library.json` |
 
 | `./mangapipe pod create\|setup\|restart\|status\|url\|start\|stop\|remove\|ssh ["cmd"]` | RunPod pod lifecycle (`restart` relaunches ComfyUI after adding nodes) |
 

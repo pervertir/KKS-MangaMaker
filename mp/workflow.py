@@ -27,14 +27,32 @@ def decide_identity(shot: dict, loras: list[dict]) -> str:
     return want
 
 
+def count_tag(chars: list[dict], solo: bool = True) -> str:
+    """Danbooru-style head count from each character's `gender` (girl by default): 1girl, solo /
+    2girls / 1girl, 1boy / 3girls ... The models know these tags; listing names alone does not set the count."""
+    girls = sum(1 for c in chars if str(c.get("gender", "girl")).lower() not in ("boy", "male", "man"))
+    boys = len(chars) - girls
+    tags = []
+    if girls:
+        tags.append(f"{girls}girl" + ("s" if girls > 1 else "") if girls < 6 else "6+girls")
+    if boys:
+        tags.append(f"{boys}boy" + ("s" if boys > 1 else "") if boys < 6 else "6+boys")
+    if len(chars) == 1 and solo:
+        tags.append("solo")
+    elif len(chars) > 2:
+        tags.append("multiple girls" if not boys else "multiple people")
+    return ", ".join(tags)
+
+
 def character_parts(shot: dict, loras: list[dict]) -> list[str]:
-    """Per character, in characters[] order: LoRA triggers (or "Name \\(series\\)") plus its tags."""
+    """Per character, in characters[] order: LoRA triggers (or "Name \\(series\\)") plus its tags.
+    Unnamed (generic) characters contribute only their tags."""
     parts = []
     for c, l in zip(shot["characters"], loras):
         bits = []
         if l["lora"] and l["triggers"]:
             bits += l["triggers"]
-        else:
+        elif not c.get("generic"):
             tag = c["name"].strip()
             if c.get("series"):
                 tag += f" \\({c['series'].strip()}\\)"
@@ -47,8 +65,7 @@ def character_parts(shot: dict, loras: list[dict]) -> list[str]:
 
 def build_prompt(shot: dict, style: dict, loras: list[dict]) -> tuple[str, str]:
     parts = character_parts(shot, loras)
-    n = len(shot["characters"])
-    count = {1: "1girl, solo" if shot.get("solo_tag", True) else "", 2: "2girls"}.get(n, "")
+    count = count_tag(shot["characters"], shot.get("solo_tag", True))
     if shot.get("count_tag") is not None:
         count = shot["count_tag"]
     pos = ", ".join(p for p in [style["positive"], count, *parts, shot.get("prompt", "")] if p)

@@ -13,3 +13,10 @@ shots/_example/out/
 
 # Built manga pages (mangapipe page / layouts)
 pages/
+
+# Per-machine path overrides
+config.local.yaml
+
+# The character sheet is per user
+cast.json
+poses/custom.json

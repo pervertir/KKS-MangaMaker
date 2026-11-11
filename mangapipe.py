@@ -248,6 +248,7 @@ def main(argv=None):
     p = sub.add_parser("page");    p.add_argument("script", type=Path); p.add_argument("--page", type=int, action="append"); p.add_argument("--pdf", action="store_true"); p.add_argument("--out", type=Path)
     p = sub.add_parser("layouts"); p.add_argument("--ltr", action="store_true"); p.add_argument("--out", type=Path)
     p = sub.add_parser("pod");     p.add_argument("action", choices=["create", "setup", "restart", "status", "url", "start", "stop", "remove", "ssh"]); p.add_argument("cmdline", nargs="?", default="")
+    p = sub.add_parser("poses");   p.add_argument("action", choices=["build"]); p.add_argument("--src", type=Path); p.add_argument("--out", type=Path)
     p = sub.add_parser("run");     p.add_argument("shot_dir", type=Path); p.add_argument("--seed", type=int); p.add_argument("--dry-run", action="store_true"); p.add_argument("--no-compose", action="store_true"); p.add_argument("--refresh-lora", action="store_true")
     a = ap.parse_args(argv)
     cfg = Config(a.config)
@@ -274,6 +275,14 @@ def main(argv=None):
             return 0
         if a.cmd == "pod":
             return pod_cmd(cfg, a.action, a.cmdline)
+        if a.cmd == "poses":
+            from mp.kkpose import build_library
+            src = a.src or cfg.studio_pose_dir
+            r = build_library(src, a.out or Path(__file__).resolve().parent / "poses" / "library.json")
+            log(f"{r['count']} poses -> {r['path']}" + (f"  ({len(r['failed'])} skipped)" if r["failed"] else ""))
+            for f in r["failed"]:
+                log("  skipped " + f)
+            return 0
         shot = load_shot(a.shot_dir, cfg)
         if a.cmd == "render":
             render(shot, cfg, a.seed, a.dry_run, a.refresh_lora)

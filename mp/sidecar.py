@@ -16,6 +16,8 @@ Sidecar keys (all optional except `characters` or `prompt`):
         lora: auto                               auto | none | <file in loras/> | <civitai url or model id>
         lora_weight: 0.8
         trigger: ""                              overrides the LoRA trigger words
+        gender: girl                             girl | boy: sets the 1girl / 1boy count tags
+        generic: false                           true = unnamed (no name tag, no LoRA), use tags
         tags: "blue hair, maid, short hair"      appearance tags; used mostly when no LoRA
     identity: auto                               auto | lora | ipadapter | reactor | none
     prompt: "..."                                scene / action / expression
@@ -91,8 +93,11 @@ def load_shot(shot_dir: Path, cfg) -> dict:
         c.setdefault("lora_weight", shot.get("lora_weight", 0.8))
         c.setdefault("trigger", "")
         c.setdefault("tags", "")
-        if not c.get("name"):
-            raise ShotError("every character needs a name")
+        if not c.get("name") and not c.get("generic"):
+            raise ShotError("every character needs a name (or generic: true for an unnamed one)")
+        if c.get("generic"):
+            c["lora"] = c.get("lora") if c.get("lora") not in (None, "auto") else "none"
+            c.setdefault("name", "")
         norm.append(c)
     shot["characters"] = norm
 
