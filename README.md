@@ -226,6 +226,18 @@ which is not committed. In the Pose tab, **Turn everyone** rotates a whole group
 Paths to the game (captures, templates, poses) can be overridden per machine in an untracked
 `config.local.yaml` next to `config.yaml`.
 
+## Claude: MCP server and script skill
+
+`./mangamaker-mcp` is an MCP server (stdio, no extra packages) over the same pipeline: `script_format`,
+`check_script`, `build_pages_from_script`, `list_shots`, `list_poses`, `pose_shot` (draws the OpenPose
+image server-side, single figures or whole group poses), `render_shot` (on the pod), `place_renders`,
+`pod`, `cast`. `.mcp.json` registers it for Claude Code in this folder; elsewhere:
+`claude mcp add kks-mangamaker -- /path/to/KKS-MangaMaker/mangamaker-mcp`.
+
+`.claude/skills/kks-mangamaker-script` teaches Claude to write Script Wizard scripts (and to build,
+pose and render them through the MCP server). The format and craft notes are in
+[docs/SCRIPT_WIZARD.md](docs/SCRIPT_WIZARD.md), also in the editor under Help › Script Wizard guide.
+
 ## Commands
 
 | command | does |
