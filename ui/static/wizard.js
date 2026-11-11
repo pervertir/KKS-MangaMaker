@@ -29,6 +29,9 @@ function parseScript(text, maxPer = 6) {
     const line = raw.trim();
     if (!line) continue;
     if (/^(-{3,}|#\s*page\b.*|page\s*\d*\s*:?)$/i.test(line)) { if (pages.at(-1).length) pages.push([]); cur = null; continue; }
+    if (line.startsWith("#")) { if (/4[\s-]?koma|yonkoma/i.test(line)) pages.at(-1).koma = true; continue; }   // comment / page style
+    let t = line.match(/^title\s*:\s*(.+)$/i);
+    if (t) { pages.at(-1).title = t[1].trim(); continue; }
     let m = line.match(/^(caption|narration|sfx)\s*:\s*(.+)$/i);
     if (m) { (cur || newPanel("", [], false)).lines.push({ kind: /sfx/i.test(m[1]) ? "sfx" : "caption", text: m[2].trim() }); continue; }
     m = line.match(/^([^:\[\]!]{1,40}?)\s*(?:\((thought|think|thinking|whisper|whispering|shout|shouting|yell)\))?\s*:\s*(.+)$/i);
@@ -45,7 +48,9 @@ function parseScript(text, maxPer = 6) {
     newPanel(m[3].trim(), (m[2] || "").split(",").map(s => s.trim()).filter(Boolean), !!m[1]);
   }
   const out = [];
-  for (const pg of pages.filter(p => p.length)) for (let i = 0; i < pg.length; i += maxPer) out.push(pg.slice(i, i + maxPer));
+  for (const pg of pages.filter(p => p.length)) for (let i = 0; i < pg.length; i += maxPer) {
+    const part = pg.slice(i, i + maxPer); part.koma = pg.koma; if (!i) part.title = pg.title; out.push(part);
+  }
   return out;
 }
 
@@ -54,6 +59,7 @@ function wizRows(panels) {
   const rows = [], hs = [];
   let i = 0;
   const n = panels.length;
+  if (panels.koma) return [panels.map(() => [1]), panels.map(() => 1)];   // 4-koma: equal stacked strips
   while (i < n) {
     const p = panels[i];
     if (p.big || n <= 3) { rows.push([1]); hs.push(p.big ? 1.7 : 1); i++; continue; }
@@ -127,10 +133,13 @@ async function buildFromScript(pages, opt) {
       const p = pg[i]; if (!p) return;
       if (opt.shots && (p.desc || p.chars.length)) {
         panel.shot = `${opt.prefix}_p${String(pgNo).padStart(2, "0")}_${i + 1}`;
-        shots.push({ name: panel.shot, prompt: p.desc, characters: p.chars.map(n => ({ name: n, series: opt.series || "" })) });
+        const chars = p.chars.map(n => ({ name: n, series: opt.series || "" }));
+        shots.push({ name: panel.shot, prompt: p.desc, characters: typeof enrichChars === "function" ? enrichChars(chars) : chars });
       }
       lettering.push(...wizBubbles(panel, p, rtl));
     });
+    if (pg.title) lettering.unshift({ type: "text", x: W() * 0.1, y: H() * 0.05, w: W() * 0.8, h: H() * 0.14, text: pg.title, font: "Anton",
+      color: "#ffffff", stroke: "#000000", strokeWidth: 14, fontSize: 0, bold: false });
     S.doc.pages.push(normalize({ pages: [{ id: uid(), bg: "#ffffff", layers: [...fresh, ...lettering] }] }).pages[0]);
   }
   let made = 0;
@@ -142,7 +151,7 @@ async function buildFromScript(pages, opt) {
   toast(`${pages.length} page${pages.length > 1 ? "s" : ""}, ${pages.reduce((a, p) => a + p.length, 0)} panels` + (shots.length ? `, ${made} shots ready to pose` : ""), "ok");
 }
 
-function scriptWizard() {
+function scriptWizard(focus) {
   const box = modal("New pages from a script", "");
   const ta = h("textarea", { rows: 16, spellcheck: false, style: "width:100%;font:13px/1.5 ui-monospace,Menlo,monospace" });
   try { ta.value = localStorage.getItem("mm.script") || WIZ_EXAMPLE; } catch { ta.value = WIZ_EXAMPLE; }
@@ -153,6 +162,9 @@ function scriptWizard() {
   const per = h("input", { type: "number", value: 6, min: 1, max: 9, style: "width:56px" });
   const mkShots = h("input", { type: "checkbox", checked: true });
   const prev = h("div", { class: "wizprev" });
+  const starters = typeof STARTERS !== "undefined" ? STARTERS : [];
+  const tpl = h("select", { onchange: e => { const st = starters[+e.target.value]; if (st && (!ta.value.trim() || ta.value === WIZ_EXAMPLE || starters.some(x => x[2] === ta.value) || confirm("Replace the script with this template?"))) { ta.value = st[2]; update(); } } },
+    h("option", { value: "" }, "— pick a starter —"), ...starters.map((st, i) => h("option", { value: i, title: st[1] }, st[0])));
   const update = () => {
     const pages = parseScript(ta.value, +per.value || 6); prev.innerHTML = "";
     if (!pages.length) { prev.append(h("div", { class: "hint" }, "Nothing to build yet.")); return pages; }
@@ -170,8 +182,8 @@ function scriptWizard() {
   $(".mbody", box).append(h("div", { class: "wizard" },
     h("div", {}, ta, h("p", { class: "hint" },
       "One thing per line. A plain line starts a panel; [Name, Name] lists who is in it (left to right), the rest becomes the render prompt. ",
-      "\"!\" first = big panel. Dialogue: Name: text, or Name (thought / shout / whisper): text. Caption: … and SFX: … too. --- starts a new page.")),
-    h("div", {}, h("div", { class: "form" }, rowOf("Pages", mode), rowOf("Reading", reading), rowOf("Panels / page", per),
+      "\"!\" first = big panel. Dialogue: Name: text, or Name (thought / shout / whisper): text. Caption: …, SFX: … and Title: … too. --- starts a new page; a # line is a note (# 4-koma stacks the page in four strips).")),
+    h("div", {}, h("div", { class: "form" }, rowOf("Template", tpl), rowOf("Pages", mode), rowOf("Reading", reading), rowOf("Panels / page", per),
       rowOf("Shots", h("label", { class: "hint", style: "display:flex;gap:6px;align-items:center;margin:0" }, mkShots, "one per panel, named"), prefix),
       rowOf("Series", series)), h("div", { class: "section" }, "Preview"), prev)));
   box.append(h("div", { class: "mfoot" }, h("button", { onclick: () => { ta.value = WIZ_EXAMPLE; update(); } }, "Example"), h("div", { class: "spacer" }),
@@ -182,5 +194,5 @@ function scriptWizard() {
       closeModal();
       await buildFromScript(pages, { mode: mode.value, reading: reading.value, prefix: (prefix.value.trim() || "ch1").replace(/[^\w\-.]/g, "_"), series: series.value.trim(), shots: mkShots.checked });
     } }, "Build pages")));
-  update(); setTimeout(() => ta.focus(), 0);
+  update(); setTimeout(() => (focus === "starter" ? tpl : ta).focus(), 0);
 }

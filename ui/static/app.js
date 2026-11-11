@@ -244,6 +244,7 @@ function drawLayer(ctx, l, opt = {}) {
         const r = r0;
         if (opt.ghost) { ctx.save(); ctx.globalAlpha = 0.3; drawFlipped(ctx, im, r, l.image.flip); ctx.restore(); }
         ctx.save(); ctx.beginPath(); ctx.rect(l.x, l.y, l.w, l.h); ctx.clip();
+        if (l.image.gray) ctx.filter = "grayscale(1) contrast(1.18)";
         drawFlipped(ctx, im, r, l.image.flip);
         ctx.restore();
       } else if (!opt.export) {
@@ -1445,7 +1446,7 @@ function panelProps(P, l) {
     P.append(h("div", { class: "section" }, "Render in panel"),
       select("Fit", [["cover", "Cover (crop)"], ["contain", "Contain"]], () => I.fit, v => { I.fit = v; I.zoom = 1; }),
       slider("Zoom", () => I.zoom || 1, v => I.zoom = v, I.fit === "contain" ? 0.2 : 1, 5, 0.01, v => v.toFixed(2) + "×"),
-      h("div", { class: "btnrow" }, check("Flip", () => I.flip, v => I.flip = v),
+      h("div", { class: "btnrow" }, check("Flip", () => I.flip, v => I.flip = v), check("B/W", () => I.gray, v => I.gray = v),
         h("button", { onclick: () => enterAdjust(l) }, "Reposition (Enter)"),
         h("button", { onclick: () => { l.image = null; commit("Image removed"); requestDraw(); refreshPanels(); } }, "Remove image")));
   }

@@ -185,6 +185,21 @@ Caption: Five minutes earlier...
 ---                                                             <- new page
 ```
 
+Helpers for first-time manga makers:
+
+- **Starter templates** (in the script dialog, or Help menu): 4-koma, dialogue page, action page and
+  cover, each a short sample script showing good pacing to rewrite.
+- **Check this page** (Page menu, Ctrl/⌘+Shift+C): bubbles read out of order, tails pointing out of
+  their panel, text too small for print, lettering outside the safe area, overlapping bubbles, empty
+  bubbles, panels with no shot or render. Each has Show and a one-click Fix (undoable).
+- **Character sheet** (Pipeline menu, Ctrl/⌘+Shift+U, stored in `cast.json`): name, series, LoRA,
+  looks, girl/boy and a default pose per character, filled into every shot made from a script or the
+  Pose tab so a character stays the same across pages.
+- **Make it manga** (Page menu): sets the page's shots to the `manga_bw` style for the next render,
+  shows placed renders in greyscale, adds light screentone to each panel and suggests sound effects
+  from the prompts and dialogue.
+- **Tips**: a hint card for the active tool (close it, or Help › Hide tips).
+
 In the Pose tab, **Shot presets** frame every figure the way storyboards name shots (full body, knees
 up, waist up, chest up, close-up), set the camera (low, high, dutch tilt) and stage two characters
 (facing, over the shoulder, foreground/background).

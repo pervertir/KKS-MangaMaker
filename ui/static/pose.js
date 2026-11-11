@@ -392,7 +392,13 @@ function renderPoseSide(valuesOnly) {
   const c = pcur();
   if (c) {
     side.append(h("div", { class: "section" }, c.name || c.label),
-      prow("Name", h("input", { value: c.name, placeholder: "Rem", style: "flex:1", onchange: e => { c.name = e.target.value.trim(); pcommit(); } })),
+      prow("Name", h("input", { value: c.name, placeholder: "Rem", style: "flex:1", list: "castnames", onchange: e => {
+        c.name = e.target.value.trim();
+        const k = typeof castFor === "function" && castFor(c.name);      // known from the character sheet
+        if (k) { c.series ||= k.series || ""; c.tags ||= k.tags || ""; c.gender = k.gender || c.gender; if (k.pose && P.byId.has(k.pose) && c.pose === "basic/Standing") c.pose = k.pose; }
+        pcommit();
+      } })),
+      h("datalist", { id: "castnames" }, ...((typeof CAST !== "undefined" && CAST.list) || []).map(k => h("option", { value: k.name }))),
       prow("Series", h("input", { value: c.series, placeholder: "Re:Zero", style: "flex:1", onchange: e => { c.series = e.target.value.trim(); pcommit(); } })),
       prow("Who", (() => { const s = h("select", { onchange: e => { c.gender = e.target.value; pcommit(); } }, h("option", { value: "girl" }, "Girl"), h("option", { value: "boy" }, "Boy")); s.value = c.gender || "girl"; return s; })()),
       prow("Looks", h("input", { value: c.tags || "", placeholder: "silver hair, school uniform", style: "flex:1", title: "Appearance tags (used for unnamed characters and when no LoRA is found)", onchange: e => { c.tags = e.target.value.trim(); pcommit(); } })),
@@ -452,7 +458,8 @@ async function savePoseShot(andRender) {
   if (!vis.length) return toast("Add a character first", "err");
   let name = P.shot;
   if (!name) { name = prompt("Shot folder name (shots/<name>)", "pose_" + new Date().toISOString().slice(5, 16).replace(/[-T:]/g, "")); if (!name) return; P.shot = name.trim(); }
-  const chars = [...vis].sort((a, b) => a.x - b.x).map(c => ({ name: c.name || "", series: c.series || "", gender: c.gender || "girl", tags: c.tags || "" }));
+  let chars = [...vis].sort((a, b) => a.x - b.x).map(c => ({ name: c.name || "", series: c.series || "", gender: c.gender || "girl", tags: c.tags || "" }));
+  if (typeof enrichChars === "function") chars = enrichChars(chars);
   try {
     await post("/api/pose/shot", { name: P.shot, png: renderPosePNG().toDataURL("image/png"), scene: { ...P.scene, shot: P.shot }, characters: chars, prompt: P.scene.prompt || "" });
     P.dirty = false; toast(`Saved pose to shots/${P.shot}`, "ok");

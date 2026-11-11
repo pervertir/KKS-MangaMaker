@@ -16,3 +16,6 @@ pages/
 
 # Per-machine path overrides
 config.local.yaml
+
+# The character sheet is per user
+cast.json

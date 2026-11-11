@@ -267,3 +267,15 @@ kbd { font: 11px ui-monospace, Menlo, monospace; background: #1b1b1e; border: 1p
 .wizprev { max-height: 42vh; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
 .wizpage { display: flex; gap: 10px; align-items: flex-start; }
 .wizpage canvas { flex: none; border-radius: 3px; }
+
+/* ----- checker, cast, tips */
+.checkrow { display: flex; align-items: center; gap: 8px; padding: 6px 4px; border-bottom: 1px solid var(--line); }
+.checkrow .lvl { width: 18px; text-align: center; } .checkrow.warn .lvl { color: var(--warn); } .checkrow.info .lvl { color: var(--muted); }
+.checkrow .msg { flex: 1; line-height: 1.4; }
+.casttable { display: flex; flex-direction: column; gap: 5px; }
+.casthead, .castrow { display: grid; grid-template-columns: 1fr 1fr 1fr 1.6fr 74px 1fr 30px; gap: 6px; align-items: center; }
+.casthead span { color: var(--muted); font-size: 11px; }
+.chkrow { display: flex; gap: 8px; align-items: flex-start; margin-bottom: 8px; line-height: 1.4; }
+#tipcard { position: absolute; left: 12px; bottom: 12px; max-width: 460px; display: flex; gap: 6px; align-items: flex-start;
+  background: #2b2b2ee8; border: 1px solid var(--line); border-radius: 8px; padding: 8px 6px 8px 12px; font-size: 12px; line-height: 1.45; color: #d8d8de; z-index: 5; }
+#tipcard button { padding: 0 6px; }

@@ -176,6 +176,7 @@ def shots() -> list[dict]:
 
 
 POSES = ROOT / "poses"
+CAST = ROOT / "cast.json"   # the character sheet: reused across shots and projects
 
 
 def pose_library() -> dict:
@@ -434,6 +435,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json(pod_status())
             if u.path == "/api/poses":
                 return self.json(pose_library())
+            if u.path == "/api/cast":
+                return self.json({"cast": json.loads(CAST.read_text(encoding="utf-8")) if CAST.exists() else []})
             if u.path == "/api/pose/scene":
                 p = shot_dir(q.get("name", "")) / "pose_scene.json"
                 return self.json(json.loads(p.read_text()) if p.exists() else {"error": "no scene"}, 200 if p.exists() else 404)
@@ -531,6 +534,23 @@ class Handler(BaseHTTPRequestHandler):
                     text = re.sub(r"(?ms)^dialogue:\n.*\Z", "dialogue: []\n", text)
                 side.write_text(text, encoding="utf-8")
                 return self.json({"ok": True})
+            if u.path == "/api/cast":
+                CAST.write_text(json.dumps(self.jbody().get("cast", []), indent=1, ensure_ascii=False), encoding="utf-8")
+                return self.json({"ok": True})
+            if u.path == "/api/shot/style":
+                body = self.jbody()
+                if body.get("style") not in CFG.styles:
+                    return self.json({"error": "unknown style"}, 400)
+                for name in body.get("names") or []:
+                    d = shot_dir(name)
+                    side = next((d / n for n in SIDECAR_NAMES if (d / n).exists()), None)
+                    if side is None or side.suffix == ".json":
+                        continue
+                    t = side.read_text(encoding="utf-8")
+                    line = f"style: {body['style']}"
+                    t = re.sub(r"(?m)^style:.*$", line, t) if re.search(r"(?m)^style:", t) else t + line + "\n"
+                    side.write_text(t, encoding="utf-8")
+                return self.json({"ok": True})
             if u.path == "/api/pose/shot":
                 return self.json(save_pose_shot(self.jbody()))
             if u.path == "/api/poses/custom":
@@ -565,7 +585,10 @@ def with_characters(text: str, chars: list[dict]) -> str:
         lines = [f"  - name: {q(c.get('name', ''))}", f"    series: {q(c.get('series', ''))}"]
         if generic:
             lines.append("    generic: true             # unnamed: no name tag, no LoRA; describe with tags")
-        lines.append("    lora: " + ("none" if generic else "auto                # auto | none | file.safetensors | https://civitai.com/models/..."))
+        lora = str(c.get("lora") or "").strip()
+        if generic and lora in ("", "auto"):
+            lora = "none"
+        lines.append("    lora: " + (q(lora) if lora and lora != "auto" else "auto                # auto | none | file.safetensors | https://civitai.com/models/..."))
         lines.append("    lora_weight: 0.8")
         if c.get("gender") in ("girl", "boy"):
             lines.append(f"    gender: {c['gender']}")
