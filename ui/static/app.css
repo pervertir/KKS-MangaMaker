@@ -230,3 +230,33 @@ kbd { font: 11px ui-monospace, Menlo, monospace; background: #1b1b1e; border: 1p
 #propspanel > .dockhead { justify-content: flex-start; }
 #layerspanel > .dockhead { justify-content: flex-start; }
 #layerspanel .headbtns { margin-left: auto; }
+
+/* ----- mode tabs + pose studio */
+#modetabs { display: flex; gap: 2px; margin-left: 14px; background: #1b1b1d; border: 1px solid var(--line); border-radius: 6px; padding: 2px; }
+#modetabs button { border: none; background: transparent; padding: 3px 14px; border-radius: 4px; }
+#modetabs button.on { background: var(--accent); color: #fff; }
+#posestudio { position: absolute; top: 34px; bottom: 26px; left: 0; right: 0; display: flex; }
+#pslib { width: 300px; background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+.pstools { display: flex; gap: 6px; padding: 8px; border-bottom: 1px solid var(--line); }
+.pstools input { flex: 1; } .pstools select { width: 110px; }
+#pslist { flex: 1; overflow-y: auto; padding: 6px 8px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; align-content: start; grid-auto-rows: max-content; }
+.psgroup { grid-column: 1 / -1; color: var(--muted); font-size: 11px; margin-top: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pstile { position: relative; border: 2px solid transparent; border-radius: 5px; overflow: hidden; cursor: pointer; background: #000; }
+.pstile:hover { border-color: var(--accent); }
+.pstile canvas { width: 100%; display: block; aspect-ratio: 3/4; }
+.pstile .cap { position: absolute; left: 0; right: 0; bottom: 0; font-size: 10px; background: #000b; color: #ddd; padding: 1px 4px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#pscenter { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.psbar { height: 36px; display: flex; align-items: center; gap: 6px; padding: 0 10px; background: var(--panel); border-bottom: 1px solid var(--line); }
+#psstage { flex: 1; position: relative; background: var(--stage); overflow: hidden; }
+#pscanvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
+#psside { width: 300px; background: var(--panel); border-left: 1px solid var(--line); overflow-y: auto; }
+#psside .section:first-child { border-top: none; margin-top: 2px; }
+#psside .row.col { flex-direction: column; align-items: stretch; } #psside .row.col > label { width: auto; }
+#psside textarea { width: 100%; resize: vertical; }
+#psside .chk { width: auto; display: flex; align-items: center; gap: 4px; color: var(--muted); }
+.pschars { display: flex; flex-direction: column; gap: 3px; margin-bottom: 8px; }
+.pschar { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-radius: 4px; cursor: pointer; border: 1px solid transparent; }
+.pschar:hover { background: var(--panel2); } .pschar.on { border-color: var(--accent); background: #2f3a52; }
+.pschar .hint { margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 110px; }
+.pschar button { padding: 0 4px; }

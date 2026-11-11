@@ -259,3 +259,27 @@ def build_library(src: Path, out: Path) -> dict:
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(lib, separators=(",", ":"), ensure_ascii=False), encoding="utf-8")
     return {"count": len(poses), "failed": failed, "path": str(out)}
+
+
+# A few hand-made poses (FK rotations, degrees) so the pose tab works with no game install at all.
+# Signs: arm_L down = +z, arm_R down = -z; thigh forward = -x; knee bend = +x; forearm_L forward = +y.
+_ARMS_DOWN = {19: (0, 0, 75), 15: (0, 0, -75), 20: (0, 10, 0), 16: (0, -10, 0)}
+BASIC = {
+    "Standing": dict(_ARMS_DOWN),
+    "T-pose": {},
+    "Walking": {**_ARMS_DOWN, 10: (-25, 0, 0), 11: (15, 0, 0), 6: (18, 0, 0), 7: (30, 0, 0), 19: (0, -20, 75), 15: (0, -20, -75)},
+    "Running": {10: (-60, 0, 0), 11: (70, 0, 0), 6: (30, 0, 0), 7: (80, 0, 0), 4: (15, 0, 0),
+                19: (0, -45, 70), 20: (0, 90, 0), 15: (0, -45, -70), 16: (0, -90, 0)},
+    "Hands on hips": {19: (0, 0, 50), 20: (0, 0, 85), 15: (0, 0, -50), 16: (0, 0, -85)},
+    "Waving": {19: (0, 0, 75), 15: (0, 0, 30), 16: (0, 0, 80)},
+    "Pointing": {19: (0, 0, 75), 15: (0, -85, -5)},
+    "Arms raised": {19: (0, 0, -60), 15: (0, 0, 60)},
+    "Sitting (chair)": {**_ARMS_DOWN, 10: (-90, 0, 0), 11: (90, 0, 0), 6: (-90, 0, 0), 7: (90, 0, 0), 20: (0, 50, 0), 16: (0, -50, 0)},
+    "Sitting (floor, legs crossed)": {**_ARMS_DOWN, 10: (-80, 0, 40), 11: (140, 0, 0), 6: (-80, 0, -40), 7: (140, 0, 0)},
+    "Kneeling": {**_ARMS_DOWN, 11: (90, 0, 0), 7: (90, 0, 0)},
+    "Leaning forward": {**_ARMS_DOWN, 4: (20, 0, 0), 3: (15, 0, 0), 2: (-15, 0, 0)},
+}
+
+
+def basic_poses() -> list[dict]:
+    return [{"id": "basic/" + n, "name": n, "pack": "Basic", "group": "", **keypoints(fk)} for n, fk in BASIC.items()]

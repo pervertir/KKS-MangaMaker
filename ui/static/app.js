@@ -1099,6 +1099,7 @@ const SHORTCUTS = [
   // pipeline
   ["Pipeline", "mod+u", "Shots (edit, grab, render)", () => shotDialog(selL()?.shot || null)],
   ["Pipeline", "`", "Jobs log", () => toggleJobs()],
+  ["Pipeline", "mod+shift+p", "Pose studio", () => setMode(S.mode === "pose" ? "page" : "pose")],
   ["Help", "shift+/", "This cheat sheet", () => shortcutSheet()],
   ["Help", "f1", "This cheat sheet", () => shortcutSheet()],
 ];
@@ -1121,6 +1122,7 @@ function keyLabel(combo) {
 }
 const sc = label => { const r = SHORTCUTS.find(r => r[2] === label); return r ? keyLabel(r[1]) : ""; };
 document.addEventListener("keydown", e => {
+  if (S.mode === "pose" && $("#modal").hidden) return poseKey(e);
   const combo = comboOf(e), row = SC_MAP.get(combo);
   const modalOpen = !$("#modal").hidden;
   if (modalOpen || inField(e)) {
@@ -1395,6 +1397,7 @@ function panelProps(P, l) {
   }
   P.append(h("div", { class: "btnrow" },
     h("button", { onclick: () => shotDialog(l.shot || null) }, "Edit shot…"),
+    h("button", { onclick: () => poseForPanel(l), title: "Pose the characters for this panel (no game needed)" }, "Pose…"),
     l.shot ? h("button", { class: "primary", onclick: () => renderShot(l.shot) }, "Render on pod") : null));
   if (l.image) {
     const I = l.image;
@@ -1715,7 +1718,7 @@ const MENUS = {
     ["Zoom in", () => zoomAt(1.25, ...center()), sc("Zoom in")], ["Zoom out", () => zoomAt(0.8, ...center()), sc("Zoom out")], null,
     [(S.showOrder ? "Hide" : "Show") + " panel order", () => { S.showOrder = !S.showOrder; requestView(); }, sc("Show / hide panel order")],
     [(S.showGuides ? "Disable" : "Enable") + " snapping", () => { S.showGuides = !S.showGuides; renderOptions(); }, sc("Snapping on / off")]],
-  Pipeline: () => [["Shots…", () => shotDialog(selL()?.shot || null), sc("Shots (edit, grab, render)")], ["New shot…", () => shotDialog(null, true)], null,
+  Pipeline: () => [["Pose studio", () => setMode("pose"), sc("Pose studio")], ["Pose the selected panel…", () => poseForPanel(selL()), "", selL()?.type !== "panel"], null, ["Shots…", () => shotDialog(selL()?.shot || null), sc("Shots (edit, grab, render)")], ["New shot…", () => shotDialog(null, true)], null,
     ["Pod status", () => refreshPod(true)], ["Open ComfyUI on the pod", () => S.pod?.url ? window.open(S.pod.url, "_blank") : toast("Pod URL unknown"), "", !S.pod?.url],
     ["Start pod", () => podAction("start")], ["Stop pod (ends GPU billing)", () => podAction("stop")], null, ["Jobs", () => toggleJobs(true), sc("Jobs log")]],
   Help: () => [["Keyboard shortcuts", shortcutSheet, "?"]],

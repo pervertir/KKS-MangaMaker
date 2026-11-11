@@ -166,10 +166,71 @@ def shots() -> list[dict]:
             "yaml": side.read_text(encoding="utf-8") if side else "",
             "pose": mp_ref(d / "pose.png") if (d / "pose.png").exists() else None,
             "reference": mp_ref(d / "reference.png") if (d / "reference.png").exists() else None,
+            "scene": (d / "pose_scene.json").exists(),
             "renders": [mp_ref(f) for f in by_time("render_*.png")],
             "finals": [mp_ref(f) for f in by_time("final_*.png")],
         })
     return out
+
+
+POSES = ROOT / "poses"
+
+
+def pose_library() -> dict:
+    """Built-in basics + the converted studio library (built on first use when the install is
+    reachable) + poses saved from the editor."""
+    from mp.kkpose import basic_poses, build_library
+    lib = POSES / "library.json"
+    if not lib.exists() and CFG.studio_pose_dir.is_dir():
+        build_library(CFG.studio_pose_dir, lib)
+    poses = basic_poses()
+    for f in (lib, POSES / "custom.json"):
+        if f.exists():
+            poses += json.loads(f.read_text(encoding="utf-8")).get("poses", [])
+    return {"poses": poses}
+
+
+def save_custom_pose(pose: dict) -> dict:
+    f = POSES / "custom.json"
+    data = json.loads(f.read_text(encoding="utf-8")) if f.exists() else {"version": 1, "poses": []}
+    name = str(pose.get("name") or "My pose").strip()[:80]
+    pid = "custom/" + re.sub(r"[^A-Za-z0-9_\-]+", "_", name) + "_" + uuid.uuid4().hex[:6]
+    entry = {"id": pid, "name": name, "pack": "My poses", "group": "",
+             **{k: pose[k] for k in ("body", "hands", "feet") if k in pose}}
+    data["poses"].append(entry)
+    POSES.mkdir(parents=True, exist_ok=True)
+    f.write_text(json.dumps(data, separators=(",", ":"), ensure_ascii=False), encoding="utf-8")
+    return entry
+
+
+def save_pose_shot(body: dict) -> dict:
+    """Pose studio -> shot folder: pose.png (OpenPose skeletons on black), pose_scene.json (the editable
+    scene) and the sidecar's characters/prompt, so `run` renders it with no Studio capture at all."""
+    import base64
+    d = shot_dir(body["name"], must_exist=False)
+    chars = body.get("characters") or [{"name": "", "series": ""}]
+    side = next((d / n for n in SIDECAR_NAMES if (d / n).exists()), None)
+    if side is None:
+        side = write_example(d, str(chars[0]["name"]).strip(), str(chars[0].get("series", "")).strip())
+        text = side.read_text(encoding="utf-8")
+        text = text.replace("reference: reference.png    # optional: F11 render of the real character, same camera\n", "")
+        text = text.replace('  - text: "Replace me."\n    bubble: "001"\n    at: [0.70, 0.12]\n    size: 0.40\n    flip: false\n', "  []\n")
+        text = text.replace("dialogue:\n  []", "dialogue: []    # the editor letters the page; add lines here for `mangapipe compose`")
+        side.write_text(text, encoding="utf-8")
+    text = side.read_text(encoding="utf-8")
+    if side.suffix != ".json":
+        try:
+            text = with_characters(text, chars)
+        except ValueError:
+            pass
+        if body.get("prompt") is not None:
+            line = "prompt: " + json.dumps(str(body["prompt"]), ensure_ascii=False)
+            text = re.sub(r"(?m)^prompt:.*$", lambda m: line, text) if re.search(r"(?m)^prompt:", text) else text + line + "\n"
+        side.write_text(text, encoding="utf-8")
+    png = body["png"].split(",", 1)[-1]
+    Image.open(io.BytesIO(base64.b64decode(png))).convert("RGB").save(d / "pose.png")
+    (d / "pose_scene.json").write_text(json.dumps(body.get("scene") or {}, indent=1), encoding="utf-8")
+    return {"ok": True, "pose": mp_ref(d / "pose.png")}
 
 
 def projects() -> list[str]:
@@ -369,6 +430,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json(json.loads(p.read_text()) if p.exists() else {"error": "not found"}, 200 if p.exists() else 404)
             if u.path == "/api/pod":
                 return self.json(pod_status())
+            if u.path == "/api/poses":
+                return self.json(pose_library())
+            if u.path == "/api/pose/scene":
+                p = shot_dir(q.get("name", "")) / "pose_scene.json"
+                return self.json(json.loads(p.read_text()) if p.exists() else {"error": "no scene"}, 200 if p.exists() else 404)
             if u.path.startswith("/api/jobs/"):
                 job = JOBS.get(u.path.rsplit("/", 1)[-1])
                 if not job:
@@ -458,6 +524,10 @@ class Handler(BaseHTTPRequestHandler):
                 if len(chars) > 1:
                     side.write_text(with_characters(side.read_text(encoding="utf-8"), chars), encoding="utf-8")
                 return self.json({"ok": True})
+            if u.path == "/api/pose/shot":
+                return self.json(save_pose_shot(self.jbody()))
+            if u.path == "/api/poses/custom":
+                return self.json(save_custom_pose(self.jbody()))
             if u.path == "/api/jobs":
                 body = self.jbody()
                 cmd = body.get("cmd")
@@ -483,13 +553,18 @@ class Handler(BaseHTTPRequestHandler):
 def with_characters(text: str, chars: list[dict]) -> str:
     """Swap the template's one-character block for several, in frame order (leftmost first)."""
     q = lambda v: json.dumps(str(v).strip(), ensure_ascii=False)
-    block = "characters:                  # left to right in the frame\n" + "".join(
-        f"  - name: {q(c['name'])}\n"
-        f"    series: {q(c.get('series', ''))}\n"
-        "    lora: auto                # auto | none | file.safetensors | https://civitai.com/models/...\n"
-        "    lora_weight: 0.8\n"
-        "    tags: \"\"                  # appearance tags used when no LoRA is found\n"
-        for c in chars)
+    def one(c):
+        generic = bool(c.get("generic")) or not str(c.get("name", "")).strip()
+        lines = [f"  - name: {q(c.get('name', ''))}", f"    series: {q(c.get('series', ''))}"]
+        if generic:
+            lines.append("    generic: true             # unnamed: no name tag, no LoRA; describe with tags")
+        lines.append("    lora: " + ("none" if generic else "auto                # auto | none | file.safetensors | https://civitai.com/models/..."))
+        lines.append("    lora_weight: 0.8")
+        if c.get("gender") in ("girl", "boy"):
+            lines.append(f"    gender: {c['gender']}")
+        lines.append(f"    tags: {q(c.get('tags', ''))}" + ("" if c.get("tags") else "                  # appearance tags used when no LoRA is found"))
+        return "\n".join(lines) + "\n"
+    block = "characters:                  # left to right in the frame\n" + "".join(one(c) for c in chars)
     start = text.index("characters:\n")
     end = text.index("\nidentity:", start) + 1
     return text[:start] + block + "\n" + text[end:]
