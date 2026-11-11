@@ -16,6 +16,10 @@ class Config:
         self.path = path or HERE / "config.yaml"
         with open(self.path, "r", encoding="utf-8") as f:
             self.raw = yaml.safe_load(f) or {}
+        local = self.path.with_name("config.local.yaml")
+        if path is None and local.exists():  # per-machine overrides (paths), not tracked
+            with open(local, "r", encoding="utf-8") as f:
+                self.raw.update(yaml.safe_load(f) or {})
         with open(HERE / "styles.yaml", "r", encoding="utf-8") as f:
             self.styles = yaml.safe_load(f) or {}
 
@@ -65,6 +69,10 @@ class Config:
     @property
     def cap_dir(self) -> Path:
         return _abs(HERE, self.raw["cap_dir"])
+
+    @property
+    def studio_pose_dir(self) -> Path:
+        return _abs(HERE, self.raw.get("studio_pose_dir", "../UserData/studio/pose"))
 
     @property
     def templates_dir(self) -> Path:

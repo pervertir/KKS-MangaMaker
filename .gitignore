@@ -13,3 +13,6 @@ shots/_example/out/
 
 # Built manga pages (mangapipe page / layouts)
 pages/
+
+# Per-machine path overrides
+config.local.yaml
