@@ -154,6 +154,32 @@ pages:
   before rendering.
 - `--page N` (repeatable) rebuilds only those pages.
 
+## MangaMaker editor and the Pose studio (no game needed)
+
+`./mangapipe-ui` opens the page editor on http://127.0.0.1:8765. It has two modes, switched at the
+top (or Ctrl/⌘+Shift+P):
+
+- **Page**: panels, renders, template or drawn bubbles, text, SFX, captions, screentones and speed
+  lines, pages and spreads, export to PNG/PDF. Built-in panel layouts (splash, tiers, 4-koma, classic
+  six, ...) and print guides (trim and safe area, View menu) need no template pack.
+- **Pose**: builds the OpenPose image for a shot instead of a CharaStudio capture. Pick a pose from the
+  library (click, or drag onto the canvas) for each character, then turn, tilt, rotate, size and mirror
+  it, and drag single joints to fine-tune (the wrist carries the hand). Each figure gets a name and
+  series (LoRA lookup as usual) or stays unnamed (`generic: true`, described by its appearance tags),
+  plus girl/boy for the `1girl, 1boy` count tags. **Save & render** writes `shots/<name>/pose.png`,
+  `pose_scene.json` (reopen and edit it later) and the sidecar's characters and prompt, then renders
+  on the pod. From a panel, **Pose…** opens the studio at that panel's shape and the render lands back
+  in the panel.
+
+The pose library is `poses/library.json`: the Koikatsu Sunshine studio poses converted to OpenPose
+keypoints (3D, so figures can be turned) by our own forward kinematics in `mp/kkpose.py`; nothing
+from the game is copied. Rebuild it from an install with `./mangapipe poses build [--src DIR]`
+(default `studio_pose_dir`, `../UserData/studio/pose`). Twelve basic poses are built in, and figures
+you edit can be kept under *My poses* (`poses/custom.json`).
+
+Paths to the game (captures, templates, poses) can be overridden per machine in an untracked
+`config.local.yaml` next to `config.yaml`.
+
 ## Commands
 
 | command | does |
@@ -166,6 +192,7 @@ pages:
 | `./mangapipe run DIR [--seed N] [--no-compose]` | everything |
 | `./mangapipe page SCRIPT [--page N] [--pdf] [--out DIR]` | build manga pages from a script |
 | `./mangapipe layouts [--ltr]` | contact sheet of the page templates with panel order |
+| `./mangapipe poses build [--src DIR] [--out F]` | convert the studio pose files into `poses/library.json` |
 
 | `./mangapipe pod create\|setup\|restart\|status\|url\|start\|stop\|remove\|ssh ["cmd"]` | RunPod pod lifecycle (`restart` relaunches ComfyUI after adding nodes) |
 

@@ -250,7 +250,7 @@ kbd { font: 11px ui-monospace, Menlo, monospace; background: #1b1b1e; border: 1p
 .psbar { height: 36px; display: flex; align-items: center; gap: 6px; padding: 0 10px; background: var(--panel); border-bottom: 1px solid var(--line); }
 #psstage { flex: 1; position: relative; background: var(--stage); overflow: hidden; }
 #pscanvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
-#psside { width: 300px; background: var(--panel); border-left: 1px solid var(--line); overflow-y: auto; }
+#psside { flex: none; width: 300px; background: var(--panel); border-left: 1px solid var(--line); overflow-y: auto; }
 #psside .section:first-child { border-top: none; margin-top: 2px; }
 #psside .row.col { flex-direction: column; align-items: stretch; } #psside .row.col > label { width: auto; }
 #psside textarea { width: 100%; resize: vertical; }
