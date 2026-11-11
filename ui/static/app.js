@@ -1056,6 +1056,7 @@ const SHORTCUTS = [
   ["File", "mod+s", "Save", () => save(), true],
   ["File", "mod+shift+s", "Save as", () => save(true), true],
   ["File", "mod+i", "Import page script", () => importDialog()],
+  ["File", "mod+shift+k", "New pages from a script", () => scriptWizard()],
   ["File", "mod+e", "Export this page", () => exportPages("one"), true],
   ["File", "mod+shift+e", "Export all pages + PDF", () => exportPages("all"), true],
   // edit
@@ -1462,7 +1463,8 @@ function pageProps(P) {
     colorRow("Paper", pg, "bg"),
     h("div", { class: "row" }, h("label", {}, "Max text"), h("input", { type: "number", value: S.doc.maxFont, onchange: e => { S.doc.maxFont = +e.target.value; commit(); requestDraw(); } }),
       h("span", { class: "hint" }, "px, keeps fitted text even")),
-    h("div", { class: "btnrow" }, h("button", { class: "primary", onclick: layoutDialog }, "Choose layout…"),
+    h("div", { class: "btnrow" }, h("button", { class: "primary", onclick: scriptWizard, title: "Write the scene as lines; get pages, panels, bubbles and shots" }, "From a script…"),
+      h("button", { onclick: layoutDialog }, "Choose layout…"),
       h("button", { onclick: () => { S.showOrder = !S.showOrder; requestDraw(); } }, "Toggle panel order")),
     h("p", { class: "hint" }, "Pick a layout, drag renders from Shots onto panels, then letter with B (bubble), T (text), S (SFX), C (caption). " +
       "Double-click a panel to reposition its render, double-click a bubble to type. Space-drag pans, Ctrl/⌘+scroll zooms."));
@@ -1741,7 +1743,7 @@ $("#addpage").onclick = () => pageOps.add();
 
 /* ================================================================ menus */
 const MENUS = {
-  File: () => [["New project", newProject, sc("New project")], ["Open…", openDialog, sc("Open project")], ["Save", () => save(), sc("Save")], ["Save as…", () => save(true), sc("Save as")], null,
+  File: () => [["New project", newProject, sc("New project")], ["New pages from a script…", scriptWizard, sc("New pages from a script")], ["Open…", openDialog, sc("Open project")], ["Save", () => save(), sc("Save")], ["Save as…", () => save(true), sc("Save as")], null,
     ["Import page script…", importDialog, sc("Import page script")], null, ["Export this page (PNG)", () => exportPages("one"), sc("Export this page")],
     ["Export all pages + PDF", () => exportPages("all"), sc("Export all pages + PDF")], ["Download this page", downloadPage]],
   Edit: () => [["Undo", undo, sc("Undo"), !S.undo.length], ["Redo", redo, sc("Redo"), !S.redo.length], null,

@@ -243,6 +243,52 @@ function psWheel(e) {
   pdraw(); renderPoseSide(true);
 }
 
+/* ---------------------------------------------------------------- shot presets */
+/* Framing = how much of the body fills the frame, measured from the top of the head down
+   (fractions of the figure's height). The camera words manga storyboards use. */
+const FRAMINGS = [["Full body", 1.0, "Whole figure, feet in frame: establishing, action"], ["Knees up", 0.72, "Cowboy shot: stance and hands"],
+  ["Waist up", 0.5, "Medium shot: most dialogue panels"], ["Chest up", 0.33, "Medium close-up: reactions"], ["Close-up", 0.2, "Face fills the panel: emotion"]];
+const ANGLES = [["Eye level", 0, 0, "Neutral"], ["Low angle", -18, 0, "Camera below: power, threat"], ["High angle", 22, 0, "Camera above: small, vulnerable"], ["Dutch tilt", 0, 12, "Tilted frame: unease, chaos"]];
+const ARRANGE = [["Line-up", "Side by side, facing the reader"], ["Facing", "Two characters face each other (talking, confrontation)"],
+  ["Over the shoulder", "First character close, back to the camera; the second faces us"], ["Foreground / back", "One close in front, the other small behind"]];
+
+function figureExtent(c) {               // head top and lowest point at the figure's own scale, in px
+  const pr = project(c, P.scene.w, P.scene.h); if (!pr) return null;
+  const ys = [...pr.body, ...pr.hands.flat()].map(p => p[1]);
+  return { top: Math.min(...ys), bottom: Math.max(...ys) };
+}
+function applyFraming(frac) {
+  const { h: H } = P.scene, chars = P.scene.chars.filter(c => !c.hidden);
+  if (!chars.length) return toast("Add a character first", "err");
+  for (const c of chars) {
+    let e = figureExtent(c); if (!e) continue;
+    c.scale *= (H * 0.9) / (frac * (e.bottom - e.top));     // visible part spans 90% of the frame
+    e = figureExtent(c);
+    c.y += (H * 0.06 - e.top) / H;                           // head top just under the frame edge
+  }
+  pcommit("Framing");
+}
+function applyAngle(pitch, roll) { for (const c of P.scene.chars) { c.pitch = pitch; c.roll = roll; } pcommit("Camera angle"); }
+function applyArrange(kind) {
+  const cs = P.scene.chars.filter(c => !c.hidden).sort((a, b) => a.x - b.x);
+  if (!cs.length) return toast("Add a character first", "err");
+  if (kind === "Line-up") cs.forEach((c, i) => { c.x = (i + 1) / (cs.length + 1); c.yaw = 0; c.flip = false; });
+  else if (cs.length < 2) return toast("This needs two characters", "err");
+  else if (kind === "Facing") { const [a, b] = cs; a.x = 0.32; b.x = 0.68; a.yaw = 40; b.yaw = -40; b.scale = a.scale; b.y = a.y; }
+  else if (kind === "Over the shoulder") {
+    const [a, b] = cs; a.x = 0.24; a.yaw = 155; a.scale = b.scale * 1.7; a.y = b.y + 0.35; b.x = 0.66; b.yaw = -20;
+    P.scene.chars.splice(P.scene.chars.indexOf(a), 1); P.scene.chars.push(a);        // the near figure draws on top
+  } else if (kind === "Foreground / back") { const [a, b] = cs; a.x = 0.3; a.scale = b.scale * 1.35; a.y = b.y + 0.12; b.x = 0.68; b.scale *= 0.75; b.y -= 0.12; }
+  pcommit(kind);
+}
+function presetSection() {
+  const btns = (list, fn) => h("div", { class: "btnrow" }, ...list.map(it => h("button", { title: it[it.length - 1], onclick: () => fn(it) }, it[0])));
+  return [h("div", { class: "section" }, "Shot presets"),
+    h("div", { class: "hint", style: "margin-top:0" }, "Framing"), btns(FRAMINGS, it => applyFraming(it[1])),
+    h("div", { class: "hint" }, "Camera"), btns(ANGLES, it => applyAngle(it[1], it[2])),
+    h("div", { class: "hint" }, "Staging"), btns(ARRANGE, it => applyArrange(it[0]))];
+}
+
 /* ---------------------------------------------------------------- library */
 async function loadPoseLib() {
   if (P.lib) return;
@@ -326,6 +372,7 @@ function renderPoseSide(valuesOnly) {
     h("div", { class: "row" }, h("label", { class: "chk" }, h("input", { type: "checkbox", checked: P.showHands, onchange: e => { P.showHands = e.target.checked; pdraw(); } }), " Hands"),
       h("label", { class: "chk" }, "Guide ", h("input", { type: "file", accept: "image/*", style: "width:120px", onchange: e => loadRef(e.target.files[0]) })),
       P.ref ? h("input", { type: "range", min: 0, max: 1, step: 0.05, value: P.refAlpha, title: "Guide opacity (never exported)", oninput: e => { P.refAlpha = +e.target.value; pdraw(); } }) : null));
+  side.append(...presetSection());
   // characters
   side.append(h("div", { class: "section" }, "Characters ", h("span", { class: "hint" }, "left to right in the frame = order in the prompt")));
   const list = h("div", { class: "pschars" });
@@ -428,7 +475,7 @@ async function openPoseStudio(opt = {}) {
     if (!P.scene) {
       let w = 832, hh = 1216;
       if (opt.aspect) { const long = 1216, a = opt.aspect; [w, hh] = a >= 1 ? [long, Math.round(long / a / 8) * 8] : [Math.round(long * a / 8) * 8, long]; }
-      P.scene = newScene(w, hh);
+      P.scene = newScene(w, hh); P.scene.prompt = opt.prompt || "";
       if (opt.chars?.length) opt.chars.forEach((n, i) => { const c = newChar(P.byId.has("basic/Standing") ? "basic/Standing" : P.lib[0]?.id, (i + 1) / (opt.chars.length + 1)); c.name = n.name || ""; c.series = n.series || ""; P.scene.chars.push(c); });
     }
     P.sel = null; P.undo = []; P.redo = []; P.snap = JSON.stringify(P.scene); P.dirty = false;
@@ -450,7 +497,10 @@ function poseForPanel(l) {
   const s = S.shots.find(q => q.name === l.shot);
   let chars = [];
   if (s?.yaml) { const m = [...s.yaml.matchAll(/-\s*name:\s*"?([^"\n]+)"?\s*\n\s*series:\s*"?([^"\n]*)"?/g)]; chars = m.map(x => ({ name: x[1].trim(), series: x[2].trim() })); }
-  openPoseStudio({ shot: l.shot || "", panel: l.id, aspect: l.w / l.h, chars });
+  let prompt = "";
+  const pm = s?.yaml?.match(/^prompt:\s*(.*)$/m);
+  if (pm) { try { prompt = pm[1].trim().startsWith('"') ? JSON.parse(pm[1].trim()) : pm[1].trim(); } catch { prompt = pm[1].replace(/^"|"$/g, ""); } }
+  openPoseStudio({ shot: l.shot || "", panel: l.id, aspect: l.w / l.h, chars, prompt });
 }
 
 function poseKey(e) {

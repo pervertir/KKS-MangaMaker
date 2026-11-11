@@ -171,6 +171,24 @@ top (or Ctrl/⌘+Shift+P):
   on the pod. From a panel, **Pose…** opens the studio at that panel's shape and the render lands back
   in the panel.
 
+**From a script** (File menu, or the Page panel) is the quickest start: write the scene as plain lines
+and it builds the pages, picks layouts by panel count, places drawn bubbles in reading order with tails
+toward the speaker, and makes one shot per panel with its characters and prompt.
+
+```text
+[Rem] Classroom after school, sunset. Rem waits by the door.   <- a panel: [who, left to right] prompt
+Rem: He said he'd come...                                       <- speech
+Rem (thought): Maybe he forgot.                                 <- thought / shout / whisper
+SFX: TAP TAP
+! [Rem, Subaru] Rem turns around, surprised.                    <- "!" = big panel
+Caption: Five minutes earlier...
+---                                                             <- new page
+```
+
+In the Pose tab, **Shot presets** frame every figure the way storyboards name shots (full body, knees
+up, waist up, chest up, close-up), set the camera (low, high, dutch tilt) and stage two characters
+(facing, over the shoulder, foreground/background).
+
 The pose library is `poses/library.json`: the Koikatsu Sunshine studio poses converted to OpenPose
 keypoints (3D, so figures can be turned) by our own forward kinematics in `mp/kkpose.py`; nothing
 from the game is copied. Rebuild it from an install with `./mangapipe poses build [--src DIR]`

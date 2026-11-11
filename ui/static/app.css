@@ -261,3 +261,9 @@ kbd { font: 11px ui-monospace, Menlo, monospace; background: #1b1b1e; border: 1p
 .pschar .hint { margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 110px; }
 .pschar button { padding: 0 4px; }
 .tile canvas { max-width: 92%; max-height: 92%; pointer-events: none; box-shadow: 0 0 0 1px #ccc; }
+
+/* ----- script wizard */
+.wizard { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 16px; min-width: min(980px, 90vw); }
+.wizprev { max-height: 42vh; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+.wizpage { display: flex; gap: 10px; align-items: flex-start; }
+.wizpage canvas { flex: none; border-radius: 3px; }

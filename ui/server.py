@@ -520,11 +520,16 @@ class Handler(BaseHTTPRequestHandler):
                 if d.exists():
                     return self.json({"error": "a shot with that name exists"}, 400)
                 chars = [c for c in (body.get("characters") or []) if str(c.get("name", "")).strip()]
-                if not chars:
-                    chars = [{"name": body.get("character") or "Character", "series": body.get("series") or ""}]
+                if not chars and body.get("character"):
+                    chars = [{"name": body["character"], "series": body.get("series") or ""}]
+                chars = chars or [{"name": "", "series": ""}]   # unnamed: generic, described by tags
                 side = write_example(d, str(chars[0]["name"]).strip(), str(chars[0].get("series", "")).strip())
-                if len(chars) > 1:
-                    side.write_text(with_characters(side.read_text(encoding="utf-8"), chars), encoding="utf-8")
+                text = with_characters(side.read_text(encoding="utf-8"), chars)
+                if body.get("prompt"):
+                    text = re.sub(r"(?m)^prompt:.*$", lambda m: "prompt: " + json.dumps(str(body["prompt"]), ensure_ascii=False), text)
+                if body.get("keep"):   # made by the script wizard: the editor letters the page, no sample line
+                    text = re.sub(r"(?ms)^dialogue:\n.*\Z", "dialogue: []\n", text)
+                side.write_text(text, encoding="utf-8")
                 return self.json({"ok": True})
             if u.path == "/api/pose/shot":
                 return self.json(save_pose_shot(self.jbody()))
