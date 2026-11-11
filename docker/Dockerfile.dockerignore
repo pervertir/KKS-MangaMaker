@@ -1,0 +1,10 @@
+**/__pycache__
+**/*.pyc
+**/.DS_Store
+.git
+.env
+cache/
+pages/
+shots/
+!shots/_example/
+shots/_example/out/
