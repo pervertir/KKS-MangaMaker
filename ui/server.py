@@ -1,0 +1,534 @@
+"""MangaMaker: a local page editor for MangaPipeline (http://127.0.0.1:8765).
+
+Serves the editor in ui/static, the shot renders and the Comics templates, and runs the
+mangapipe commands (render on the pod, grab from Studio, pod start/stop) as background jobs.
+Nothing renders on this Mac: `run`/`render` go to the pod configured in config.yaml.
+
+    ./mangapipe-ui            (or: python ui/server.py [--port 8765])
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import io
+import json
+import re
+import subprocess
+import sys
+import threading
+import time
+import uuid
+from http import HTTPStatus
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import parse_qs, unquote, urlparse
+
+ROOT = Path(__file__).resolve().parent.parent  # MangaPipeline/
+sys.path.insert(0, str(ROOT))
+
+import numpy as np  # noqa: E402
+import yaml  # noqa: E402
+from PIL import Image, ImageOps  # noqa: E402
+
+from mp.compose import _interior_rect  # noqa: E402
+from mp.config import Config  # noqa: E402
+from mp.page import STRIPS_SUBDIR, detect_panels, find_render, load_script, reading_order, _shot_dir, _shot_dialogue  # noqa: E402
+from mp.sidecar import SIDECAR_NAMES, write_example  # noqa: E402
+
+STATIC = Path(__file__).resolve().parent / "static"
+CFG = Config()
+TPL = CFG.templates_dir
+CACHE = CFG.cache_dir / "ui"
+CACHE.mkdir(parents=True, exist_ok=True)
+SHOTS = ROOT / "shots"
+PROJECTS = ROOT / "pages"
+UPLOADS = ROOT / "assets" / "uploads"
+PAGE_W, PAGE_H = 1800, 2700
+ASSET_DIRS = {
+    "decor": "Decorative Elements/Decorative-Elements-Images",
+    "particles": "Particles",
+    "speedlines": "SpeedLines",
+}
+NAME_RE = re.compile(r"^[A-Za-z0-9_\-. ]{1,80}$")
+
+
+# ------------------------------------------------------------------------------ images
+def resolve_ref(ref: str) -> Path:
+    """`tpl:<rel>` (Comics templates), `mp:<rel>` (MangaPipeline/) or `cap:<rel>` (Studio captures).
+    Refuses anything that escapes its root."""
+    kind, _, rel = ref.partition(":")
+    base = {"tpl": TPL, "mp": ROOT, "cap": CFG.cap_dir}.get(kind)
+    if base is None or not rel:
+        raise ValueError(f"bad image ref {ref!r}")
+    p = (base / rel).resolve()
+    if base.resolve() not in p.parents:
+        raise ValueError(f"image ref outside its folder: {ref!r}")
+    if not p.is_file():
+        raise FileNotFoundError(ref)
+    return p
+
+
+def mp_ref(p: Path) -> str:
+    return "mp:" + p.resolve().relative_to(ROOT).as_posix()
+
+
+def sized(p: Path, w: int | None) -> tuple[bytes, str]:
+    """The file itself, or a PNG/JPEG no wider than `w`, cached by path+mtime+w."""
+    if not w:
+        ctype = "image/png" if p.suffix.lower() == ".png" else "image/jpeg"
+        return p.read_bytes(), ctype
+    key = hashlib.sha1(f"{p}|{p.stat().st_mtime}|{w}".encode()).hexdigest()
+    rgba = p.suffix.lower() == ".png"
+    dest = CACHE / f"{key}.{'png' if rgba else 'jpg'}"
+    if not dest.exists():
+        im = Image.open(p)
+        im.thumbnail((w, w * 4), Image.LANCZOS)
+        if rgba:
+            im.save(dest, optimize=False)
+        else:
+            im.convert("RGB").save(dest, quality=90)
+    return dest.read_bytes(), "image/png" if rgba else "image/jpeg"
+
+
+# ---------------------------------------------------------------------------- catalogs
+_lock = threading.Lock()
+
+
+def _cached_json(name: str, build):
+    with _lock:
+        dest = CACHE / name
+        if dest.exists():
+            return json.loads(dest.read_text())
+        data = build()
+        dest.write_text(json.dumps(data))
+        return data
+
+
+def bubbles() -> list[dict]:
+    """Every speech-bubble template with its text box (fractions of the bubble) and darkness."""
+    def build():
+        out = []
+        for p in sorted(CFG.bubbles_dir.glob("*.png")):
+            num = re.sub(r"\D", "", p.stem.rsplit("-", 1)[-1])
+            im = Image.open(p).convert("RGBA")
+            W, H = im.size
+            small = im.copy()
+            small.thumbnail((500, 500), Image.LANCZOS)
+            a = np.array(small.getchannel("A"))
+            x0, y0, x1, y1 = _interior_rect(a)
+            sw, sh = small.size
+            rgb = np.array(small.convert("RGB"))[y0:y1, x0:x1]
+            lum = float(rgb.mean()) if rgb.size else 255.0
+            out.append({"key": num.zfill(3), "ref": "tpl:" + p.relative_to(TPL).as_posix(), "w": W, "h": H,
+                        "box": [x0 / sw, y0 / sh, x1 / sw, y1 / sh], "dark": lum < 110})
+        return out
+    return _cached_json("bubbles.json", build)
+
+
+def layouts() -> list[dict]:
+    """The 100 Comic Strips templates: panel rects in page pixels, natural (top-left) order."""
+    def build():
+        d = TPL / STRIPS_SUBDIR
+        temps = sorted(d.glob("Template-*.png"), key=lambda p: int(p.stem.split("-")[1]))
+        out = []
+        for p in temps:
+            bg = Image.open(p).convert("RGB")
+            sx, sy = PAGE_W / bg.width, PAGE_H / bg.height
+            rects = [[round(x * sx), round(y * sy), round(w * sx), round(h * sy)] for x, y, w, h in detect_panels(bg)]
+            out.append({"n": int(p.stem.split("-")[1]), "ref": "tpl:" + p.relative_to(TPL).as_posix(), "rects": rects})
+        return out
+    return _cached_json("layouts.json", build)
+
+
+def assets() -> dict:
+    out = {}
+    for cat, rel in ASSET_DIRS.items():
+        d = TPL / rel
+        files = sorted([p for p in d.glob("*") if p.suffix.lower() in (".png", ".jpg", ".jpeg")]) if d.exists() else []
+        out[cat] = [{"ref": "tpl:" + p.relative_to(TPL).as_posix(), "name": p.stem, "multiply": p.suffix.lower() != ".png"} for p in files]
+    UPLOADS.mkdir(parents=True, exist_ok=True)
+    out["uploads"] = [{"ref": mp_ref(p), "name": p.stem, "multiply": False}
+                      for p in sorted(UPLOADS.glob("*")) if p.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp")]
+    return out
+
+
+def shots() -> list[dict]:
+    out = []
+    if not SHOTS.exists():
+        return out
+    for d in sorted(p for p in SHOTS.iterdir() if p.is_dir()):
+        side = next((d / n for n in SIDECAR_NAMES if (d / n).exists()), None)
+        o = d / "out"
+        by_time = lambda pat: sorted(o.glob(pat), key=lambda f: f.stat().st_mtime, reverse=True) if o.exists() else []
+        out.append({
+            "name": d.name,
+            "sidecar": side.name if side else None,
+            "yaml": side.read_text(encoding="utf-8") if side else "",
+            "pose": mp_ref(d / "pose.png") if (d / "pose.png").exists() else None,
+            "reference": mp_ref(d / "reference.png") if (d / "reference.png").exists() else None,
+            "renders": [mp_ref(f) for f in by_time("render_*.png")],
+            "finals": [mp_ref(f) for f in by_time("final_*.png")],
+        })
+    return out
+
+
+def projects() -> list[str]:
+    if not PROJECTS.exists():
+        return []
+    return sorted(p.parent.name for p in PROJECTS.glob("*/project.json"))
+
+
+# --------------------------------------------------------------------- script import
+def import_script(script_path: Path) -> dict:
+    """Turn a `mangapipe page` script into an editor document (panels, renders, bubbles)."""
+    script = load_script(script_path)
+    rtl = str(script.get("reading", "rtl")).lower() != "ltr"
+    shots_dir = (ROOT / script.get("shots_dir", "shots")).resolve()
+    bmap = {b["key"]: b for b in bubbles()}
+    lmap = {l["n"]: l for l in layouts()}
+    pages = []
+    for page in script["pages"]:
+        lay = page.get("layout", 1)
+        if isinstance(lay, dict):
+            rects = grid_rects(lay)
+        else:
+            num = int(re.sub(r"\D", "", str(lay)) or 1)
+            rects = [tuple(r) for r in lmap[num]["rects"]]
+        rects = reading_order(rects, rtl)
+        slots, free = {}, list(range(len(rects)))
+        for p in page.get("panels") or []:
+            if p.get("panel") is not None:
+                slots[int(p["panel"]) - 1] = p
+                free.remove(int(p["panel"]) - 1)
+        for p in page.get("panels") or []:
+            if p.get("panel") is None and free:
+                slots[free.pop(0)] = p
+        layers, texts = [], []
+        for i, (x, y, w, h) in enumerate(rects):
+            p = slots.get(i, {})
+            sd = _shot_dir(p, shots_dir) if p else None
+            src = None
+            try:
+                src = find_render(p, sd, ROOT) if p else None
+            except Exception:
+                pass
+            img = None
+            if src is not None and ROOT in src.resolve().parents:
+                with Image.open(src) as im:
+                    iw, ih = im.size
+                img = {"ref": mp_ref(src), "iw": iw, "ih": ih, "fit": p.get("fit", "cover"),
+                       "focus": list(p.get("focus", (0.5, 0.5))), "zoom": float(p.get("zoom", 1.0)), "flip": bool(p.get("flip"))}
+            layers.append({"type": "panel", "x": x, "y": y, "w": w, "h": h, "shot": p.get("shot") or "", "image": img})
+            dlg = p["dialogue"] if "dialogue" in p else _shot_dialogue(sd)
+            texts += [dialogue_layer(d, (x, y, w, h), bmap) for d in auto(dlg, rtl)]
+        texts += [dialogue_layer(d, (0, 0, PAGE_W, PAGE_H), bmap) for d in auto(page.get("dialogue") or [], rtl)]
+        pages.append({"layers": layers + [t for t in texts if t]})
+    return {"title": script.get("title", script_path.stem), "reading": "rtl" if rtl else "ltr", "pages": pages}
+
+
+def grid_rects(spec: dict) -> list[tuple]:
+    from mp.page import grid_layout
+    return grid_layout(spec, 1.0)[1]
+
+
+def auto(dlg, rtl):
+    from mp.page import auto_place
+    return auto_place(list(dlg or []), rtl)
+
+
+def dialogue_layer(d: dict, rect, bmap) -> dict | None:
+    RX, RY, W, H = rect
+    px = lambda v, tot: float(v) * tot if float(v) <= 1.0 else float(v)
+    at = d.get("at", [0.5, 0.15])
+    cx, cy = RX + px(at[0], W), RY + px(at[1], H)
+    bw = px(d.get("size", 0.38), W)
+    kind = str(d.get("bubble", "001"))
+    common = {"text": str(d.get("text", "")), "fontSize": int(d.get("font_px") or 0), "bold": bool(d.get("bold")),
+              "color": d.get("color", "auto") if isinstance(d.get("color", "auto"), str) else "auto"}
+    if kind in ("sfx", "none"):
+        return {"type": "text", "x": cx, "y": cy, "w": bw, "h": bw * 0.4, "sfx": kind == "sfx",
+                **common, "fontSize": common["fontSize"] or 90, "color": "#ffffff" if kind == "sfx" else "#000000"}
+    if kind in ("caption", "box"):
+        return {"type": "caption", "x": cx - bw / 2, "y": cy - bw * 0.08, "w": bw, "h": bw * 0.16,
+                "fill": "#fff0aa" if kind == "caption" else "#ffffff", **common}
+    key = re.sub(r"\D", "", kind).zfill(3)
+    b = bmap.get(key) or bmap.get("001")
+    bh = bw * b["h"] / b["w"]
+    return {"type": "bubble", "bubble": b["key"], "x": cx - bw / 2, "y": cy - bh / 2, "w": bw, "h": bh,
+            "flip": bool(d.get("flip")), "rotate": float(d.get("rotate", 0)), **common}
+
+
+# ---------------------------------------------------------------------------- jobs
+JOBS: dict[str, dict] = {}
+MANGAPIPE = ROOT / "mangapipe"
+SHOT_CMDS = {"run", "render", "grab", "compose"}
+POD_ACTIONS = {"status", "start", "stop", "url", "restart"}
+
+
+def start_job(args: list[str], label: str) -> str:
+    jid = uuid.uuid4().hex[:8]
+    job = {"id": jid, "label": label, "args": args, "lines": [], "done": False, "code": None, "started": time.time()}
+    JOBS[jid] = job
+
+    def run():
+        try:
+            proc = subprocess.Popen([str(MANGAPIPE), *args], cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                    text=True, bufsize=1)
+            for line in proc.stdout:
+                job["lines"].append(line.rstrip("\n"))
+            job["code"] = proc.wait()
+        except Exception as e:  # noqa: BLE001
+            job["lines"].append(f"error: {e}")
+            job["code"] = -1
+        job["done"] = True
+
+    threading.Thread(target=run, daemon=True).start()
+    return jid
+
+
+_pod = {"t": 0.0, "text": "", "busy": False}
+
+
+def pod_status() -> dict:
+    """`mangapipe pod status`, cached for 30 s (runpodctl is slow)."""
+    if time.time() - _pod["t"] > 30 and not _pod["busy"]:
+        _pod["busy"] = True
+        try:
+            r = subprocess.run([str(MANGAPIPE), "pod", "status"], cwd=ROOT, capture_output=True, text=True, timeout=60)
+            _pod["text"] = (r.stdout + r.stderr).strip().splitlines()[-1] if (r.stdout + r.stderr).strip() else ""
+        except Exception as e:  # noqa: BLE001
+            _pod["text"] = f"error: {e}"
+        _pod["t"] = time.time()
+        _pod["busy"] = False
+    t = _pod["text"]
+    url = re.search(r"https://\S+", t)
+    return {"text": t, "running": "RUNNING" in t, "ready": "ready" in t.lower(), "url": url.group(0) if url else None,
+            "target": CFG.target}
+
+
+# ------------------------------------------------------------------------------- http
+class Handler(BaseHTTPRequestHandler):
+    server_version = "MangaMaker/1"
+
+    def log_message(self, fmt, *args):
+        if not self.path.startswith(("/img", "/api/jobs", "/static")):
+            sys.stderr.write("[ui] " + fmt % args + "\n")
+
+    def send(self, code: int, body: bytes, ctype: str, cache: bool = False):
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "max-age=86400" if cache else "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def json(self, data, code: int = 200):
+        self.send(code, json.dumps(data).encode(), "application/json")
+
+    def body(self) -> bytes:
+        return self.rfile.read(int(self.headers.get("Content-Length") or 0))
+
+    def jbody(self) -> dict:
+        b = self.body()
+        return json.loads(b) if b else {}
+
+    def do_GET(self):
+        u = urlparse(self.path)
+        q = {k: v[0] for k, v in parse_qs(u.query).items()}
+        try:
+            if u.path in ("/", "/index.html"):
+                return self.send(200, (STATIC / "index.html").read_bytes(), "text/html; charset=utf-8")
+            if u.path.startswith("/static/"):
+                p = (STATIC / unquote(u.path[len("/static/"):])).resolve()
+                if STATIC.resolve() not in p.parents or not p.is_file():
+                    return self.json({"error": "not found"}, 404)
+                ctype = {".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml"}.get(p.suffix, "application/octet-stream")
+                return self.send(200, p.read_bytes(), ctype + "; charset=utf-8")
+            if u.path == "/font":
+                comp = CFG.compose
+                f = Path(comp.get("font_bold") if q.get("bold") else comp.get("font"))
+                return self.send(200, f.read_bytes(), "font/ttf", cache=True)
+            if u.path == "/img":
+                p = resolve_ref(q["ref"])
+                data, ctype = sized(p, int(q["w"]) if q.get("w") else None)
+                return self.send(200, data, ctype, cache=True)
+            if u.path == "/api/catalog":
+                return self.json({"bubbles": bubbles(), "layouts": layouts(), "assets": assets(),
+                                  "styles": list(CFG.styles), "reading": "rtl", "page": [PAGE_W, PAGE_H],
+                                  "maxFont": int(CFG.compose.get("page_max_font_px", 56)),
+                                  "scripts": sorted(p.name for p in (ROOT / "scripts").glob("*.y*ml"))})
+            if u.path == "/api/shots":
+                return self.json(shots())
+            if u.path == "/api/projects":
+                return self.json(projects())
+            if u.path == "/api/project":
+                name = q.get("name", "")
+                if not NAME_RE.match(name):
+                    return self.json({"error": "bad name"}, 400)
+                p = PROJECTS / name / "project.json"
+                return self.json(json.loads(p.read_text()) if p.exists() else {"error": "not found"}, 200 if p.exists() else 404)
+            if u.path == "/api/pod":
+                return self.json(pod_status())
+            if u.path.startswith("/api/jobs/"):
+                job = JOBS.get(u.path.rsplit("/", 1)[-1])
+                if not job:
+                    return self.json({"error": "no such job"}, 404)
+                since = int(q.get("since", 0))
+                return self.json({**{k: job[k] for k in ("id", "label", "done", "code")}, "lines": job["lines"][since:], "next": len(job["lines"])})
+            if u.path == "/api/jobs":
+                return self.json([{k: j[k] for k in ("id", "label", "done", "code", "started")} for j in JOBS.values()])
+            return self.json({"error": "not found"}, 404)
+        except (FileNotFoundError, KeyError) as e:
+            return self.json({"error": f"not found: {e}"}, 404)
+        except Exception as e:  # noqa: BLE001
+            return self.json({"error": str(e)}, 400)
+
+    def do_POST(self):
+        u = urlparse(self.path)
+        q = {k: v[0] for k, v in parse_qs(u.query).items()}
+        try:
+            if u.path == "/api/project":
+                doc = self.jbody()
+                name = q.get("name", "")
+                if not NAME_RE.match(name):
+                    return self.json({"error": "project name: letters, digits, space, _ - . only"}, 400)
+                d = PROJECTS / name
+                d.mkdir(parents=True, exist_ok=True)
+                (d / "project.json").write_text(json.dumps(doc, indent=1))
+                return self.json({"ok": True, "path": str(d / "project.json")})
+            if u.path == "/api/export/page":
+                name, n = q["name"], int(q["n"])
+                if not NAME_RE.match(name):
+                    return self.json({"error": "bad name"}, 400)
+                d = PROJECTS / name
+                d.mkdir(parents=True, exist_ok=True)
+                im = Image.open(io.BytesIO(self.body())).convert("RGB")
+                dest = d / f"page_{n:02d}.png"
+                im.save(dest)
+                return self.json({"ok": True, "path": str(dest)})
+            if u.path == "/api/export/pdf":
+                name, count = q["name"], int(q["count"])
+                d = PROJECTS / name
+                files = [d / f"page_{n:02d}.png" for n in range(1, count + 1)]
+                missing = [f.name for f in files if not f.exists()]
+                if missing:
+                    return self.json({"error": f"missing {', '.join(missing)}"}, 400)
+                ims = [Image.open(f).convert("RGB") for f in files]
+                dest = d / f"{name}.pdf"
+                ims[0].save(dest, save_all=True, append_images=ims[1:], resolution=300)
+                return self.json({"ok": True, "path": str(dest)})
+            if u.path == "/api/import":
+                name = q.get("script", "")
+                p = (ROOT / "scripts" / name).resolve()
+                if (ROOT / "scripts").resolve() not in p.parents or not p.exists():
+                    return self.json({"error": "script not found"}, 404)
+                return self.json(import_script(p))
+            if u.path == "/api/upload":
+                fname = Path(q.get("name", "upload.png")).name
+                stem, ext = Path(fname).stem, Path(fname).suffix.lower()
+                if ext not in (".png", ".jpg", ".jpeg", ".webp"):
+                    return self.json({"error": "png, jpg or webp only"}, 400)
+                UPLOADS.mkdir(parents=True, exist_ok=True)
+                stem = re.sub(r"[^A-Za-z0-9_\-]", "_", stem)[:60] or "upload"
+                dest = UPLOADS / f"{stem}{ext}"
+                k = 1
+                while dest.exists():
+                    dest = UPLOADS / f"{stem}_{k}{ext}"
+                    k += 1
+                dest.write_bytes(self.body())
+                with Image.open(dest) as im:
+                    w, h = im.size
+                return self.json({"ref": mp_ref(dest), "name": dest.stem, "w": w, "h": h})
+            if u.path == "/api/shot/yaml":
+                body = self.jbody()
+                d = shot_dir(body["name"])
+                yaml.safe_load(body["yaml"])  # refuse broken YAML before writing
+                side = next((d / n for n in SIDECAR_NAMES if (d / n).exists()), d / "shot.yaml")
+                side.write_text(body["yaml"], encoding="utf-8")
+                return self.json({"ok": True})
+            if u.path == "/api/shot/new":
+                body = self.jbody()
+                d = shot_dir(body["name"], must_exist=False)
+                if d.exists():
+                    return self.json({"error": "a shot with that name exists"}, 400)
+                chars = [c for c in (body.get("characters") or []) if str(c.get("name", "")).strip()]
+                if not chars:
+                    chars = [{"name": body.get("character") or "Character", "series": body.get("series") or ""}]
+                side = write_example(d, str(chars[0]["name"]).strip(), str(chars[0].get("series", "")).strip())
+                if len(chars) > 1:
+                    side.write_text(with_characters(side.read_text(encoding="utf-8"), chars), encoding="utf-8")
+                return self.json({"ok": True})
+            if u.path == "/api/jobs":
+                body = self.jbody()
+                cmd = body.get("cmd")
+                if cmd in SHOT_CMDS:
+                    d = shot_dir(body["shot"])
+                    args = [cmd, str(d.relative_to(ROOT))]
+                    if cmd in ("run", "render") and body.get("seed") not in (None, ""):
+                        args += ["--seed", str(int(body["seed"]))]
+                    if cmd == "run":
+                        args.append("--no-compose")  # the editor letters the page itself
+                    label = f"{cmd} {d.name}"
+                elif cmd == "pod" and body.get("action") in POD_ACTIONS:
+                    args, label = ["pod", body["action"]], f"pod {body['action']}"
+                    _pod["t"] = 0.0
+                else:
+                    return self.json({"error": "command not allowed"}, 400)
+                return self.json({"id": start_job(args, label)})
+            return self.json({"error": "not found"}, 404)
+        except Exception as e:  # noqa: BLE001
+            return self.json({"error": str(e)}, 400)
+
+
+def with_characters(text: str, chars: list[dict]) -> str:
+    """Swap the template's one-character block for several, in frame order (leftmost first)."""
+    q = lambda v: json.dumps(str(v).strip(), ensure_ascii=False)
+    block = "characters:                  # left to right in the frame\n" + "".join(
+        f"  - name: {q(c['name'])}\n"
+        f"    series: {q(c.get('series', ''))}\n"
+        "    lora: auto                # auto | none | file.safetensors | https://civitai.com/models/...\n"
+        "    lora_weight: 0.8\n"
+        "    tags: \"\"                  # appearance tags used when no LoRA is found\n"
+        for c in chars)
+    start = text.index("characters:\n")
+    end = text.index("\nidentity:", start) + 1
+    return text[:start] + block + "\n" + text[end:]
+
+
+def shot_dir(name: str, must_exist: bool = True) -> Path:
+    if not NAME_RE.match(name or "") or name.startswith("."):
+        raise ValueError("shot name: letters, digits, space, _ - . only")
+    d = SHOTS / name
+    if must_exist and not d.is_dir():
+        raise FileNotFoundError(f"no shot {name}")
+    return d
+
+
+def warm():
+    """Index the templates and pre-size the pictures the editor asks for first, so the library and
+    a zoomed-out page open from cache instead of decoding 4000 px PNGs on demand."""
+    for b in bubbles():
+        for w in (160, 512):
+            try:
+                sized(resolve_ref(b["ref"]), w)
+            except Exception:  # noqa: BLE001
+                pass
+    for l in layouts():
+        try:
+            sized(resolve_ref(l["ref"]), 160)
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--port", type=int, default=8765)
+    a = ap.parse_args()
+    threading.Thread(target=warm, daemon=True).start()
+    srv = ThreadingHTTPServer(("127.0.0.1", a.port), Handler)
+    print(f"MangaMaker on http://127.0.0.1:{a.port}", flush=True)
+    srv.serve_forever()
+
+
+if __name__ == "__main__":
+    main()

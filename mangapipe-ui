@@ -1,0 +1,6 @@
+#!/bin/zsh
+# Starts the MangaMaker page editor on http://127.0.0.1:8765 (same interpreter as mangapipe).
+HERE="${0:A:h}"
+PY="${MANGAPIPE_PYTHON:-/Users/deepratnaawale/miniconda3/envs/comfyui/bin/python}"
+if [ ! -x "$PY" ]; then PY="python3"; fi
+exec "$PY" "$HERE/ui/server.py" "$@"
