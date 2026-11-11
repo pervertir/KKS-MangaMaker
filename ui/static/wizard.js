@@ -152,7 +152,7 @@ async function buildFromScript(pages, opt) {
 }
 
 function scriptWizard(focus) {
-  const box = modal("New pages from a script", "");
+  const box = modal("Script Wizard: pages from a script", "");
   const ta = h("textarea", { rows: 16, spellcheck: false, style: "width:100%;font:13px/1.5 ui-monospace,Menlo,monospace" });
   try { ta.value = localStorage.getItem("mm.script") || WIZ_EXAMPLE; } catch { ta.value = WIZ_EXAMPLE; }
   const mode = h("select", {}, h("option", { value: "new" }, "Replace the project"), h("option", { value: "append" }, "Add after the last page"));

@@ -171,7 +171,7 @@ top (or Ctrl/⌘+Shift+P):
   on the pod. From a panel, **Pose…** opens the studio at that panel's shape and the render lands back
   in the panel.
 
-**From a script** (File menu, or the Page panel) is the quickest start: write the scene as plain lines
+**Script Wizard** (button in the top bar, File menu, or ⌘⇧K) is the quickest start: write the scene as plain lines
 and it builds the pages, picks layouts by panel count, places drawn bubbles in reading order with tails
 toward the speaker, and makes one shot per panel with its characters and prompt.
 
@@ -187,7 +187,7 @@ Caption: Five minutes earlier...
 
 Helpers for first-time manga makers:
 
-- **Starter templates** (in the script dialog, or Help menu): 4-koma, dialogue page, action page and
+- **Starter templates** (in the Script Wizard, or Help menu): 4-koma, dialogue page, action page and
   cover, each a short sample script showing good pacing to rewrite.
 - **Check this page** (Page menu, Ctrl/⌘+Shift+C): bubbles read out of order, tails pointing out of
   their panel, text too small for print, lettering outside the safe area, overlapping bubbles, empty
