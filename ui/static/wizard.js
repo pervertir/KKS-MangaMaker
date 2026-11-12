@@ -205,6 +205,7 @@ async function buildFromScript(pages, opt) {
     if (pg.title) lettering.unshift({ type: "text", x: W() * 0.1, y: H() * 0.05, w: W() * 0.8, h: H() * 0.14, text: pg.title, font: "Anton",
       color: "#ffffff", stroke: "#000000", strokeWidth: 14, fontSize: 0, bold: false });
     S.doc.pages.push(normalize({ pages: [{ id: uid(), bg: "#ffffff", layers: [...fresh, ...lettering] }] }).pages[0]);
+    if (S.doc.theme === "dark" && typeof setPageTheme === "function") setPageTheme(S.doc.pages.at(-1), "dark");   // the book's theme
   }
   let made = 0;
   for (const s of shots) { try { await post("/api/shot/new", { ...s, keep: true }); made++; } catch (e) { console.warn(s.name, e.message); } }

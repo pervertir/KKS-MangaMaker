@@ -419,3 +419,11 @@ kbd { font: 11px ui-monospace, Menlo, monospace; background: #1b1b1e; border: 1p
 }
 @media (max-width: 900px) { .ob-hint { visibility: hidden; } }
 @media (max-height: 720px) { :root { --dock-split: 40%; } }
+
+/* ----- job chips: status mark + label, and a real close button */
+.jobchip { display: inline-flex; align-items: stretch; flex: none; border: 1px solid var(--line); border-radius: 5px; overflow: hidden; background: var(--panel2); }
+.jobchip.on { border-color: var(--accent); }
+.jobchip button { border: none; border-radius: 0; background: transparent; }
+.jobchip .jl { padding: 0 8px; } .jobchip.bad .jl { color: var(--warn); } .jobchip.ok .jl { color: var(--ok); }
+.jobchip .jx { padding: 0 8px; color: var(--muted); border-left: 1px solid var(--line); min-width: 26px; }
+.jobchip .jx:hover { color: #fff; background: var(--danger); }

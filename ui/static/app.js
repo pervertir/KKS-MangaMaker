@@ -261,8 +261,9 @@ function drawLayer(ctx, l, opt = {}) {
         drawFlipped(ctx, im, r, l.image.flip);
         ctx.restore();
       } else if (!opt.export) {
-        ctx.fillStyle = "#e7e7ea"; ctx.fillRect(l.x, l.y, l.w, l.h);
-        ctx.strokeStyle = "#c9c9cf"; ctx.lineWidth = 3;
+        const E = THEMES[lum(l.fill || "#fff") < 0.4 ? "dark" : "light"].empty;      // follows the panel's own fill
+        ctx.fillStyle = E[0]; ctx.fillRect(l.x, l.y, l.w, l.h);
+        ctx.strokeStyle = E[1]; ctx.lineWidth = 3;
         ctx.beginPath(); ctx.moveTo(l.x, l.y); ctx.lineTo(l.x + l.w, l.y + l.h); ctx.moveTo(l.x + l.w, l.y); ctx.lineTo(l.x, l.y + l.h); ctx.stroke();
         ctx.fillStyle = "#8a8a93"; ctx.font = `600 ${clamp(Math.min(l.w, l.h) / 9, 18, 54)}px -apple-system, sans-serif`;
         ctx.textAlign = "center"; ctx.textBaseline = "middle";
@@ -296,16 +297,16 @@ function drawLayer(ctx, l, opt = {}) {
     case "caption": {
       withBox(ctx, l, () => {
         ctx.fillStyle = l.fill || "#fff"; ctx.fillRect(-l.w / 2, -l.h / 2, l.w, l.h);
-        if (l.borderW > 0) { ctx.strokeStyle = "#000"; ctx.lineWidth = l.borderW; ctx.strokeRect(-l.w / 2, -l.h / 2, l.w, l.h); }
+        if (l.borderW > 0) { ctx.strokeStyle = lum(l.fill || "#fff") < 0.45 ? "#fff" : "#000"; ctx.lineWidth = l.borderW; ctx.strokeRect(-l.w / 2, -l.h / 2, l.w, l.h); }
         const pad = Math.min(l.w, l.h) * 0.12 + 6;
-        drawText(ctx, { ...l, strokeWidth: 0 }, 0, 0, l.w - pad * 2, l.h - pad * 2, maxFont, l.color === "auto" ? "#111" : l.color);
+        drawText(ctx, { ...l, strokeWidth: 0 }, 0, 0, l.w - pad * 2, l.h - pad * 2, maxFont, l.color === "auto" ? (lum(l.fill || "#fff") < 0.45 ? "#ffffff" : "#111") : l.color);
       });
       break;
     }
     case "text": {
       withBox(ctx, l, () => {
         const big = l.fontSize > 0 ? l.fontSize : Math.max(maxFont, 400);
-        drawText(ctx, l, 0, 0, l.w, l.h, big, l.color === "auto" ? "#111" : l.color);
+        drawText(ctx, l, 0, 0, l.w, l.h, big, l.color === "auto" ? ((opt.dark ?? (pageTheme(page()) === "dark")) ? "#ffffff" : "#111") : l.color);
       });
       break;
     }
@@ -499,10 +500,16 @@ function drawFlipped(ctx, im, r, flip) {
   if (!flip) return ctx.drawImage(im, r.x, r.y, r.w, r.h);
   ctx.save(); ctx.translate(r.x + r.w, r.y); ctx.scale(-1, 1); ctx.drawImage(im, 0, 0, r.w, r.h); ctx.restore();
 }
+function lum(hex) {             // 0 (black) .. 1 (white)
+  const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})/i.exec(hex || "") || /^#?([0-9a-f])([0-9a-f])([0-9a-f])$/i.exec(hex || "");
+  if (!m) return 1;
+  const [r, g, b] = m.slice(1, 4).map(v => parseInt(v.length === 1 ? v + v : v, 16) / 255);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
 function drawPage(ctx, pg, opt = {}) {
   ctx.fillStyle = pg.bg || "#fff";
   ctx.fillRect(0, 0, W(), H());
-  for (const l of pg.layers) drawLayer(ctx, l, { ...opt, ghost: opt.ghostId === l.id });
+  for (const l of pg.layers) drawLayer(ctx, l, { ...opt, dark: pageTheme(pg) === "dark", ghost: opt.ghostId === l.id });
 }
 
 /* ================================================================ canvas view */
@@ -903,8 +910,33 @@ function hoverCursor(p) {
 }
 
 /* ================================================================ creation */
+/* Page themes. A dark page is black paper with white panel borders and white lettering outside
+   bubbles (night scenes, flashbacks). The theme lives on the page and only swaps colours that are still
+   the other theme's defaults, so anything coloured by hand is left alone. Export draws what is shown. */
+const THEMES = {
+  light: { bg: "#ffffff", border: "#000000", fill: "#ffffff", ink: "#111111", capFill: "#ffffff", empty: ["#e7e7ea", "#c9c9cf", "#8a8a93"] },
+  dark: { bg: "#0b0b0d", border: "#ffffff", fill: "#141417", ink: "#ffffff", capFill: "#141417", empty: ["#1c1c20", "#34343a", "#8a8a93"] },
+};
+const pageTheme = pg => (pg && pg.theme === "dark") ? "dark" : "light";
+const sameCol = (a, b) => String(a || "").toLowerCase() === String(b || "").toLowerCase();
+function themeLayer(l, to, from) {
+  const T = THEMES[to], F = THEMES[from];
+  const swap = (key, tv, fv, also = []) => { if (l[key] == null || sameCol(l[key], fv) || also.some(v => sameCol(l[key], v))) l[key] = tv; };
+  if (l.type === "panel") { swap("borderColor", T.border, F.border); swap("fill", T.fill, F.fill); }
+  else if (l.type === "caption") { swap("fill", T.capFill, F.capFill, ["#fff0aa"].filter(() => to === "dark")); swap("stroke", T.border, F.border); if (l.color && l.color !== "auto") swap("color", T.ink, F.ink, ["#000000", "#111"]); }
+  else if (l.type === "text" && !l.sfx) swap("color", T.ink, F.ink, to === "dark" ? ["#000000", "#111"] : []);
+  else if (l.type === "tone" || l.type === "speed") swap("color", to === "dark" ? "#ffffff" : "#000000", to === "dark" ? "#000000" : "#ffffff");
+  return l;
+}
+function setPageTheme(pg, to) {
+  const from = pageTheme(pg); if (from === to) return;
+  if (sameCol(pg.bg, THEMES[from].bg) || !pg.bg) pg.bg = THEMES[to].bg;
+  pg.theme = to;
+  for (const l of pg.layers) themeLayer(l, to, from);
+}
 function addLayer(l, at) {
   normalize({ pages: [{ layers: [l] }] });
+  if (pageTheme(page()) === "dark") themeLayer(l, "dark", "light");
   l.id = uid();
   const ls = layers();
   if (at != null) ls.splice(at, 0, l); else ls.push(l);
@@ -1299,6 +1331,7 @@ function applyLayout(rects, label) {
   const keep = ls.filter(l => l.type !== "panel");
   const sx = W() / 1800, sy = H() / 2700;
   const fresh = rects.map(([x, y, w, hh]) => normalize({ pages: [{ layers: [{ type: "panel", x: x * sx, y: y * sy, w: w * sx, h: hh * sy, shot: "", image: null }] }] }).pages[0].layers[0]);
+  if (pageTheme(page()) === "dark") fresh.forEach(p => themeLayer(p, "dark", "light"));
   const order = panelOrder(fresh);
   order.forEach((p, i) => { const o = old[i]; if (o) { p.image = o.image; p.shot = o.shot; p.border = o.border; p.borderColor = o.borderColor; } });
   page().layers = [...fresh, ...keep];
@@ -1503,6 +1536,11 @@ function pageProps(P) {
   P.append(
     rowOf("Title", h("input", { value: S.doc.title, style: "flex:1", onchange: e => { S.doc.title = e.target.value; commit(); } })),
     select("Reading", [["rtl", "Right to left (manga)"], ["ltr", "Left to right"]], () => S.doc.reading, v => S.doc.reading = v),
+    select("Theme", [["light", "Light: white paper, black frames"], ["dark", "Dark: black paper, white frames"]], () => pageTheme(pg), v => { setPageTheme(pg, v); refreshPanels(); renderPageThumbs(); }),
+    h("div", { class: "btnrow" }, h("button", { title: "Give every page this page's theme", onclick: () => {
+      const t = pageTheme(pg); S.doc.theme = t; for (const q of S.doc.pages) setPageTheme(q, t);
+      commit(`All pages ${t}`); requestDraw(); refreshPanels(); renderPages(); toast(`All ${S.doc.pages.length} pages are now ${t}`, "ok");
+    } }, "Use on all pages")),
     colorRow("Paper", pg, "bg"),
     h("div", { class: "row" }, h("label", {}, "Max text"), h("input", { type: "number", value: S.doc.maxFont, onchange: e => { S.doc.maxFont = +e.target.value; commit(); requestDraw(); } }),
       h("span", { class: "hint" }, "px, keeps fitted text even")),
@@ -1937,7 +1975,7 @@ $("#ovspreads").onchange = renderOverview;
 $("#ovadd").onclick = () => { S.page = S.doc.pages.length - 1; pageOps.add(); };
 function gotoPage(i) { if (S.adjust) exitAdjust(); S.page = clamp(i, 0, S.doc.pages.length - 1); S.sel = null; snapshot(); refreshPanels(); renderPages(); requestDraw(); }
 const pageOps = {
-  add() { S.doc.pages.splice(S.page + 1, 0, { id: uid(), bg: "#ffffff", layers: [] }); S.page++; commit("Page added"); renderPages(); requestDraw(); if ($("#overview").hidden) layoutDialog(); },
+  add() { const t = pageTheme(page()); S.doc.pages.splice(S.page + 1, 0, { id: uid(), bg: THEMES[t].bg, theme: t, layers: [] }); S.page++; commit("Page added"); renderPages(); requestDraw(); if ($("#overview").hidden) layoutDialog(); },
   dup() { const c = deep(page()); c.id = uid(); c.layers.forEach(l => l.id = uid()); S.doc.pages.splice(S.page + 1, 0, c); S.page++; commit("Page duplicated"); renderPages(); requestDraw(); },
   del(fromKey) { if (S.doc.pages.length < 2) return toast("A project needs one page"); if (!fromKey && !confirm(`Delete page ${S.page + 1}?`)) return;
     const n = S.page + 1; S.doc.pages.splice(S.page, 1); S.page = Math.max(0, S.page - 1); S.sel = null; commit("Page deleted");
@@ -2123,13 +2161,24 @@ async function afterRender(shot, fillPanels) {
 function toggleJobs(show) { $("#jobsdrawer").hidden = !(show ?? $("#jobsdrawer").hidden); renderJobs(); }
 $("#jobsbtn").onclick = () => toggleJobs();
 $("#jobsclose").onclick = () => toggleJobs(false);
+async function closeJob(id) {
+  const j = S.jobs[id]; if (!j) return;
+  if (!j.done && !confirm(`Stop "${j.label}"? It is still running.`)) return;
+  try { await post(`/api/jobs/${id}/cancel`); } catch { }          // already gone on the server is fine
+  j.done = true; delete S.jobs[id];
+  if (S.jobView === id) S.jobView = Object.keys(S.jobs).pop() || null;
+  renderJobs(); pollJobs();
+}
 function renderJobs() {
   if ($("#jobsdrawer").hidden) return;
   const list = $("#joblist"); list.innerHTML = "";
   const js = Object.values(S.jobs);
   if (!js.length) { list.append(h("span", { class: "hint" }, "No jobs yet. Renders and pod commands show their log here.")); $("#joblog").textContent = ""; return; }
-  for (const j of js.reverse()) list.append(h("button", { class: j.id === S.jobView ? "on" : "", onclick: () => { S.jobView = j.id; renderJobs(); } },
-    (j.done ? (j.code === 0 ? "✓ " : "✕ ") : "… ") + j.label));
+  // status is a word-free mark (never a cross: that reads as "close"); the x on the right closes the job
+  for (const j of js.reverse()) list.append(h("span", { class: "jobchip" + (j.id === S.jobView ? " on" : "") + (j.done ? (j.code === 0 ? " ok" : " bad") : " run") },
+    h("button", { class: "jl", title: j.done ? (j.code === 0 ? "Finished" : "Failed: click to read the log") : "Running", onclick: () => { S.jobView = j.id; renderJobs(); } },
+      (j.done ? (j.code === 0 ? "✓ " : "⚠ ") : "… ") + j.label),
+    h("button", { class: "jx", title: j.done ? "Remove from this list" : "Stop this job and remove it", "aria-label": "Close job", onclick: e => { e.stopPropagation(); closeJob(j.id); } }, "✕")));
   const j = S.jobs[S.jobView] || js[0], pre = $("#joblog");
   const atEnd = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 20;
   pre.textContent = j.lines.join("\n") || "starting…";

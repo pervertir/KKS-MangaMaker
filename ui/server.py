@@ -432,6 +432,7 @@ def start_job(args: list[str], label: str) -> str:
         try:
             proc = subprocess.Popen([str(MANGAPIPE), *args], cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                     text=True, bufsize=1)
+            job["proc"] = proc
             for line in proc.stdout:
                 job["lines"].append(line.rstrip("\n"))
             job["code"] = proc.wait()
@@ -788,6 +789,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json(save_pose_shot(self.jbody()))
             if u.path == "/api/poses/custom":
                 return self.json(save_custom_pose(self.jbody()))
+            m = re.fullmatch(r"/api/jobs/([0-9a-f]{8})/(cancel|dismiss)", u.path)
+            if m:   # the x on a job: stop it if it is still running, and forget it
+                job = JOBS.pop(m.group(1), None)
+                proc = job and job.get("proc")
+                if proc is not None and proc.poll() is None:
+                    proc.terminate()
+                return self.json({"ok": True})
             if u.path == "/api/jobs":
                 body = self.jbody()
                 cmd = body.get("cmd")
