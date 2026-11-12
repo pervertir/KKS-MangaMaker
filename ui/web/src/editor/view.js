@@ -21,7 +21,7 @@ export let drawQueued = false;
 export const PC = { c: document.createElement("canvas"), cs: 0, key: "", dirty: true };
 export let DC = null;  // drag cache {below, above, from, to, key}
 export const MAX_CACHE = 4096;
-export function requestDraw() { PC.dirty = true; if (!S.drag) DC = null; requestView(); }
+export function requestDraw() { PC.dirty = true; if (!S.drag && !S.liveLayer) DC = null; requestView(); }
 export function requestView() { if (!drawQueued) { drawQueued = true; requestAnimationFrame(draw); } }
 export let settleT = null;
 export function interacting() { S.busy = true; clearTimeout(settleT); settleT = setTimeout(() => { S.busy = false; requestView(); }, 160); }
@@ -61,7 +61,7 @@ export function paintCache(target, cs, from, to) {           // layers [from, to
   return target;
 }
 export function liveRange() {                                  // contiguous layer range that moves with the drag
-  const d = S.drag, ls = layers();
+  const d = S.drag?.layer ? S.drag : { layer: S.liveLayer }, ls = layers();
   const ids = new Set([d.layer.id, ...(d.kids || []).map(k => k.q.id)]);
   let a = ls.length, b = -1;
   ls.forEach((l, i) => { if (ids.has(l.id)) { a = Math.min(a, i); b = Math.max(b, i); } });
@@ -81,7 +81,8 @@ export function draw() {
   // page content clipped to the paper (bubbles may hang over panel borders, not off the page)
   ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W(), H()); ctx.clip();
   const ad = S.adjust && layers().find(l => l.id === S.adjust);
-  const cs = cacheScale(), dragging = S.drag?.layer && !S.drag.pan;
+  /* S.liveLayer: a layer being painted on, redrawn every frame between the frozen layers under and over it */
+  const cs = cacheScale(), dragging = (S.drag?.layer && !S.drag.pan) || S.liveLayer;
   if (dragging) {
     const [from, to] = liveRange(), key = `${page().id}|${from}|${to}|${layers().length}|${cs}`;
     if (!DC || DC.key !== key) {

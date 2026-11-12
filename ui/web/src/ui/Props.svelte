@@ -23,6 +23,7 @@
   import { FRAME_EDGES, FRAME_SHAPES, frameShapeKey } from "../editor/frames.js";
   import { cutOut, frameIcon, refreshProps, startBreakout } from "../editor/props.js";
   import { poseForPanel } from "../pose/open.js";
+  import { clearLayer, counts, recolor, smoothing, widen } from "../draw/edit.ts";
 
   type Obj = Record<string, any>;
   type Opt = [string | number, string];
@@ -35,6 +36,7 @@
   const TITLES: Record<string, (l: Obj) => string> = {
     panel: () => "Panel", bubble: () => "Speech bubble", caption: () => "Caption", text: l => l.sfx ? "Sound effect" : "Text",
     image: () => "Image", vbubble: () => "Drawn bubble", tone: () => "Screentone", speed: l => l.mode === "focus" ? "Focus lines" : "Speed lines",
+    raster: () => "Paint", vector: () => "Line art",
   };
   $effect(() => {
     const l = sel(), t = document.getElementById("propstitle");
@@ -299,6 +301,20 @@
       {@render color("Color", sel()!, "color")}
       {@render clip(sel()!)}
       <div class="btnrow"><button onclick={() => reseed(sel()!)}>Reshuffle</button></div>
+    {:else if type === "raster"}
+      {@render clip(sel()!)}
+      <div class="btnrow"><button class="danger" onclick={() => clearLayer(sel()!)}>Clear paint</button></div>
+    {:else if type === "vector"}
+      {@const n = counts(R(sel()!))}
+      <div class="hint">{n.strokes} line{n.strokes === 1 ? "" : "s"}{n.fills ? `, ${n.fills} fill${n.fills === 1 ? "" : "s"}` : ""}. Lines keep their pen samples: change them here any time.</div>
+      <div class="row"><label>Colour</label>
+        <input type="color" value="#000000" onchange={e => recolor(sel()!, val(e), "lines")} title="Recolour every line" />
+        <button onclick={e => recolor(sel()!, (e.currentTarget as HTMLElement).parentElement!.querySelector("input")!.value, "fills")}>Fills too</button></div>
+      <div class="btnrow"><button onclick={() => widen(sel()!, 0.8)}>Thinner</button><button onclick={() => widen(sel()!, 1.25)}>Thicker</button></div>
+      <div class="row"><label>Smoothing</label>
+        <input type="range" min="0" max="1" step="0.05" value="0.6" onchange={e => smoothing(sel()!, +val(e))} /></div>
+      {@render clip(sel()!)}
+      <div class="btnrow"><button class="danger" onclick={() => clearLayer(sel()!)}>Clear lines</button></div>
     {/if}
 
     <div class="section">Layer</div>

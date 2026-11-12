@@ -437,6 +437,16 @@ body.pages-dark .tile.page { background: #0b0b0d; }
 body.pages-dark .tile.page img, body.pages-dark .tile.page canvas, body.pages-dark .wizpage canvas { filter: invert(1) hue-rotate(180deg); }
 body.pages-dark .ghostpage { background: #0b0b0d; }
 
+/* drawing tools' options */
+#optionsbar .dopt { display: inline-flex; align-items: center; gap: var(--s1); color: var(--muted); flex: none; }
+#optionsbar .dopt input[type=range] { width: 84px; }
+#optionsbar .dopt .val { min-width: 34px; color: var(--text); font-variant-numeric: tabular-nums; }
+#optionsbar .dopt input[type=color] { width: 26px; height: 26px; padding: 0; border: 1px solid var(--line); border-radius: var(--r1); }
+#optionsbar .swatches { display: flex; gap: 2px; }
+#optionsbar .sw { width: 14px; height: 18px; min-height: 0; padding: 0; border: 1px solid var(--line); border-radius: 2px; }
+#optionsbar .sw.on { outline: 2px solid var(--accent, #4c8dff); outline-offset: 1px; }
+#optionsbar .ob-l:has(.dopt) { flex: 0 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+#optionsbar .ob-l:has(.dopt) > * { flex: none; }
 /* panel frame shapes */
 .shapes { display: flex; flex-wrap: wrap; gap: 4px; margin: 2px 0 6px; }
 .shapebtn { padding: 2px; min-height: 0; line-height: 0; background: var(--panel2); }
