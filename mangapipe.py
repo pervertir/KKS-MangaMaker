@@ -84,6 +84,12 @@ def render(shot: dict, cfg: Config, seed: int | None, dry_run: bool, refresh: bo
         prepare_pose(shot["_depth_path"], depth_cn, (w, h))  # same fit and black padding as the pose
         depth_name = comfy.upload(depth_cn, "manga", f"{shot['shot']}_depth.png")
         log(f"[depth] {shot['_depth_path'].name} -> {w}x{h}")
+    lines_name = None
+    if shot.get("_lines_path") is not None:
+        lines_cn = shot["_out"] / "lines_cn.png"
+        prepare_pose(shot["_lines_path"], lines_cn, (w, h))
+        lines_name = comfy.upload(lines_cn, "manga", f"{shot['shot']}_lines.png")
+        log(f"[lines] {shot['_lines_path'].name} -> {w}x{h}")
 
     multi = len(shot["characters"]) > 1 and shot.get("head_inpaint", True) and any(l["lora"] for l in loras)
     base_loras = loras
@@ -98,7 +104,7 @@ def render(shot: dict, cfg: Config, seed: int | None, dry_run: bool, refresh: bo
             log("[regions] " + ", ".join(f"{c['name']} x={x0}-{x1}" for c, (x0, x1, _) in zip(shot["characters"], regions)))
         else:
             log("[regions] could not split the pose into one column per character; prompting globally")
-    graph = build_graph(shot, cfg, base_loras, identity, pose_name, ref_name, (w, h), the_seed, regions, depth_name)
+    graph = build_graph(shot, cfg, base_loras, identity, pose_name, ref_name, (w, h), the_seed, regions, depth_name, lines_name)
     style = cfg.style(shot.get("style", "flat_anime"))
     pos, neg = build_prompt(shot, style, loras)
     (shot["_out"] / "workflow_api.json").write_text(json.dumps(graph, indent=2))

@@ -141,7 +141,7 @@ export function draw() {
     ctx.stroke();
   }
   const s = selL();
-  if (s && !ad) drawTransformBox(ctx, s, px);
+  if (s && !ad && s.type !== "ruler") drawTransformBox(ctx, s, px);
   getTool(S.tool)?.overlay?.(ctx, px);
   if (hasSelection() && selectionPage() === page().id) { drawAnts(ctx, px); antsTick(); }
 }
