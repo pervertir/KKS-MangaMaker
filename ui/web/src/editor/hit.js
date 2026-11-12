@@ -1,4 +1,4 @@
-import { S, layers } from "./state.js";
+import { S, layers } from "./state.ts";
 import { HANDLES, corners, boxPad, isPolyPanel, vertexHandles } from "./view.js";
 import { panelHit } from "./frames.js";
 

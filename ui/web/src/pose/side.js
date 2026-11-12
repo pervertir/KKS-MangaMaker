@@ -4,7 +4,7 @@ import { thumb } from "../editor/images.js";
 import { renderShot } from "../editor/jobs.js";
 import { refreshPanels, status, toast } from "../editor/misc.js";
 import { loadShots } from "../editor/shots.js";
-import { S } from "../editor/state.js";
+import { S } from "../editor/state.ts";
 import { CAST, castFor, enrichChars } from "../helpers/cast.js";
 import { renderPosePNG } from "./draw.js";
 import { project } from "./geometry.js";

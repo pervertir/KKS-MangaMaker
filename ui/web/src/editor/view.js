@@ -4,7 +4,7 @@ import { drawLayer, drawLayers, imageRect } from "./drawing.js";
 import { imgFor } from "./images.js";
 import { placeInline } from "./inline-edit.js";
 import { drawFlipped, drawPage } from "./manga-tools.js";
-import { H, S, W, layers, page, selL } from "./state.js";
+import { H, S, W, layers, page, selL } from "./state.ts";
 import { isPlainRect, panelBase, tracePanel } from "./frames.js";
 
 /* ================================================================ canvas view */

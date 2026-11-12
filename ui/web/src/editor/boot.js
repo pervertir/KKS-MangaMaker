@@ -8,7 +8,7 @@ import { buildMenus, popMenu } from "./menus.js";
 import { status, toast } from "./misc.js";
 import { renderPages } from "./pages.js";
 import { loadDoc, openProject, setName } from "./project.js";
-import { S, newDoc, normalize } from "./state.js";
+import { S, newDoc, normalize } from "./state.ts";
 import { buildToolbar, center, sc, setTool } from "./tools.js";
 import { fitView, zoomAt } from "./view.js";
 
@@ -50,7 +50,6 @@ export function init_editor_boot() {
   }
 
   /* dock tabs: the first run opens on Panels (the pipeline starts there), later runs on the tab last picked by hand */
-  $$("#docktabs button").forEach(b => b.addEventListener("click", () => setDockTab(b.dataset.tab, true)));
 
   { let t = null; try { t = localStorage.getItem("mm.dock.tab"); } catch { } setDockTab(t || "panels"); }
 

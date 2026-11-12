@@ -3,7 +3,7 @@ import { showLib } from "./dock-tabs.js";
 import { thumb } from "./images.js";
 import { layoutDialog } from "./layouts.js";
 import { VSHAPES } from "./manga-tools.js";
-import { S, bubbleMeta } from "./state.js";
+import { S, bubbleMeta } from "./state.ts";
 import { TONE_PRESETS } from "./tools.js";
 import { frameIcon } from "./props.js";
 import { requestView } from "./view.js";

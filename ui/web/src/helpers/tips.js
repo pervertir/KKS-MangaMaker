@@ -1,6 +1,6 @@
 import { $, h } from "../editor/core.js";
 import { toast } from "../editor/misc.js";
-import { S } from "../editor/state.js";
+import { S } from "../editor/state.ts";
 
 /* ================================================================ tips */
 export const TIPS = {

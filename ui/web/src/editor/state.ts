@@ -1,28 +1,64 @@
 import { uid } from "./core.js";
+import type { BubbleTemplate, Catalog, Doc, DockTab, Job, Layer, Page, Shot } from "../types.ts";
 
 /* ================================================================ state */
-export const S = {
+export interface EditorState {
+  cat: Catalog | null;
+  shots: Shot[];
+  projects: string[];
+  doc: Doc | null;
+  name: string;
+  page: number;
+  sel: string | null;
+  tool: string;
+  view: { s: number; tx: number; ty: number };
+  bubble: string;
+  libTab: string;
+  libFilter: string;
+  vshape: string;
+  tonePreset: number;
+  speedMode: string;
+  /** which list the dock shows under Properties */
+  dockTab: DockTab;
+  /** panel id whose image is being panned/zoomed */
+  adjust: string | null;
+  guides: unknown[];
+  showOrder: boolean;
+  showGuides: boolean;
+  undo: string[];
+  redo: string[];
+  dirty: boolean;
+  savedAt: number;
+  jobs: Record<string, Job>;
+  jobView: string | null;
+  pod: { running?: boolean; [more: string]: unknown } | null;
+  // scratch values the tools keep between events (timers, the last snapshot, ...)
+  [scratch: string]: any;
+}
+
+export const S: EditorState = {
   cat: null, shots: [], projects: [],
   doc: null, name: "", page: 0, sel: null, tool: "move",
   view: { s: 0.25, tx: 0, ty: 0 },
   bubble: "001", panelShape: "rect", polyDraft: null, libTab: "shots", libFilter: "", vshape: "oval", tonePreset: 2, speedMode: "focus",
-  dockTab: "panels",      // layers | panels | library: which list the dock shows under Properties
-  adjust: null,           // panel id whose image is being panned/zoomed
+  dockTab: "panels",
+  adjust: null,
   guides: [], showOrder: true, showGuides: true,
   undo: [], redo: [], dirty: false, savedAt: 0,
   jobs: {}, jobView: null, pod: null,
 };
-export const W = () => S.doc.width, H = () => S.doc.height;
-export const page = () => S.doc.pages[S.page];
-export const layers = () => page().layers;
-export const selL = () => layers().find(l => l.id === S.sel) || null;
-export const bubbleMeta = key => S.cat.bubbles.find(b => b.key === key) || S.cat.bubbles[0];
+export const W = (): number => S.doc!.width, H = (): number => S.doc!.height;
+export const page = (): Page => S.doc!.pages[S.page];
+export const layers = (): Layer[] => page().layers;
+export const selL = (): Layer | null => layers().find(l => l.id === S.sel) || null;
+export const bubbleMeta = (key: string): BubbleTemplate => S.cat!.bubbles.find(b => b.key === key) || S.cat!.bubbles[0];
 
-export function newDoc(title = "Untitled") {
+export function newDoc(title = "Untitled"): Doc {
   return { version: 1, title, reading: "rtl", width: 1800, height: 2700, maxFont: S.cat?.maxFont || 56,
     pages: [{ id: uid(), bg: "#ffffff", layers: [] }] };
 }
-export function normalize(doc) {
+/* Fills in what an older or hand-written project leaves out, so the rest of the editor can rely on it. */
+export function normalize(doc: Doc): Doc {
   doc.width ||= 1800; doc.height ||= 2700; doc.reading ||= "rtl"; doc.maxFont ||= 56;
   for (const p of doc.pages) {
     p.id ||= uid(); p.bg ||= "#ffffff"; p.layers ||= [];

@@ -4,7 +4,7 @@ import { hitLayer } from "./hit.js";
 import { IMG } from "./images.js";
 import { showInline } from "./inline-edit.js";
 import { refreshProps } from "./props.js";
-import { H, S, W, bubbleMeta, layers, normalize } from "./state.js";
+import { H, S, W, bubbleMeta, layers, normalize } from "./state.ts";
 import { TONE_PRESETS, setTool } from "./tools.js";
 import { requestDraw } from "./view.js";
 import { applyFrameShape } from "./frames.js";

@@ -6,7 +6,7 @@ import { VTEXT } from "../editor/manga-tools.js";
 import { refreshPanels } from "../editor/misc.js";
 import { closeModal, modal } from "../editor/modal.js";
 import { gotoPage, renderPageThumbs } from "../editor/pages.js";
-import { H, S, W, bubbleMeta } from "../editor/state.js";
+import { H, S, W, bubbleMeta } from "../editor/state.ts";
 import { fit } from "../editor/text.js";
 import { panelOrder, requestDraw } from "../editor/view.js";
 import { poseForPanel } from "../pose/open.js";
