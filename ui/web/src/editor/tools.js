@@ -13,6 +13,7 @@ import { gotoPage, pageOps, toggleOverview } from "./pages.js";
 import { toggleOrder } from "./panels-tab.js";
 import { spaceDown, set_spaceDown } from "./pointer.js";
 import { preferencesDialog } from "./preferences.js";
+import { exportBookDialog } from "./export-book.js";
 import { exportPages, importDialog, newProject, openDialog, save } from "./project.js";
 import { refreshProps } from "./props.js";
 import { shotDialog } from "./shots.js";
@@ -106,6 +107,7 @@ export const SHORTCUTS = [
   ["File", "mod+shift+k", "Script Wizard", () => scriptWizard()],
   ["File", "mod+e", "Export this page", () => exportPages("one"), true],
   ["File", "mod+shift+e", "Export all pages + PDF", () => exportPages("all"), true],
+  ["File", "mod+alt+e", "Export book (webtoon, CBZ, EPUB, print)", () => exportBookDialog(), true],
   // edit
   ["Edit", "mod+z", "Undo", () => undo()],
   ["Edit", "mod+shift+z", "Redo", () => redo()],

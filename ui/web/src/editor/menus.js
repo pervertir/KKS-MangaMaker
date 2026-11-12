@@ -8,6 +8,7 @@ import { renderOptions } from "./options.js";
 import { gotoPage, pageMenu, toggleOverview } from "./pages.js";
 import { toggleOrder } from "./panels-tab.js";
 import { preferencesDialog } from "./preferences.js";
+import { exportBookDialog } from "./export-book.js";
 import { downloadPage, exportPages, importDialog, newProject, openDialog, save } from "./project.js";
 import { shotDialog } from "./shots.js";
 import { S, selL } from "./state.ts";
@@ -21,7 +22,8 @@ import { saveSelectionDialog } from "../assets/dialogs.ts";
 export const MENUS = {
   File: () => [["New project", newProject, sc("New project")], ["Script Wizard…", () => scriptWizard(), sc("Script Wizard")], ["Open…", openDialog, sc("Open project")], ["Save", () => save(), sc("Save")], ["Save as…", () => save(true), sc("Save as")], null,
     ["Import page script…", importDialog, sc("Import page script")], null, ["Export this page (PNG)", () => exportPages("one"), sc("Export this page")],
-    ["Export all pages + PDF", () => exportPages("all"), sc("Export all pages + PDF")], ["Download this page", downloadPage]],
+    ["Export all pages + PDF", () => exportPages("all"), sc("Export all pages + PDF")],
+    ["Export book (webtoon, CBZ, EPUB, print)…", exportBookDialog, sc("Export book (webtoon, CBZ, EPUB, print)")], ["Download this page", downloadPage]],
   Edit: () => [["Undo", undo, sc("Undo"), !S.undo.length], ["Redo", redo, sc("Redo"), !S.redo.length], null,
     ["Cut", act.cut, sc("Cut layer"), !selL()], ["Copy", act.copy, sc("Copy layer"), !selL()], ["Paste", act.paste, sc("Paste layer (works across pages)"), !S.clip],
     ["Duplicate", act.duplicate, sc("Duplicate layer"), !selL()], ["Delete", act.remove, "Del", !selL()], null,

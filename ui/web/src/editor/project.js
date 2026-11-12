@@ -68,8 +68,8 @@ function cut(src, r) {
   c.getContext("2d").drawImage(src, t.x, t.y, t.w, t.h, 0, 0, c.width, c.height);
   return c;
 }
-function trimmed(r) {
-  const b = S.doc.format.exportBleed ? 0 : bleedPx(S.doc);
+function trimmed(r, keepBleed = false) {
+  const b = keepBleed || S.doc.format.exportBleed ? 0 : bleedPx(S.doc);
   return { x: r.x + b, y: r.y + b, w: r.w - 2 * b, h: r.h - 2 * b };
 }
 const pngOf = c => new Promise(r => c.toBlob(r, "image/png"));
@@ -92,22 +92,39 @@ async function uploadArea(url, i, r, scale = 1) {
 export async function uploadPage(i, scale = 1) {
   return uploadArea(`/api/export/page?name=${encodeURIComponent(S.name)}&n=${i + 1}`, i, { x: 0, y: 0, w: pageWidth(S.doc, S.doc.pages[i]), h: H() }, scale);
 }
+/* renders and uploads pages idx: one file per page slot (both halves of a spread), plus the whole spread;
+   the book export keeps the bleed for the print PDF */
+async function uploadPages(idx, keepBleed = false) {
+  const q = `name=${encodeURIComponent(S.name)}`;
+  let files = 0;
+  for (const i of idx) {
+    status(`Exporting page ${i + 1} of ${S.doc.pages.length}…`);
+    const pg = S.doc.pages[i];
+    for (const hf of halves(S.doc, i)) { await uploadArea(`/api/export/page?${q}&n=${hf.slot}`, i, trimmed(hf.rect, keepBleed)); files++; }
+    if (pg.span === 2) await uploadArea(`/api/export/page?${q}&n=${slotOf(S.doc, i)}&spread=1`, i, trimmed({ x: 0, y: 0, w: pageWidth(S.doc, pg), h: H() }, keepBleed));
+  }
+  return files;
+}
 export async function exportPages(which) {
   if (!S.name) { await save(); if (!S.name) return; }
   const idx = which === "all" ? S.doc.pages.map((_, i) => i) : [S.page];
   const q = `name=${encodeURIComponent(S.name)}`;
   status("Exporting…");
   try {
-    let files = 0;
-    for (const i of idx) {
-      const pg = S.doc.pages[i];
-      for (const hf of halves(S.doc, i)) { await uploadArea(`/api/export/page?${q}&n=${hf.slot}`, i, trimmed(hf.rect)); files++; }
-      if (pg.span === 2) await uploadArea(`/api/export/page?${q}&n=${slotOf(S.doc, i)}&spread=1`, i, trimmed({ x: 0, y: 0, w: pageWidth(S.doc, pg), h: H() }));
-    }
+    const files = await uploadPages(idx);
     let msg = `Exported ${files} page${files > 1 ? "s" : ""} to pages/${S.name}/`;
     if (which === "all") { await post(`/api/export/pdf?${q}&count=${slotCount(S.doc)}&dpi=${S.doc.format.dpi}`); msg += ` + ${S.name}.pdf`; }
     toast(msg, "ok"); status(msg);
   } catch (e) { toast(e.message, "err"); }
+}
+/* Saves, renders every page, then has the server build the book formats from those pages (mp/export.py). */
+export async function exportBook(formats, options) {
+  if (!S.name || S.dirty) { await save(); if (!S.name) return null; }
+  await uploadPages(S.doc.pages.map((_, i) => i), true);
+  status("Building " + formats.join(", ") + "…");
+  const r = await post(`/api/export/book?name=${encodeURIComponent(S.name)}`, { formats, options });
+  status(`Exported to pages/${S.name}/export/`);
+  return r;
 }
 export async function downloadPage() {
   const c = await renderFull(S.page), out = cut(c, { x: 0, y: 0, w: c.width, h: c.height });

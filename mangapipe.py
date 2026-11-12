@@ -11,6 +11,7 @@
   mangapipe run <shot_dir> [--seed N] [--no-compose] [--dry-run] everything, end to end
   mangapipe page <script.yaml> [--page N] [--pdf]                lay renders into manga pages with dialogue
   mangapipe layouts                                              contact sheet of the 100 page templates
+  mangapipe export <project> webtoon|cbz|epub|print [--colour]   book formats from an editor project's exported pages
   mangapipe pod create|setup|restart|status|url|start|stop|remove|ssh   RunPod pod lifecycle (target: runpod)
 """
 from __future__ import annotations
@@ -292,6 +293,8 @@ def main(argv=None):
     p = sub.add_parser("matte");   p.add_argument("shot_dir", type=Path); p.add_argument("--image", type=Path); p.add_argument("--prompt", default="person")
     p = sub.add_parser("compose"); p.add_argument("shot_dir", type=Path); p.add_argument("--image", type=Path, action="append")
     p = sub.add_parser("page");    p.add_argument("script", type=Path); p.add_argument("--page", type=int, action="append"); p.add_argument("--pdf", action="store_true"); p.add_argument("--out", type=Path)
+    p = sub.add_parser("export");  p.add_argument("project"); p.add_argument("formats", nargs="+", choices=["webtoon", "cbz", "epub", "print"])
+    p.add_argument("--colour", choices=["colour", "grey", "mono"]); p.add_argument("--width", type=int, default=800); p.add_argument("--slice", type=int, default=1280)
     p = sub.add_parser("layouts"); p.add_argument("--ltr", action="store_true"); p.add_argument("--out", type=Path)
     p = sub.add_parser("pod");     p.add_argument("action", choices=["create", "setup", "restart", "status", "url", "start", "stop", "remove", "ssh"]); p.add_argument("cmdline", nargs="?", default="")
     p = sub.add_parser("poses");   p.add_argument("action", choices=["build", "build-h", "build-h-mods"]); p.add_argument("--src", type=Path); p.add_argument("--out", type=Path)
@@ -316,6 +319,19 @@ def main(argv=None):
             return 0
         if a.cmd == "page":
             build_script(a.script, cfg, a.out, a.page, a.pdf, log)
+            return 0
+        if a.cmd == "export":
+            from mp.export import ExportError, export_book
+            d = Path(__file__).resolve().parent / "pages" / a.project
+            opts = {"webtoon": {"width": a.width, "slice_h": a.slice}, "print": {"colour": a.colour} if a.colour else {}}
+            try:
+                r = export_book(d, a.formats, opts)
+            except ExportError as e:
+                raise ValueError(str(e)) from e
+            for f in r["files"]:
+                log(f"wrote {f}")
+            for w in r["warnings"]:
+                log(f"warning: {w}")
             return 0
         if a.cmd == "layouts":
             dest = layout_sheet(cfg, a.out or Path(__file__).resolve().parent / "pages" / "layouts.png", rtl=not a.ltr)
