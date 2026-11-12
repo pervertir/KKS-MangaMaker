@@ -22,6 +22,36 @@ const CARRY = { 0: [14, 15, 16, 17], 4: ["hR"], 7: ["hL"], 1: [] };
 const ASPECTS = [["832x1216", "Portrait 2:3 (832×1216)"], ["896x1152", "Portrait 7:9 (896×1152)"], ["1024x1024", "Square (1024×1024)"],
   ["1152x896", "Landscape 9:7 (1152×896)"], ["1216x832", "Landscape 3:2 (1216×832)"], ["768x1344", "Tall (768×1344)"], ["1344x768", "Wide (1344×768)"]];
 const FIG_H = 1.75;    // metres that a scale-1 figure spans over the canvas height
+/* Joints a figure does not have. A pose from a picture marks what the picture did not show (a figure cut
+   by the frame has no legs): the joint keeps a place, hung in the rest pose from the nearest seen joint,
+   with a fourth value 0 ([x, y, z, 0]; null and pose.miss are read too), and is not drawn, nor are its
+   bones. Hand points are marked the same way. A figure can add joints back (c.show) or take more away
+   (c.cut): joint numbers and "hL" / "hR", by anatomical side so they follow a mirrored figure. */
+const BODY_PARENT = [1, 1, 1, 2, 3, 1, 5, 6, 1, 8, 9, 1, 11, 12, 0, 0, 14, 15];
+const OUTWARD = { 2: [3, 4, "hR"], 3: [4, "hR"], 5: [6, 7, "hL"], 6: [7, "hL"], 8: [9, 10], 9: [10], 11: [12, 13], 12: [13] };   // cutting a joint cuts the limb beyond it
+const offPt = p => !p || (p.length > 3 && !p[3]);
+function poseMiss(pose, c = {}) {
+  const show = new Set(c.show || []), cut = new Set(c.cut || []);
+  const miss = new Set([...pose.body.keys()].filter(i => offPt(pose.body[i])).concat(pose.miss || []).filter(i => !show.has(i)));
+  for (const k of cut) if (typeof k === "number") miss.add(k);
+  const hoff = (pose.hands || [[], []]).map((hd, s) => { const key = s ? "hR" : "hL"; return hd.map(pt => cut.has(key) || (offPt(pt) && !show.has(key))); });
+  return { miss, hoff };
+}
+const anatKey = (c, key) => !c.flip ? key : typeof key === "number" ? SWAP_BODY[key] : key === "hL" ? "hR" : "hL";
+const partName = key => typeof key === "number" ? JOINT_NAMES[key] : key === "hL" ? "left hand" : "right hand";
+/* show or hide a joint or hand of a figure; `key` is the part as displayed */
+function setPart(c, key, on) {
+  const pose = P.byId.get(c.pose); if (!pose) return;
+  for (const k of on ? [key] : [key, ...(OUTWARD[key] || [])]) {
+    const a = anatKey(c, k);
+    c.show = (c.show || []).filter(q => q !== a); c.cut = (c.cut || []).filter(q => q !== a);
+    const base = poseMiss(pose), gone = typeof a === "number" ? base.miss.has(a) : (base.hoff[a === "hL" ? 0 : 1] || []).some(Boolean);
+    if (on && gone) c.show.push(a);
+    if (!on) c.cut.push(a);
+  }
+}
+/* the points a figure has (for its outline and framing): everything but the missing joints and hand points */
+const shownPts = pr => { const pts = [...pr.body.filter((_, i) => !pr.miss?.has(i)), ...pr.hands.flatMap((hd, s) => hd.filter((_, i) => !pr.hoff?.[s]?.[i]))]; return pts.length ? pts : pr.body; };
 
 /* ---------------------------------------------------------------- scene model */
 function newScene(w = 832, h = 1216) { return { w, h, prompt: "", chars: [] }; }
@@ -48,7 +78,14 @@ function project(c, W, H) {
   const k = c.scale * H / FIG_H;
   const yaw = c.yaw * Math.PI / 180, pit = c.pitch * Math.PI / 180, rol = c.roll * Math.PI / 180;
   const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pit), sp = Math.sin(pit), cr = Math.cos(rol), sr = Math.sin(rol);
-  const hipY = (pose.body[8][1] + pose.body[11][1]) / 2;
+  let src = pose.body;
+  if (src.some(p => !p)) {                                   // a null joint waits on the joint it hangs from
+    src = [...src];
+    for (let n = 0; n < 3; n++) src.forEach((p, i) => { if (!p) src[i] = src[BODY_PARENT[i]]; });
+    src = src.map(p => p || [0, 0, 0]);
+  }
+  let { miss, hoff } = poseMiss(pose, c);
+  const hipY = (src[8][1] + src[11][1]) / 2;
   const ax = c.x * W, ay = c.y * H;
   const tf = ([x, y, z]) => {
     if (c.flip) x = -x;
@@ -57,9 +94,9 @@ function project(c, W, H) {
     const sx = X * k, syy = -(Y - hipY) * k;                  // screen, relative to the hips
     return [ax + sx * cr - syy * sr, ay - hipY * k + sx * sr + syy * cr, Z];
   };
-  let body = pose.body.map(tf);
-  let hands = (pose.hands || [[], []]).map(hd => hd.map(tf));      // [left, right]
-  if (c.flip) { body = SWAP_BODY.map(i => body[i]); hands = [hands[1], hands[0]]; }
+  let body = src.map(tf);
+  let hands = (pose.hands || [[], []]).map(hd => hd.map(p => tf(p || [0, 0, 0])));      // [left, right]
+  if (c.flip) { body = SWAP_BODY.map(i => body[i]); hands = [hands[1], hands[0]]; miss = new Set([...miss].map(i => SWAP_BODY[i])); hoff = [hoff[1], hoff[0]]; }
   const off = (key) => { const e = c.edits[key]; return e ? [e[0] * k, e[1] * k] : [0, 0]; };
   const add = (p, d) => [p[0] + d[0], p[1] + d[1], p[2]];
   body = body.map((p, i) => {
@@ -73,15 +110,15 @@ function project(c, W, H) {
   });
   // like a real pose detector: face points turned away from the camera are not drawn (a back view has
   // no nose or eyes), which is what tells the model the figure faces away
-  const hide = new Set(), nz = body[1][2];
+  const hide = new Set(miss), nz = body[1][2];
   if (body[0][2] < nz - 0.01) hide.add(0);
   for (const i of [14, 15]) if (body[i][2] < nz - 0.005) hide.add(i);
   for (const i of [16, 17]) if (body[i][2] < nz - 0.09) hide.add(i);
-  return { body, hands, k, hide };
+  return { body, hands, k, hide, miss, hoff };
 }
 function bounds(pr) {
   let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
-  for (const p of [...pr.body, ...pr.hands.flat()]) { x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]); }
+  for (const p of shownPts(pr)) { x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]); }
   const pad = 0.06 * pr.k;
   return { x: x0 - pad, y: y0 - pad, w: x1 - x0 + 2 * pad, h: y1 - y0 + 2 * pad };
 }
@@ -100,16 +137,18 @@ function drawSkeleton(g, pr, unit, opt = {}) {
   }
   g.globalAlpha = opt.alpha ?? 1;
   pr.body.forEach((p, i) => { if (pr.hide?.has(i)) return; g.fillStyle = KCOL[i]; g.beginPath(); g.arc(p[0], p[1], rad, 0, Math.PI * 2); g.fill(); });
-  if (opt.hands !== false) for (const hd of pr.hands) {
-    if (!hd.length) continue;
+  if (opt.hands !== false) pr.hands.forEach((hd, s) => {
+    const off = pr.hoff?.[s] || [];
+    if (!hd.length || (off.length && off.every(Boolean))) return;
     g.lineWidth = Math.max(1, unit * 2);
     HAND_EDGES.forEach(([a, b], i) => {
+      if (off[a] || off[b]) return;
       g.strokeStyle = `hsl(${(i / HAND_EDGES.length) * 360},100%,50%)`;
       g.beginPath(); g.moveTo(hd[a][0], hd[a][1]); g.lineTo(hd[b][0], hd[b][1]); g.stroke();
     });
     g.fillStyle = "#0000ff";
-    for (const p of hd) { g.beginPath(); g.arc(p[0], p[1], Math.max(1, unit * 2), 0, Math.PI * 2); g.fill(); }
-  }
+    hd.forEach((p, i) => { if (off[i]) return; g.beginPath(); g.arc(p[0], p[1], Math.max(1, unit * 2), 0, Math.PI * 2); g.fill(); });
+  });
   g.restore();
 }
 /* the pose image ControlNet gets: black, every visible figure, nothing else */
@@ -160,7 +199,7 @@ function pdrawNow() {
       g.fillStyle = "#4c8dff"; g.beginPath(); g.arc(b.x + b.w / 2, b.y - 34 / s, 6 / s, 0, Math.PI * 2); g.fill();
       // joints get a ring so they read as draggable
       g.strokeStyle = "#fff"; g.lineWidth = 1.2 / s;
-      for (const p of pr.body) { g.beginPath(); g.arc(p[0], p[1], 7 / s, 0, Math.PI * 2); g.stroke(); }
+      pr.body.forEach((p, i) => { if (pr.miss.has(i)) return; g.beginPath(); g.arc(p[0], p[1], 7 / s, 0, Math.PI * 2); g.stroke(); });
       g.font = `${12 / s}px sans-serif`; g.fillStyle = "#cfe0ff";
       g.fillText(c.name || c.label, b.x, b.y - 4 / s);
     }
@@ -199,6 +238,7 @@ function ikDrag(d, c, pt) {
   const base = project({ ...d.orig, edits: {} }, w, h).body;
   c.edits = deep(d.orig.edits);
   const chain = LIMB_CHAINS.find(ch => ch.includes(d.key) && ch[0] !== d.key);
+  if (chain && chain.some(i => d.pr.miss.has(i))) return false;         // a limb with a joint out of the picture: move just this one
   if (chain) {
     const [ri, mi, ei] = chain, R = cur[ri], M = cur[mi], E = cur[ei];
     const L1 = len2(v2(R, M)), L2 = len2(v2(M, E));
@@ -251,8 +291,8 @@ function phit(pt) {
           return { kind: "scale", c, pr, b, anchor: [b.x + (1 - hx) / 2 * b.w, b.y + (1 - hy) / 2 * b.h], hx, hy };
       }
       let best = null, bd = r;
-      pr.body.forEach((p, i) => { const d = Math.hypot(p[0] - pt.x, p[1] - pt.y); if (d < bd) { bd = d; best = i; } });
-      if (P.showHands) pr.hands.forEach((hd, s) => hd.forEach((p, i) => { if (i === 0) return; const d = Math.hypot(p[0] - pt.x, p[1] - pt.y); if (d < bd * 0.8) { bd = d; best = `h${s ? "R" : "L"}${i}`; } }));
+      pr.body.forEach((p, i) => { if (pr.miss.has(i)) return; const d = Math.hypot(p[0] - pt.x, p[1] - pt.y); if (d < bd) { bd = d; best = i; } });
+      if (P.showHands) pr.hands.forEach((hd, s) => hd.forEach((p, i) => { if (i === 0 || pr.hoff[s][i]) return; const d = Math.hypot(p[0] - pt.x, p[1] - pt.y); if (d < bd * 0.8) { bd = d; best = `h${s ? "R" : "L"}${i}`; } }));
       if (best != null) return { kind: "joint", c, pr, key: best };
     }
   }
@@ -348,7 +388,7 @@ const ARRANGE = [["Line-up", "Side by side, facing the reader"], ["Facing", "Two
 
 function figureExtent(c) {               // head top and lowest point at the figure's own scale, in px
   const pr = project(c, P.scene.w, P.scene.h); if (!pr) return null;
-  const ys = [...pr.body, ...pr.hands.flat()].map(p => p[1]);
+  const ys = shownPts(pr).map(p => p[1]);
   return { top: Math.min(...ys), bottom: Math.max(...ys) };
 }
 function applyFraming(frac) {
@@ -415,7 +455,7 @@ function paintThumb(cv) {
       const pr = project({ pose: `${pose.id}#${i}`, x: m.x, y: m.y, scale: m.scale, yaw: 0, pitch: 0, roll: 0, flip: false, edits: {} }, fw, fh);
       if (!pr) return;
       const sh = p => [p[0] + ox, p[1] + oy, p[2]];
-      drawSkeleton(g, { body: pr.body.map(sh), hands: pr.hands.map(hd => hd.map(sh)), k: pr.k }, 0.4, { hands: false });
+      drawSkeleton(g, { body: pr.body.map(sh), hands: pr.hands.map(hd => hd.map(sh)), k: pr.k, hide: pr.miss, hoff: pr.hoff }, 0.4, { hands: false });
     });
     return;
   }
@@ -459,7 +499,7 @@ function usePose(id, at) {
     c = newChar(id, at ? at.x / P.scene.w : 0.5, at ? Math.min(0.98, at.y / P.scene.h + 0.4) : 0.92);
     if (!at && P.scene.chars.length) c.x = clamp(0.25 + 0.5 * (P.scene.chars.length % 3) / 2, 0.1, 0.9);
     P.scene.chars.push(c); P.sel = c.id; pcommit("Character added");
-  } else { c.pose = id; c.edits = {}; pcommit("Pose: " + (P.byId.get(id)?.name || id)); }
+  } else { c.pose = id; c.edits = {}; c.show = []; c.cut = []; pcommit("Pose: " + (P.byId.get(id)?.name || id)); }
 }
 
 /* ---------------------------------------------------------------- side panel */
@@ -534,9 +574,10 @@ function renderPoseSide(valuesOnly) {
         h("button", { onclick: () => { const i = S2.chars.indexOf(c); S2.chars.splice(i, 1); S2.chars.push(c); pcommit("To front"); } }, "To front"),
         h("button", { onclick: () => { const i = S2.chars.indexOf(c); S2.chars.splice(i, 1); S2.chars.unshift(c); pcommit("To back"); } }, "To back"),
         h("button", { onclick: saveAsMyPose, title: "Keep this figure (with your joint edits) in the library under My poses" }, "Save pose")),
+      ...partSection(c),
       h("p", { class: "hint" }, "Drag a hand or foot and the limb follows (IK); drag an elbow or knee to swing it; drag the nose to turn the head. Alt-drag moves one joint. " +
         "Drag the body to move, a square handle to scale, the knob on top to rotate (Shift snaps 15°). " +
-        "Scroll = size, Shift+scroll = turn. Arrows nudge, M mirrors, Del deletes."));
+        "Scroll = size, Shift+scroll = turn. Arrows nudge, M mirrors, H hides the joint under the pointer, Del deletes."));
   }
   // output
   side.append(h("div", { class: "section" }, "Output"),
@@ -545,6 +586,22 @@ function renderPoseSide(valuesOnly) {
       h("button", { onclick: () => savePoseShot(false) }, "Save to shot"),
       h("button", { class: "primary", onclick: () => savePoseShot(true), title: "Save, then render on the pod" }, "Save & render")),
     P.panel ? h("p", { class: "hint" }, "The render lands in the panel you opened this from.") : null);
+}
+/* Joints of the selected figure that are not drawn (out of the picture it was read from, or cut by hand):
+   add one back, where it then sits at a guessed spot to be dragged into place, or cut one that is drawn. */
+function partSection(c) {
+  const pr = project(c, P.scene.w, P.scene.h); if (!pr) return [];
+  const handGone = s => pr.hands[s].length > 0 && pr.hoff[s].every(Boolean);
+  const gone = [...[...pr.miss].sort((a, b) => a - b), ...[0, 1].filter(handGone).map(s => s ? "hR" : "hL")];
+  const here = [...JOINT_NAMES.keys()].filter(i => !pr.miss.has(i)).concat([0, 1].filter(s => pr.hands[s].length && !handGone(s)).map(s => s ? "hR" : "hL"));
+  const sel = h("select", { style: "flex:1" }, ...here.map(k => h("option", { value: String(k) }, partName(k))));
+  const cut = () => { const v = sel.value; if (v === "") return; const k = /^\d+$/.test(v) ? +v : v; setPart(c, k, false); pcommit(`Hidden: ${partName(k)}`); };
+  return [
+    prow("Joints", sel, h("button", { disabled: !here.length, title: "Do not draw this joint, nor the limb beyond it (a figure cut by the frame). Or hover a joint and press H", onclick: cut }, "Hide")),
+    gone.length ? h("div", { class: "hint", style: "margin-top:0" }, `Not drawn (${gone.length}): outside the picture, or hidden. Add one back, then drag it into place.`) : null,
+    gone.length ? h("div", { class: "btnrow" },
+      ...gone.map(k => h("button", { title: "Draw this joint again", onclick: () => { setPart(c, k, true); pcommit(`Added: ${partName(k)}`); } }, "＋ " + partName(k))),
+      gone.length > 1 ? h("button", { onclick: () => { gone.forEach(k => setPart(c, k, true)); pcommit("All joints shown"); } }, "Add all") : null) : null];
 }
 /* Pose from an image: the picture goes to the pod's pose detector; every person found comes back as a
    figure where they stand (saved under My poses), and the picture stays underneath as a guide. */
@@ -581,8 +638,9 @@ function bakeChar(c) {
   const { w: W, h: H } = P.scene, pr = project(c, W, H), k = pr.k;
   const hipX = (pr.body[8][0] + pr.body[11][0]) / 2;
   const floorY = Math.max(...pr.body.map(p => p[1]), ...pr.hands.flat().map(p => p[1]));
-  const to3 = p => [+((p[0] - hipX) / k).toFixed(4), +((floorY - p[1]) / k).toFixed(4), +(p[2] || 0).toFixed(4)];
-  return { body: pr.body.map(to3), hands: pr.hands.map(hd => hd.map(to3)), x: +(hipX / W).toFixed(4), y: +(floorY / H).toFixed(4), scale: +c.scale.toFixed(4) };
+  // joints the figure does not have stay marked ([x, y, z, 0]) in the baked pose
+  const to3 = (p, off) => [+((p[0] - hipX) / k).toFixed(4), +((floorY - p[1]) / k).toFixed(4), +(p[2] || 0).toFixed(4), ...(off ? [0] : [])];
+  return { body: pr.body.map((p, i) => to3(p, pr.miss.has(i))), hands: pr.hands.map((hd, s) => hd.map((p, i) => to3(p, pr.hoff[s][i]))), x: +(hipX / W).toFixed(4), y: +(floorY / H).toFixed(4), scale: +c.scale.toFixed(4) };
 }
 async function saveAsMyPose() {
   const c = pcur(); if (!c) return toast("Select a character first", "err");
@@ -591,7 +649,7 @@ async function saveAsMyPose() {
   try {
     const e = await post("/api/poses/custom", { name, body: b.body, hands: b.hands });
     P.lib.unshift(e); P.byId.set(e.id, e);
-    Object.assign(c, { pose: e.id, edits: {}, yaw: 0, pitch: 0, roll: 0, flip: false, x: b.x, y: b.y });
+    Object.assign(c, { pose: e.id, edits: {}, show: [], cut: [], yaw: 0, pitch: 0, roll: 0, flip: false, x: b.x, y: b.y });
     pcommit("Saved to My poses"); renderPoseLib();
   } catch (e) { toast(e.message, "err"); }
 }
@@ -710,6 +768,10 @@ function poseKey(e) {
   if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); P.scene.chars = P.scene.chars.filter(q => q !== c); P.sel = null; pcommit("Character removed"); toast(`Removed ${c.name || c.label} — ⌘Z brings it back`); return; }
   if (e.key === "Escape") { P.sel = null; renderPoseSide(); pdraw(); return; }
   if (e.key.toLowerCase() === "m" && !mod) { c.flip = !c.flip; pcommit("Mirrored"); return; }
+  if (e.key.toLowerCase() === "h" && !mod && P.hoverJoint != null) {      // hide the joint under the pointer (a hand point: the hand)
+    const k = typeof P.hoverJoint === "number" ? P.hoverJoint : P.hoverJoint.slice(0, 2);
+    setPart(c, k, false); P.hoverJoint = null; P.joint = false; pcommit(`Hidden: ${partName(k)}`); return;
+  }
   if (e.key.startsWith("Arrow")) {
     e.preventDefault(); const n = (e.shiftKey ? 10 : 1);
     c.x += (e.key === "ArrowLeft" ? -n : e.key === "ArrowRight" ? n : 0) / P.scene.w; c.y += (e.key === "ArrowUp" ? -n : e.key === "ArrowDown" ? n : 0) / P.scene.h;

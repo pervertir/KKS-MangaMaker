@@ -85,7 +85,7 @@ function checkPage(pi) {
 }
 
 function checkerDialog(all) {
-  const box = modal(all ? "Check every page" : "Check this page", "");
+  const box = modal(all ? "Check every page" : "Check this page", "mid");
   const body = $(".mbody", box);
   const render = () => {
     body.innerHTML = "";
@@ -314,7 +314,7 @@ function mdToHtml(md) {
 }
 async function wizardGuide() {
   let md = ""; try { md = await (await fetch("/api/guide")).text(); } catch { md = "Guide not found (docs/SCRIPT_WIZARD.md)."; }
-  const box = modal("Script Wizard guide", ""); const body = $(".mbody", box);
+  const box = modal("Script Wizard guide", "mid"); const body = $(".mbody", box);
   const div = h("div", { class: "guide" }); div.innerHTML = mdToHtml(md); body.append(div);
   box.append(h("div", { class: "mfoot" }, h("div", { class: "spacer" }), h("button", { onclick: () => scriptWizard() }, "Open the Script Wizard"), h("button", { class: "primary", onclick: closeModal }, "Close")));
 }

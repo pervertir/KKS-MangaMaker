@@ -1,7 +1,36 @@
-#!/bin/zsh
-# KKS-MangaMaker MCP server (stdio). Same interpreter as mangapipe.
-#   claude mcp add kks-mangamaker -- /path/to/KKS-MangaMaker/mangamaker-mcp
-HERE="${0:A:h}"
-PY="${MANGAPIPE_PYTHON:-/Users/deepratnaawale/miniconda3/envs/comfyui/bin/python}"
-if [ ! -x "$PY" ]; then PY="python3"; fi
+#!/bin/sh
+# KKS-MangaMaker MCP server. No arguments: stdio (what MCP clients launch). `--http` serves
+# Streamable HTTP on 127.0.0.1:8766/mcp. Setup for each client: docs/MCP.md
+#
+# Interpreter, first that exists:  $MANGAPIPE_PYTHON, the ComfyUI conda env, python3, python.
+# It needs PyYAML, Pillow and numpy (the server says which are missing and how to install them).
+SELF="$0"
+while [ -L "$SELF" ]; do                      # follow symlinks so a link in ~/bin still finds the checkout
+  L=$(readlink "$SELF")
+  case "$L" in /*) SELF="$L" ;; *) SELF="$(dirname "$SELF")/$L" ;; esac
+done
+HERE=$(cd "$(dirname "$SELF")" && pwd -P)
+
+if [ -n "$MANGAPIPE_PYTHON" ]; then
+  if ! command -v "$MANGAPIPE_PYTHON" >/dev/null 2>&1; then
+    echo "mangamaker-mcp: MANGAPIPE_PYTHON=$MANGAPIPE_PYTHON is not an executable Python" >&2
+    exit 127
+  fi
+  PY="$MANGAPIPE_PYTHON"
+else
+  PY=""
+  for C in "$HOME/miniconda3/envs/comfyui/bin/python" /Users/deepratnaawale/miniconda3/envs/comfyui/bin/python; do
+    if [ -x "$C" ]; then PY="$C"; break; fi
+  done
+  if [ -z "$PY" ]; then
+    for C in python3 python; do
+      if command -v "$C" >/dev/null 2>&1; then PY="$C"; break; fi
+    done
+  fi
+  if [ -z "$PY" ]; then
+    echo "mangamaker-mcp: no Python found. Install Python 3.9+ with: pip install pyyaml pillow numpy requests" >&2
+    echo "  or set MANGAPIPE_PYTHON=/path/to/python (GUI apps do not see your shell's PATH: put it in the client's \"env\")" >&2
+    exit 127
+  fi
+fi
 exec "$PY" "$HERE/mangamaker_mcp.py" "$@"

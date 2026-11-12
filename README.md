@@ -227,16 +227,36 @@ AnimationLoader mods add (`mods/Sideloader Modpack - Animations`; 155 in this in
 Paths to the game (captures, templates, poses) can be overridden per machine in an untracked
 `config.local.yaml` next to `config.yaml`.
 
-## Claude: MCP server and script skill
+## MCP server (any MCP client) and script skill
 
-`./mangamaker-mcp` is an MCP server (stdio, no extra packages) over the same pipeline: `script_format`,
-`check_script`, `build_pages_from_script`, `list_shots`, `list_poses`, `pose_shot` (draws the OpenPose
-image server-side, single figures or whole group poses), `render_shot` (on the pod), `place_renders`,
-`pod`, `cast`. `.mcp.json` registers it for Claude Code in this folder; elsewhere:
-`claude mcp add kks-mangamaker -- /path/to/KKS-MangaMaker/mangamaker-mcp`.
+`./mangamaker-mcp` is an MCP server (no extra packages) over the same pipeline, for any client that
+speaks the Model Context Protocol: Claude Code and Desktop, Cursor, VS Code, Windsurf, Cline, Roo Code,
+Continue, Zed, JetBrains, Codex, Gemini CLI, LM Studio, Goose, Open WebUI and others.
+**[docs/MCP.md](docs/MCP.md)** has the copy-paste setup for each, the environment variables and
+troubleshooting.
 
-`.claude/skills/kks-mangamaker-script` teaches Claude to write Script Wizard scripts (and to build,
-pose and render them through the MCP server). The format and craft notes are in
+- **Tools**: `script_format`, `check_script`, `build_pages_from_script`, `list_shots`, `list_poses`,
+  `pose_shot` (draws the OpenPose image server-side, single figures or whole group poses),
+  `render_shot` (on the pod, with progress and cancellation), `place_renders`, `pod`, `cast`. Each is
+  marked read-only, overwriting, or pod-using so clients can ask before the calls that cost money.
+- **Prompts**: `write_manga_script`, `convert_script_to_wizard_format`, `storyboard_and_render`, and
+  the Script Wizard guide as a **resource**, so clients without skills get the same guidance.
+- **Transports**: stdio by default; `./mangamaker-mcp --http` serves Streamable HTTP on
+  `http://127.0.0.1:8766/mcp` (local only unless you give it a token) for clients that take a URL.
+
+The generic entry most clients accept (use the absolute path):
+
+```json
+{ "mcpServers": { "kks-mangamaker": { "command": "/path/to/KKS-MangaMaker/mangamaker-mcp", "args": [] } } }
+```
+
+`.mcp.json` registers it for Claude Code in this folder; elsewhere:
+`claude mcp add kks-mangamaker -- /path/to/KKS-MangaMaker/mangamaker-mcp`. On Windows the launcher is
+`mangamaker-mcp.cmd`. The launcher uses `$MANGAPIPE_PYTHON`, else the `comfyui` conda environment,
+else `python3`, and says which packages are missing if that interpreter lacks them.
+
+`.claude/skills/kks-mangamaker-script` is the script-writing skill for clients that load skills (it
+also builds, poses and renders through the MCP server). The format and craft notes are in
 [docs/SCRIPT_WIZARD.md](docs/SCRIPT_WIZARD.md), also in the editor under Help › Script Wizard guide.
 
 ## Commands

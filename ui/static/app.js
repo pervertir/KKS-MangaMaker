@@ -35,6 +35,7 @@ const S = {
   doc: null, name: "", page: 0, sel: null, tool: "move",
   view: { s: 0.25, tx: 0, ty: 0 },
   bubble: "001", libTab: "shots", libFilter: "", vshape: "oval", tonePreset: 2, speedMode: "focus",
+  dockTab: "panels",      // layers | panels | library: which list the dock shows under Properties
   adjust: null,           // panel id whose image is being panned/zoomed
   guides: [], showOrder: true, showGuides: true,
   undo: [], redo: [], dirty: false, savedAt: 0,
@@ -76,7 +77,7 @@ function commit(msg) {
 function snapshot() { S.snap = JSON.stringify({ doc: S.doc, page: S.page }); }
 function restore(js) {
   const o = JSON.parse(js); S.doc = o.doc; S.page = Math.min(o.page, S.doc.pages.length - 1);
-  if (!selL()) S.sel = null; snapshot(); S.dirty = true; refreshPanels(); renderPages();
+  if (!selL()) S.sel = null; snapshot(); S.dirty = true; requestDraw(); refreshPanels(); renderPages();
 }
 function undo() { if (!S.undo.length) return; S.redo.push(S.snap); restore(S.undo.pop()); status("Undo"); }
 function redo() { if (!S.redo.length) return; S.undo.push(S.snap); restore(S.redo.pop()); status("Redo"); }
@@ -871,7 +872,7 @@ cv.addEventListener("dblclick", e => {
   const l = hitLayer(p);
   if (!l) return;
   S.sel = l.id;
-  if (l.type === "panel") { if (l.image) enterAdjust(l); else { S.libTab = "shots"; renderLibrary(); status("Drag a render from Shots onto the panel"); } }
+  if (l.type === "panel") { if (l.image) enterAdjust(l); else { showLib("shots"); status("Drag a render from Shots onto the panel"); } }
   else if (["bubble", "caption", "text", "vbubble"].includes(l.type)) showInline(l);
   refreshPanels();
 });
@@ -1022,7 +1023,7 @@ const ICON = {
   tone: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="5" r="1.2"/><circle cx="10" cy="5" r="1.2"/><circle cx="15" cy="5" r="1.4"/><circle cx="20" cy="5" r="1.6"/><circle cx="7.5" cy="9.5" r="1.4"/><circle cx="12.5" cy="9.5" r="1.6"/><circle cx="17.5" cy="9.5" r="1.8"/><circle cx="5" cy="14" r="1.6"/><circle cx="10" cy="14" r="1.8"/><circle cx="15" cy="14" r="2"/><circle cx="20" cy="14" r="2.2"/><circle cx="7.5" cy="18.5" r="2"/><circle cx="12.5" cy="18.5" r="2.2"/><circle cx="17.5" cy="18.5" r="2.4"/></svg>',
   speed: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 12L2 3l1-1zM12 12L22 3l-1-1zM12 12L2 21l1 1zM12 12l10 9-1 1zM12 12L12 1h.8zM12 12L1 12.4v-.8zM12 12l11 .4v-.8zM12 12l-.4 11h.8z" opacity=".85"/><circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor"/></svg>',
 };
-const TOOLS = [["move", "Move / select (V)", "v"], ["hand", "Hand (H, or hold Space)", "h"], null, ["panel", "Panel: drag a frame (P)", "p"],
+const TOOLS = [["move", "Move / select (V)", "v"], ["hand", "Hand (H, or hold Space)", "h"], null, ["panel", "Panel: drag a frame (P)", "p"], null,
   ["bubble", "Template bubble (B)", "b"], ["vbubble", "Drawn bubble with a draggable tail (O)", "o"], ["text", "Text (T)", "t"], ["sfx", "Sound effect (S)", "s"],
   ["caption", "Caption box (C)", "c"], null, ["tone", "Screentone: click a panel or drag an area (G)", "g"], ["speed", "Speed / focus lines: click a panel or drag (L)", "l"]];
 const TONE_PRESETS = [
@@ -1066,7 +1067,7 @@ const inField = e => {
    the book overview, otherwise the selected layer */
 let deleteScope = "layers";
 document.addEventListener("pointerdown", e => {
-  deleteScope = e.target.closest("#pagenav, #overview") ? "pages" : e.target.closest("#stage, #layers, #props, #toolbar") ? "layers" : deleteScope;
+  deleteScope = e.target.closest("#pagenav, #overview") ? "pages" : e.target.closest("#stage, #layers, #panels, #paneltools, .panefoot, #props, #toolbar") ? "layers" : deleteScope;
 }, true);
 function deleteSelected() {
   const l = selL();                         // a selected layer always wins; a page only when no layer is selected
@@ -1148,7 +1149,7 @@ const SHORTCUTS = [
   ["View", "mod+1", "Actual pixels", () => zoomAt(1 / S.view.s, ...center())],
   ["View", "mod+=", "Zoom in", () => zoomAt(1.25, ...center())],
   ["View", "mod+-", "Zoom out", () => zoomAt(0.8, ...center())],
-  ["View", "m", "Show / hide panel order", () => { S.showOrder = !S.showOrder; requestView(); }],
+  ["View", "m", "Show / hide panel order", () => toggleOrder()],
   ["View", ";", "Snapping on / off", () => { S.showGuides = !S.showGuides; renderOptions(); toast("Snapping " + (S.showGuides ? "on" : "off")); }],
   ["View", "space", "Pan while held", null],
   ["View", "mod+;", "Print guides on / off", () => { S.showPrint = !S.showPrint; requestView(); }],
@@ -1390,8 +1391,8 @@ function fontRows(l) {
     (() => { const r = select("Font", FONTS, () => l.font || "MMComic", v => l.font = v);   // fetch the faces when the list opens
       $("select", r)?.addEventListener("pointerdown", () => Object.keys(LAZY_FONTS).forEach(loadFontCss), { once: true }); return r; })(),
     h("div", { class: "row" }, h("label", {}, "Size"),
-      h("input", { type: "number", min: 0, value: l.fontSize || 0, style: "width:64px", onchange: e => { l.fontSize = +e.target.value; commit(); requestDraw(); } }),
-      h("span", { class: "hint" }, "0 = fit"), check("Bold", () => l.bold, v => l.bold = v), check("Italic", () => l.italic, v => l.italic = v)),
+      h("input", { type: "number", min: 0, value: l.fontSize || 0, style: "width:56px", title: "Text size in page px; 0 fits the text to its box", onchange: e => { l.fontSize = +e.target.value; commit(); requestDraw(); } }),
+      check("Bold", () => l.bold, v => l.bold = v), check("Italic", () => l.italic, v => l.italic = v), h("span", { class: "hint" }, "0 = fit")),
   ];
 }
 function refreshProps(valuesOnly) {
@@ -1411,7 +1412,7 @@ function refreshProps(valuesOnly) {
     const m = bubbleMeta(l.bubble);
     P.append(textBlock(l),
       rowOf("Template", h("img", { src: thumb(m.ref, 120), style: "height:44px;background:#e9e9ec;border-radius:4px;padding:2px" }),
-        h("button", { onclick: () => { S.libTab = "bubbles"; renderLibrary(); } }, `#${m.key} · change…`)),
+        h("button", { onclick: () => showLib("bubbles") }, `#${m.key} · change…`)),
       ...fontRows(l), colorRow("Text color", l, "color", true),
       h("div", { class: "btnrow" }, check("Flip tail", () => l.flip, v => l.flip = v), check("Vertical text", () => l.vertical, v => l.vertical = v)));
   }
@@ -1465,8 +1466,7 @@ function refreshProps(valuesOnly) {
     slider("Opacity", () => l.opacity ?? 1, v => l.opacity = v, 0, 1, 0.01, v => Math.round(v * 100) + "%"),
     select("Blend", [["source-over", "Normal"], ["multiply", "Multiply"], ["screen", "Screen"], ["overlay", "Overlay"], ["darken", "Darken"], ["lighten", "Lighten"], ["difference", "Difference"]],
       () => l.blend, v => l.blend = v),
-    h("div", { class: "btnrow" }, h("button", { onclick: act.toFront }, "To front"), h("button", { onclick: act.toBack }, "To back"),
-      h("button", { onclick: act.duplicate }, "Duplicate"), h("button", { class: "danger", onclick: act.remove }, "Delete")));
+    h("div", { class: "btnrow" }, h("button", { onclick: act.duplicate }, "Duplicate"), h("button", { class: "danger", onclick: act.remove }, "Delete")));
 }
 function panelProps(P, l) {
   const shot = S.shots.find(s => s.name === l.shot);
@@ -1506,11 +1506,8 @@ function pageProps(P) {
     colorRow("Paper", pg, "bg"),
     h("div", { class: "row" }, h("label", {}, "Max text"), h("input", { type: "number", value: S.doc.maxFont, onchange: e => { S.doc.maxFont = +e.target.value; commit(); requestDraw(); } }),
       h("span", { class: "hint" }, "px, keeps fitted text even")),
-    h("div", { class: "btnrow" }, h("button", { class: "primary", onclick: scriptWizard, title: "Write the scene as lines; get pages, panels, bubbles and shots" }, "Script Wizard…"),
-      h("button", { onclick: layoutDialog }, "Choose layout…"),
-      h("button", { onclick: () => { S.showOrder = !S.showOrder; requestDraw(); } }, "Toggle panel order")),
-    h("p", { class: "hint" }, "Pick a layout, drag renders from Shots onto panels, then letter with B (bubble), T (text), S (SFX), C (caption). " +
-      "Double-click a panel to reposition its render, double-click a bubble to type. Space-drag pans, Ctrl/⌘+scroll zooms."));
+    h("div", { class: "btnrow" }, h("button", { onclick: layoutDialog }, "Choose layout…")),
+    h("p", { class: "hint" }, "Pick a layout, drag renders from the Library onto panels, then letter the page with bubbles, text and sound effects."));
 }
 
 /* ================================================================ layers list */
@@ -1536,20 +1533,20 @@ function svgIcon(name) { return `<svg viewBox="0 0 24 24" width="15" height="15"
 function svgBtn(name, cls, title, fn) {
   const b = h("button", { class: "ib " + (cls || ""), title, onclick: e => { e.stopPropagation(); fn(); } }); b.innerHTML = svgIcon(name); return b;
 }
-/* a small picture of the layer itself, like Photoshop's layer thumbnails */
+/* a small picture of the layer itself, like Photoshop's layer thumbnails (T = its size in the list) */
 const THUMBS = new Map();   // layer id -> {key, canvas}: redrawn only when the layer changes
-function layerThumb(l) {
+function layerThumb(l, T = 32) {
   const refs = [l.image?.ref, l.type === "bubble" ? bubbleMeta(l.bubble)?.ref : null].filter(Boolean);
   const loaded = refs.map(r => [0, ...LEVELS].map(w => IMG.get(r + "|" + w)?.complete ? 1 : 0).join("")).join("/");
-  const key = JSON.stringify(l) + "|" + loaded;
+  const key = T + "|" + JSON.stringify(l) + "|" + loaded;
   const hit = THUMBS.get(l.id);
   if (hit && hit.key === key) return hit.canvas;
-  const c = paintLayerThumb(l); THUMBS.set(l.id, { key, canvas: c });
+  const c = paintLayerThumb(l, T); THUMBS.set(l.id, { key, canvas: c });
   if (THUMBS.size > 600) THUMBS.delete(THUMBS.keys().next().value);
   return c;
 }
-function paintLayerThumb(l) {
-  const T = 34, c = h("canvas", { class: "lthumb", width: T * 2, height: T * 2 });
+function paintLayerThumb(l, T = 32) {
+  const c = h("canvas", { class: "lthumb", width: T * 2, height: T * 2 });
   const g = c.getContext("2d"), pad = 2;
   const w = Math.max(1, l.w), hh = Math.max(1, l.h), s = (T * 2 - pad * 2) / Math.max(w, hh);
   g.fillStyle = "#d4d4da"; g.fillRect(0, 0, T * 2, T * 2);
@@ -1564,30 +1561,150 @@ function layerMenu() {
     ["Bring to front", act.toFront, sc("Bring to front")], ["Send to back", act.toBack, sc("Send to back")], null,
     ["Lock / unlock", act.toggleLock, sc("Lock / unlock")], ["Hide / show", act.toggleHide, sc("Hide / show")]];
 }
+/* a list is rebuilt on every change: keep where it was scrolled, and bring the picked row into view only when the pick changes */
+const LISTSEL = {};
+function rebuildList(box, build) {
+  const y = box.scrollTop; box.innerHTML = ""; build(); box.scrollTop = y;
+  if (LISTSEL[box.id] !== S.sel) { LISTSEL[box.id] = S.sel; box.querySelector(".on")?.scrollIntoView({ block: "nearest" }); }
+}
+/* Layers tab: everything except the frames, front to back. A run of panels is one marker row, so the
+   stack stays truthful (a tone can sit over or under the frames) while the frames live in the Panels tab. */
 function renderLayers() {
-  const box = $("#layers"); box.innerHTML = "";
-  const ls = layers();
-  [...ls].reverse().forEach(l => {
-    const row = h("div", { class: "layer" + (l.id === S.sel ? " on" : ""), draggable: true,
-      onclick: () => { S.sel = l.id; refreshPanels(); requestDraw(); },
-      ondblclick: () => { const n = prompt("Layer name", layerName(l)); if (n != null) { l.name = n; commit(); } },
-      ondragstart: e => e.dataTransfer.setData("text/layer", l.id),
-      ondragover: e => { e.preventDefault(); row.classList.add("dragover"); },
-      ondragleave: () => row.classList.remove("dragover"),
-      ondrop: e => {
-        e.preventDefault(); row.classList.remove("dragover");
-        const id = e.dataTransfer.getData("text/layer"), src = ls.find(q => q.id === id); if (!src || src === l) return;
-        ls.splice(ls.indexOf(src), 1); ls.splice(ls.indexOf(l) + 1, 0, src); commit("Reordered"); requestDraw();
-      } },
-      svgBtn(l.visible ? "eye" : "eyeOff", l.visible ? "" : "offv", "Show / hide", () => { l.visible = !l.visible; commit(); requestDraw(); }),
-      layerThumb(l),
-      h("span", { class: "nm" }, layerName(l)),
-      svgBtn(l.locked ? "lock" : "unlock", l.locked ? "" : "offv", l.locked ? "Unlock" : "Lock", () => { l.locked = !l.locked; commit(); requestDraw(); }),
-      svgBtn("trash", "del", "Delete layer (Delete)", () => { S.sel = l.id; deleteSelected(); }));
-    row.addEventListener("contextmenu", e => { e.preventDefault(); S.sel = l.id; refreshPanels(); requestDraw(); popMenu(e.clientX, e.clientY, layerMenu()); });
-    box.append(row);
+  const box = $("#layers"), ls = layers(), rev = [...ls].reverse();
+  let n = 0;
+  rebuildList(box, () => {
+    for (let i = 0; i < rev.length; i++) {
+      if (rev[i].type !== "panel") { n++; box.append(layerRow(rev[i], ls)); continue; }
+      let j = i; while (j + 1 < rev.length && rev[j + 1].type === "panel") j++;
+      box.append(panelRunRow(rev.slice(i, j + 1), ls)); i = j;
+    }
+    if (!n) box.prepend(h("div", { class: "empty" }, "No lettering on this page yet. B bubble · O drawn bubble · T text · S sound effect · C caption."));
   });
-  if (!ls.length) box.append(h("div", { class: "hint" }, "Empty page. Choose a layout or draw panels with P."));
+  $("#cnt-layers").textContent = n || "";
+}
+function layerRow(l, ls) {
+  const row = h("div", { class: "layer" + (l.id === S.sel ? " on" : ""), draggable: true,
+    onclick: () => { S.sel = l.id; refreshPanels(); requestDraw(); },
+    ondblclick: () => { const n = prompt("Layer name", layerName(l)); if (n != null) { l.name = n; commit(); } },
+    ondragstart: e => e.dataTransfer.setData("text/layer", l.id),
+    ondragover: e => { e.preventDefault(); row.classList.add("dragover"); },
+    ondragleave: () => row.classList.remove("dragover"),
+    ondrop: e => {
+      e.preventDefault(); row.classList.remove("dragover");
+      const id = e.dataTransfer.getData("text/layer"), src = ls.find(q => q.id === id); if (!src || src === l) return;
+      ls.splice(ls.indexOf(src), 1); ls.splice(ls.indexOf(l) + 1, 0, src); commit("Reordered"); requestDraw();
+    } },
+    svgBtn(l.visible ? "eye" : "eyeOff", l.visible ? "" : "offv", "Show / hide", () => { l.visible = !l.visible; commit(); requestDraw(); }),
+    layerThumb(l),
+    h("span", { class: "nm", title: layerName(l) }, layerName(l)),
+    svgBtn(l.locked ? "lock" : "unlock", l.locked ? "" : "offv", l.locked ? "Unlock" : "Lock", () => { l.locked = !l.locked; commit(); requestDraw(); }),
+    svgBtn("trash", "del", "Delete layer (Delete)", () => { S.sel = l.id; deleteSelected(); }));
+  row.addEventListener("contextmenu", e => { e.preventDefault(); S.sel = l.id; refreshPanels(); requestDraw(); popMenu(e.clientX, e.clientY, layerMenu()); });
+  return row;
+}
+function panelRunRow(run, ls) {          // run[0] is the frontmost frame of the run
+  const row = h("div", { class: "layer run" + (run.some(q => q.id === S.sel) ? " on" : ""), title: "The panel frames sit here in the stack. Click to work on them in the Panels tab; drop a layer here to put it just above them.",
+    onclick: () => setDockTab("panels", true),
+    ondragover: e => { e.preventDefault(); row.classList.add("dragover"); },
+    ondragleave: () => row.classList.remove("dragover"),
+    ondrop: e => {
+      e.preventDefault(); row.classList.remove("dragover");
+      const id = e.dataTransfer.getData("text/layer"), src = ls.find(q => q.id === id); if (!src) return;
+      ls.splice(ls.indexOf(src), 1); ls.splice(ls.indexOf(run[0]) + 1, 0, src); commit("Reordered"); requestDraw();
+    } },
+    h("span", {}, "▭"), `${run.length} panel${run.length === 1 ? "" : "s"}`, h("span", { class: "go" }, "›"));
+  return row;
+}
+
+/* ================================================================ panels tab */
+/* The page's frames in reading order (panelOrder, the rule the pipeline uses), each with its shot, how far
+   along it is and the one action that moves it on. The order comes from where the frames sit, so rows are
+   not draggable: to change it, move the frames or apply a layout. */
+function panelState(l) {
+  const s = l.shot ? S.shots.find(q => q.name === l.shot) : null;
+  const jobs = l.shot ? Object.values(S.jobs).filter(j => j.body?.shot === l.shot && ["run", "render"].includes(j.body.cmd)) : [];
+  const last = jobs[jobs.length - 1];
+  const log = ["Log", () => { S.jobView = last.id; toggleJobs(true); }, "Show this render's log"];
+  const pose = ["Pose…", () => poseForPanel(l), "Pose the characters for this panel"];
+  const repo = ["Reposition", () => enterAdjust(l), "Drag the render inside the frame, scroll to zoom (Enter)"];
+  if (last && !last.done) return { g: "◔", cls: "warn", text: "Rendering…", act: log };
+  if (last && last.code !== 0) return { g: "✕", cls: "bad", text: "Render failed", act: log };
+  if (!l.shot) return l.image ? { g: "●", cls: "ok", text: "Image", act: repo } : { g: "○", cls: "", text: "No pose", tip: "No shot and no pose yet", act: pose };
+  if (s?.renders.length) return l.image ? { g: "●", cls: "ok", text: `Rendered · ${s.renders.length}`, act: repo }
+    : { g: "◐", cls: "warn", text: "Not placed", tip: "Rendered, but the render is not in this panel yet", act: ["Place", () => setPanelImage(l, s.renders[0], s.name), "Put the newest render in this panel"] };
+  if (l.image) return { g: "●", cls: "ok", text: "Image", act: repo };
+  if (!s) return { g: "◌", cls: "warn", text: "Shot missing", tip: `There is no shot named ${l.shot} in shots/`, act: pose };
+  if (!s.pose) return { g: "◌", cls: "warn", text: "Needs pose", tip: "The shot has no pose yet", act: pose };
+  return { g: "◐", cls: "", text: "Posed", tip: "Posed, not rendered yet", act: ["Render", () => renderShot(l.shot), "Render this shot on the pod (R)", true] };
+}
+function panelMenu(l) {
+  return [["Pose…", () => poseForPanel(l)], ["Render on pod", () => renderShot(l.shot), sc("Render the panel's shot on the pod"), !l.shot],
+    ["Edit shot…", () => shotDialog(l.shot || null), sc("Shots (edit, grab, render)")],
+    ["Reposition render", () => enterAdjust(l), "↵", !l.image],
+    ["Remove image", () => { l.image = null; commit("Image removed"); requestDraw(); }, "", !l.image], null,
+    ["Split ⇆", () => act.split("v"), sc("Split panel side by side")], ["Split ⇅", () => act.split("h"), sc("Split panel top / bottom")],
+    ["Duplicate", act.duplicate, sc("Duplicate layer")], [l.visible ? "Hide" : "Show", act.toggleHide, sc("Hide / show")],
+    [l.locked ? "Unlock" : "Lock", act.toggleLock, sc("Lock / unlock")], null, ["Delete", deleteSelected, "Del"]];
+}
+function panelRow(l, n, kidOf) {
+  const st = panelState(l), on = l.id === S.sel, [label, fn, tip, main] = st.act;
+  const pick = () => { S.sel = l.id; refreshPanels(); requestDraw(); };
+  const menu = (x, y) => { if (S.sel !== l.id) pick(); popMenu(x, y, panelMenu(l)); };
+  const badge = h("span", { class: "pnum" + (n ? "" : " none"), title: n ? `Panel ${n} in reading order` : "Hidden: not part of the reading order" });
+  if (n) badge.textContent = n; else badge.innerHTML = svgIcon("eyeOff");
+  const quiet = fn2 => ({ onclick: e => { e.stopPropagation(); fn2(e); }, ondblclick: e => e.stopPropagation() });
+  return h("div", { class: "prow" + (on ? " on" : "") + (kidOf === l.id ? " kid" : "") + (l.visible ? "" : " off"), onclick: pick,
+    ondblclick: () => { if (l.image) enterAdjust(l); else { showLib("shots"); status("Drag a render from Shots onto the panel"); } },
+    oncontextmenu: e => { e.preventDefault(); menu(e.clientX, e.clientY); } },
+    badge, layerThumb(l, 44),
+    h("div", { class: "ptxt" },
+      h("span", { class: "nm" + (l.name || l.shot ? "" : " none"), title: l.shot ? `Shot ${l.shot}` : "No shot yet: Pose… makes one" }, l.name || l.shot || "no shot"),
+      h("span", { class: "st", title: st.tip || st.text }, h("span", { class: "g " + st.cls }, st.g), st.text + (l.locked ? " · locked" : ""))),
+    h("button", { class: "pact" + (main && on ? " primary" : ""), title: tip, ...quiet(() => { if (S.sel !== l.id) pick(); fn(); }) }, label),
+    h("button", { class: "ib", title: "More: pose, render, split, hide, lock, delete", ...quiet(e => { const r = e.currentTarget.getBoundingClientRect(); menu(r.left, r.bottom + 2); }) }, "⋯"));
+}
+function renderPanelsTab() {
+  const tools = $("#paneltools"), box = $("#panels");
+  if (!tools.firstChild) tools.append(
+    h("button", { title: "Replace this page's panels with a layout (renders carry over in reading order)", onclick: layoutDialog }, "Layout…"),
+    h("button", { id: "ordbtn", class: "toggle", title: "Show the reading-order numbers on the page (M)", onclick: toggleOrder }, "Order"),
+    h("span", { class: "spacer" }),
+    h("button", { title: "Draw a panel frame on the page (P)", onclick: () => setTool("panel") }, "＋ Panel"));
+  $("#ordbtn").classList.toggle("on", S.showOrder); $("#ordbtn").setAttribute("aria-pressed", String(S.showOrder));
+  const ls = layers(), order = panelOrder(ls), hidden = ls.filter(l => l.type === "panel" && !l.visible);
+  const sel = selL(), kidOf = sel && sel.type !== "panel" ? sel.clip : null;
+  rebuildList(box, () => {
+    order.forEach((l, i) => box.append(panelRow(l, i + 1, kidOf)));
+    for (const l of hidden) box.append(panelRow(l, 0, kidOf));
+    if (!order.length && !hidden.length) box.append(h("div", { class: "empty" }, "No panels on this page.",
+      h("div", { class: "btnrow" }, h("button", { onclick: layoutDialog }, "Choose layout…"), h("button", { onclick: () => setTool("panel") }, "Draw a panel (P)"))));
+  });
+  $("#cnt-panels").textContent = order.length + hidden.length || "";
+}
+function toggleOrder() { S.showOrder = !S.showOrder; requestView(); renderPanelsTab(); }
+
+/* ================================================================ dock tabs */
+const DOCKTABS = ["layers", "panels", "library"];
+function setDockTab(t, byHand) {
+  if (!DOCKTABS.includes(t)) t = "panels";
+  S.dockTab = t;
+  if (byHand) try { localStorage.setItem("mm.dock.tab", t); } catch { }      // only a choice made by hand is remembered
+  $$("#docktabs button").forEach(b => { const on = b.dataset.tab === t; b.classList.toggle("on", on); b.setAttribute("aria-selected", String(on)); });
+  for (const k of DOCKTABS) $("#pane-" + k).hidden = k !== t;
+  if (t !== "library") $(`#${t} .on`)?.scrollIntoView({ block: "nearest" });
+}
+/* open a Library category, wherever the dock is: "Pick bubble…" must not look like it did nothing */
+function showLib(tab) { S.libTab = tab; setDockTab("library"); renderLibrary(); }
+/* Picking something on the page brings its list forward (a frame: Panels, anything else: Layers). The
+   Library is never taken away, and a pick made inside the dock leaves the tab where the hand is. */
+let dockPress = false, followed = null;
+document.addEventListener("pointerdown", e => { dockPress = !!e.target.closest("#dock"); }, true);
+function followSel() {
+  if (S.sel === followed) return;
+  followed = S.sel;
+  const l = selL(); if (!l || dockPress || S.dockTab === "library") return;
+  const want = l.type === "panel" ? "panels" : "layers";
+  if (want !== S.dockTab) setDockTab(want);
 }
 
 /* ================================================================ library */
@@ -1708,34 +1825,39 @@ stage.addEventListener("drop", async e => {
 });
 
 /* ================================================================ options bar */
+/* three zones: the tool's own controls, a hint that is the first thing to give way, and Snap, which never scrolls away */
 function renderOptions() {
   const o = $("#optionsbar"); o.innerHTML = "";
   const name = { move: "Move", hand: "Hand", panel: "Panel", bubble: "Bubble", vbubble: "Drawn bubble", text: "Text", sfx: "Sound effect", caption: "Caption",
     tone: "Screentone", speed: "Speed lines" }[S.tool];
-  o.append(h("span", { class: "tname" }, name));
-  const sep = () => h("span", { class: "sep" });
-  if (S.tool === "move") o.append(h("span", { class: "hint" }, "Drag to move · Alt-drag duplicates · ⌘-click picks the panel under a bubble · Shift locks axis · Ctrl disables snapping"));
-  if (S.tool === "panel") o.append(h("span", { class: "hint" }, "Drag a frame on the page. Snaps to page edges and 30 px gutters."), sep(),
-    h("button", { onclick: layoutDialog }, "Layouts…"));
+  const L = h("div", { class: "ob-l" }, h("span", { class: "tname" }, name)), hint = h("div", { class: "ob-hint" });
+  const say = t => { hint.textContent = t; hint.title = t; };
+  const seg = (opts, cur, pick) => h("div", { class: "seg" }, ...opts.map(([k, t, tip]) =>
+    h("button", { class: cur === k ? "on" : "", title: tip, "aria-pressed": String(cur === k), onclick: () => { pick(k); renderOptions(); } }, t)));
+  if (S.tool === "move") say("Drag to move · Alt-drag duplicates · ⌘-click picks the panel under a bubble · Shift locks axis · Ctrl disables snapping");
+  if (S.tool === "panel") { L.append(h("button", { onclick: layoutDialog }, "Layouts…")); say("Drag a frame on the page. Snaps to page edges and 30 px gutters."); }
   if (S.tool === "bubble") {
     const m = bubbleMeta(S.bubble);
-    o.append(h("img", { src: thumb(m.ref, 80) }), h("span", {}, "#" + m.key), h("button", { onclick: () => { S.libTab = "bubbles"; renderLibrary(); } }, "Pick bubble…"), sep(),
-      h("span", { class: "hint" }, "Click to place, or drag to size it"));
+    L.append(h("img", { src: thumb(m.ref, 80) }), h("span", {}, "#" + m.key), h("button", { onclick: () => showLib("bubbles") }, "Pick bubble…"));
+    say("Click to place, or drag to size it");
   }
-  if (S.tool === "text" || S.tool === "sfx" || S.tool === "caption") o.append(h("span", { class: "hint" }, "Click to place, or drag a box. Type straight away; Esc when done."));
-  if (S.tool === "hand") o.append(h("span", { class: "hint" }, "Drag to pan. Ctrl/⌘ + scroll zooms."));
-  if (S.tool === "vbubble") o.append(...VSHAPES.map(([k, t]) => h("button", { class: S.vshape === k ? "primary" : "", onclick: () => { S.vshape = k; renderOptions(); } }, t)), sep(),
-    h("span", { class: "hint" }, "Click or drag to place; drag the pink dot to aim the tail"));
-  if (S.tool === "tone") o.append(h("select", { onchange: e => { S.tonePreset = +e.target.value; } },
-    ...TONE_PRESETS.map(([t], i) => h("option", { value: i, selected: i === S.tonePreset }, t))), sep(),
-    h("span", { class: "hint" }, "Click a panel to fill it (clipped to the panel), or drag an area. Use Multiply blend over renders."));
-  if (S.tool === "speed") o.append(...[["focus", "Focus lines 集中線"], ["parallel", "Speed lines 流線"]].map(([k, t]) =>
-    h("button", { class: S.speedMode === k ? "primary" : "", onclick: () => { S.speedMode = k; renderOptions(); } }, t)), sep(),
-    h("span", { class: "hint" }, "Click a panel to fill it, or drag an area. Tweak count, thickness and the empty centre in Properties."));
-  o.append(h("div", { class: "spacer" }),
-    h("button", { class: "ghost", title: "Snapping guides", onclick: () => { S.showGuides = !S.showGuides; renderOptions(); } }, S.showGuides ? "Snap: on" : "Snap: off"),
-    h("button", { class: "ghost", onclick: fitView, title: "⌘0" }, "Fit"),
-    h("button", { class: "ghost", onclick: () => { const r = stage.getBoundingClientRect(); zoomAt(1 / S.view.s, r.width / 2, r.height / 2); } }, "100%"));
+  if (S.tool === "text" || S.tool === "sfx" || S.tool === "caption") say("Click to place, or drag a box. Type straight away; Esc when done.");
+  if (S.tool === "hand") say("Drag to pan. Ctrl/⌘ + scroll zooms.");
+  if (S.tool === "vbubble") {
+    L.append(seg(VSHAPES.map(([k, t]) => [k, k[0].toUpperCase() + k.slice(1), t]), S.vshape, k => { S.vshape = k; }));
+    say("Click or drag to place; drag the pink dot to aim the tail");
+  }
+  if (S.tool === "tone") {
+    L.append(h("select", { title: "Screentone preset", onchange: e => { S.tonePreset = +e.target.value; } },
+      ...TONE_PRESETS.map(([t], i) => h("option", { value: i, selected: i === S.tonePreset }, t))));
+    say("Click a panel to fill it (clipped to the panel), or drag an area. Use Multiply blend over renders.");
+  }
+  if (S.tool === "speed") {
+    L.append(seg([["focus", "Focus", "Focus lines 集中線: wedges toward an empty centre"], ["parallel", "Speed", "Speed lines 流線: parallel streaks"]], S.speedMode, k => { S.speedMode = k; }));
+    say("Click a panel to fill it, or drag an area. Tweak count, thickness and the empty centre in Properties.");
+  }
+  o.append(L, hint, h("div", { class: "ob-r" },
+    h("button", { class: "ghost", title: "Snapping guides (;)", "aria-pressed": String(S.showGuides), onclick: () => { S.showGuides = !S.showGuides; renderOptions(); } }, S.showGuides ? "Snap: on" : "Snap: off")));
 }
 
 /* ================================================================ pages strip */
@@ -1848,7 +1970,7 @@ const MENUS = {
     ["Choose layout…", layoutDialog, sc("Choose layout")], null, ...pageMenu()],
   View: () => [["Fit page", fitView, sc("Fit page")], ["Actual pixels", () => zoomAt(1 / S.view.s, ...center()), sc("Actual pixels")],
     ["Zoom in", () => zoomAt(1.25, ...center()), sc("Zoom in")], ["Zoom out", () => zoomAt(0.8, ...center()), sc("Zoom out")], null,
-    [(S.showOrder ? "Hide" : "Show") + " panel order", () => { S.showOrder = !S.showOrder; requestView(); }, sc("Show / hide panel order")],
+    [(S.showOrder ? "Hide" : "Show") + " panel order", () => toggleOrder(), sc("Show / hide panel order")],
     [(S.showGuides ? "Disable" : "Enable") + " snapping", () => { S.showGuides = !S.showGuides; renderOptions(); }, sc("Snapping on / off")],
     [(S.showPrint ? "Hide" : "Show") + " print guides (trim / safe area)", () => { S.showPrint = !S.showPrint; requestView(); }, sc("Print guides on / off")]],
   Pipeline: () => [["Pose studio", () => setMode("pose"), sc("Pose studio")], ["Pose the selected panel…", () => poseForPanel(selL()), "", selL()?.type !== "panel"], null, ["Shots…", () => shotDialog(selL()?.shot || null), sc("Shots (edit, grab, render)")], ["New shot…", () => shotDialog(null, true)], null,
@@ -1889,6 +2011,7 @@ async function loadShots() {
   try { S.shots = await api("/api/shots"); } catch (e) { toast(e.message, "err"); }
   if (S.libTab === "shots") renderLibrary();
   if (selL()?.type === "panel") refreshProps();
+  if (S.doc) renderPanelsTab();
 }
 function shotDialog(name, creating) {
   if (creating) {
@@ -1938,7 +2061,7 @@ function shotDialog(name, creating) {
       h("button", { class: "primary", disabled: !s.pose, onclick: async () => {
         try { await saveY(); renderShot(s.name, seed.value); closeModal(); } catch (e) { toast(e.message, "err"); }
       } }, "Save & render on pod"),
-      selL()?.type === "panel" && s.renders[0] ? h("button", { onclick: () => { setPanelImage(selL(), s.renders[0], s.name); closeModal(); } }, "Use in selected panel") : null);
+      selL()?.type === "panel" && s.renders[0] ? h("button", { onclick: () => { setPanelImage(selL(), s.renders[0], s.name); closeModal(); } }, "Use in selected panel") : "");
   };
   show();
 }
@@ -1948,7 +2071,7 @@ async function startJob(body) {
   try {
     const r = await post("/api/jobs", body);
     S.jobs[r.id] = { id: r.id, label: body.cmd === "pod" ? "pod " + body.action : `${body.cmd} ${body.shot}`, lines: [], next: 0, done: false, body };
-    S.jobView = r.id; toggleJobs(true); pollJobs();
+    S.jobView = r.id; toggleJobs(true); pollJobs(); renderPanelsTab();
     return r.id;
   } catch (e) { toast(e.message, "err"); }
 }
@@ -1963,7 +2086,7 @@ function podAction(a) {
 let pollT = null;
 async function pollJobs() {
   clearTimeout(pollT);
-  let active = false;
+  let active = false, ended = false;
   for (const j of Object.values(S.jobs)) {
     if (j.done) continue;
     active = true;
@@ -1977,8 +2100,10 @@ async function pollJobs() {
         if (j.body.cmd === "pod") refreshPod(true);
       }
     } catch (e) { j.done = true; j.lines.push("error: " + e.message); }
+    ended ||= j.done;
   }
   renderJobs();
+  if (ended && S.doc) renderPanelsTab();      // a panel's status follows its shot's job
   $("#jobsbtn").classList.toggle("busy", active);
   $("#jobsbtn").textContent = active ? "Jobs (running…)" : "Jobs";
   if (active) pollT = setTimeout(pollJobs, 1000);
@@ -2098,7 +2223,7 @@ setInterval(() => { if (S.doc && S.dirty) try { localStorage.setItem("mm.autosav
 addEventListener("beforeunload", e => { if (S.dirty) { e.preventDefault(); e.returnValue = ""; } });
 
 /* ================================================================ misc */
-function refreshPanels() { refreshProps(); renderLayers(); setName(S.name); schedThumbs(); }
+function refreshPanels() { refreshProps(); renderLayers(); renderPanelsTab(); followSel(); setName(S.name); schedThumbs(); }
 function status(m) { $("#st-msg").textContent = m || ""; }
 function toast(m, kind) {
   const t = h("div", { class: "toast " + (kind || "") }, m); $("#toasts").append(t); setTimeout(() => t.remove(), kind === "err" ? 6000 : 3000);
@@ -2128,13 +2253,64 @@ new ResizeObserver(resize).observe(stage);
   refreshPod(); setInterval(refreshPod, 30000);
 })().catch(e => { toast("Startup failed: " + e.message, "err"); console.error(e); });
 
-/* Properties and Layers fold away from their headers, so the library can take the whole dock */
-for (const id of ["propspanel", "layerspanel"]) {
-  const panel = $("#" + id);
-  try { if (localStorage.getItem("mm.fold." + id) === "1") panel.classList.add("collapsed"); } catch { }
+/* Properties folds away from its header, so the list under it can take the whole dock */
+{
+  const panel = $("#propspanel");
+  try { if (localStorage.getItem("mm.fold.propspanel") === "1") panel.classList.add("collapsed"); } catch { }
   $(".dockhead", panel).addEventListener("click", e => {
     if (e.target.closest("button")) return;
     panel.classList.toggle("collapsed");
-    try { localStorage.setItem("mm.fold." + id, panel.classList.contains("collapsed") ? "1" : "0"); } catch { }
+    try { localStorage.setItem("mm.fold.propspanel", panel.classList.contains("collapsed") ? "1" : "0"); } catch { }
   });
+}
+
+/* dock tabs: the first run opens on Panels (the pipeline starts there), later runs on the tab last picked by hand */
+$$("#docktabs button").forEach(b => b.addEventListener("click", () => setDockTab(b.dataset.tab, true)));
+{ let t = null; try { t = localStorage.getItem("mm.dock.tab"); } catch { } setDockTab(t || "panels"); }
+
+/* dock geometry: its width (grip on the left edge) and the Properties / list split, both remembered.
+   The values live in CSS variables on the root, so the jobs drawer and the layout follow without code. */
+(function dockResize() {
+  const root = document.documentElement, dock = $("#dock");
+  const get = k => { try { return localStorage.getItem(k); } catch { return null; } };
+  const put = (k, v) => { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch { } };
+  const w = +get("mm.dock.w"), sp = +get("mm.dock.split");
+  if (w >= 280 && w <= 480) root.style.setProperty("--dock-w", w + "px");
+  if (sp >= 20 && sp <= 70) root.style.setProperty("--dock-split", sp + "%");
+  const dragger = (el, key, prop, unit, at) => {
+    el.addEventListener("pointerdown", e => {
+      if (e.button) return;
+      e.preventDefault(); try { el.setPointerCapture(e.pointerId); } catch { }
+      el.classList.add("drag"); document.body.classList.add("resizing");
+      let v = null;
+      const move = ev => { v = at(ev); root.style.setProperty(prop, v + unit); };
+      const up = () => {
+        el.removeEventListener("pointermove", move); el.removeEventListener("pointerup", up); el.removeEventListener("pointercancel", up);
+        el.classList.remove("drag"); document.body.classList.remove("resizing"); if (v != null) put(key, v);
+      };
+      el.addEventListener("pointermove", move); el.addEventListener("pointerup", up); el.addEventListener("pointercancel", up);
+    });
+    el.addEventListener("dblclick", () => { root.style.removeProperty(prop); put(key, null); });
+  };
+  dragger($("#dockgrip"), "mm.dock.w", "--dock-w", "px", e => Math.round(clamp(dock.getBoundingClientRect().right - e.clientX, 280, 480)));
+  dragger($("#docksplit"), "mm.dock.split", "--dock-split", "%", e => { const r = dock.getBoundingClientRect(); return Math.round(clamp((e.clientY - r.top) / r.height * 100, 20, 70)); });
+})();
+
+/* status bar: zoom lives in one place; the page strip can be put away (narrow windows start without it) */
+$("#zoomin").onclick = () => zoomAt(1.25, ...center());
+$("#zoomout").onclick = () => zoomAt(0.8, ...center());
+$("#st-zoom").onclick = e => {
+  const r = e.currentTarget.getBoundingClientRect(), pop = $("#menu-pop");
+  popMenu(r.left, r.top, [["Fit page", fitView, sc("Fit page")], ["Actual pixels (100%)", () => zoomAt(1 / S.view.s, ...center()), sc("Actual pixels")],
+    ["Zoom in", () => zoomAt(1.25, ...center()), sc("Zoom in")], ["Zoom out", () => zoomAt(0.8, ...center()), sc("Zoom out")]]);
+  pop.style.top = Math.max(8, r.top - pop.offsetHeight - 4) + "px";       // opens upward, clear of the bar
+};
+{
+  const set = show => { document.body.classList.toggle("pages-on", show); document.body.classList.toggle("pages-off", !show); };
+  try { const v = localStorage.getItem("mm.pages"); if (v === "1" || v === "0") set(v === "1"); } catch { }
+  $("#pagesbtn").onclick = () => {
+    const show = getComputedStyle($("#pagenav")).display === "none";
+    set(show); try { localStorage.setItem("mm.pages", show ? "1" : "0"); } catch { }
+    if (show && S.doc) renderPages();
+  };
 }
