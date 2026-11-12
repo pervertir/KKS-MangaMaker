@@ -37,19 +37,6 @@ export const ICON = {
   tone: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="5" r="1.2"/><circle cx="10" cy="5" r="1.2"/><circle cx="15" cy="5" r="1.4"/><circle cx="20" cy="5" r="1.6"/><circle cx="7.5" cy="9.5" r="1.4"/><circle cx="12.5" cy="9.5" r="1.6"/><circle cx="17.5" cy="9.5" r="1.8"/><circle cx="5" cy="14" r="1.6"/><circle cx="10" cy="14" r="1.8"/><circle cx="15" cy="14" r="2"/><circle cx="20" cy="14" r="2.2"/><circle cx="7.5" cy="18.5" r="2"/><circle cx="12.5" cy="18.5" r="2.2"/><circle cx="17.5" cy="18.5" r="2.4"/></svg>',
   speed: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 12L2 3l1-1zM12 12L22 3l-1-1zM12 12L2 21l1 1zM12 12l10 9-1 1zM12 12L12 1h.8zM12 12L1 12.4v-.8zM12 12l11 .4v-.8zM12 12l-.4 11h.8z" opacity=".85"/><circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor"/></svg>',
 };
-export const TONE_PRESETS = [
-  ["Dots 30%", { pattern: "dots", size: 10, density: 0.3, angle: 45, fade: "none" }],
-  ["Dots 60%", { pattern: "dots", size: 10, density: 0.6, angle: 45, fade: "none" }],
-  ["Gradient down", { pattern: "dots", size: 12, density: 0.75, angle: 45, fade: "down" }],
-  ["Gradient up", { pattern: "dots", size: 12, density: 0.75, angle: 45, fade: "up" }],
-  ["Vignette", { pattern: "dots", size: 12, density: 0.85, angle: 45, fade: "edges" }],
-  ["Lines", { pattern: "lines", size: 9, density: 0.35, angle: 0, fade: "none" }],
-  ["Diagonal lines", { pattern: "lines", size: 10, density: 0.3, angle: 45, fade: "none" }],
-  ["Crosshatch", { pattern: "cross", size: 12, density: 0.22, angle: 45, fade: "none" }],
-  ["Sand / noise", { pattern: "noise", size: 10, density: 0.5, angle: 0, fade: "none" }],
-  ["Flat grey", { pattern: "solid", size: 4, density: 0.25, angle: 0, fade: "none" }],
-  ["Night (dark)", { pattern: "dots", size: 8, density: 0.9, angle: 45, fade: "none" }],
-];
 export function buildToolbar() {
   const tb = $("#toolbar"); tb.innerHTML = "";
   let group;

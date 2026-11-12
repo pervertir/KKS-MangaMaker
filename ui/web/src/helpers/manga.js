@@ -6,7 +6,6 @@ import { closeModal, modal } from "../editor/modal.js";
 import { renderPageThumbs } from "../editor/pages.js";
 import { loadShots } from "../editor/shots.js";
 import { S, normalize, page } from "../editor/state.ts";
-import { TONE_PRESETS } from "../editor/tools.js";
 import { panelOrder, requestDraw } from "../editor/view.js";
 import { TEXT_TYPES, centreIn } from "./checker.js";
 
@@ -48,7 +47,7 @@ export function mangaDialog() {
     if (opts.gray.checked) panels.forEach(p => { if (p.image) p.image.gray = true; });
     if (opts.tone.checked) panels.forEach(p => {
       if (pg.layers.some(l => l.type === "tone" && l.clip === p.id)) return;
-      const t = normalize({ pages: [{ layers: [{ type: "tone", x: p.x, y: p.y, w: p.w, h: p.h, clip: p.id, seed: Math.floor(Math.random() * 1e6), ...TONE_PRESETS[3][1], density: 0.25, opacity: 0.35, blend: "multiply" }] }] }).pages[0].layers[0];
+      const t = normalize({ pages: [{ layers: [{ type: "tone", x: p.x, y: p.y, w: p.w, h: p.h, clip: p.id, seed: Math.floor(Math.random() * 1e6), shape: "round", lpi: 55, pct: 25, angle: 45, grad: { kind: "linear", a: [0.5, 0], b: [0.5, 1], stops: [[0, 0], [1, 25]] }, opacity: 0.35, blend: "multiply" }] }] }).pages[0].layers[0];
       t.id = uid(); pg.layers.splice(pg.layers.indexOf(p) + 1, 0, t);
     });
     commit("Made it manga"); requestDraw(); refreshPanels(); renderPageThumbs(); closeModal();
