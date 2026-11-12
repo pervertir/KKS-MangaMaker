@@ -8,13 +8,15 @@ import { closeModal, modal } from "./modal.js";
 import { renderPages } from "./pages.js";
 import { H, S, W, newDoc, normalize } from "./state.ts";
 import { fitView } from "./view.js";
+import { uploadBlobs } from "../core/blobs.ts";
+import { clearAutosave, writeAutosave } from "../core/autosave.ts";
 
 /* ================================================================ save / open / export */
 export function setName(n) { S.name = n; $("#docname").textContent = n ? `${n}${S.dirty ? " •" : ""}` : "unsaved"; document.title = (n || "Untitled") + " — MangaMaker"; }
 export async function save(as) {
   let n = S.name;
   if (!n || as) { n = prompt("Project name (saved to MangaPipeline/pages/<name>/project.json)", n || S.doc.title.replace(/[^\w\- .]/g, "_")); if (!n) return; }
-  try { await post(`/api/project?name=${encodeURIComponent(n)}`, S.doc); S.dirty = false; setName(n); toast("Saved " + n, "ok"); localStorage.setItem("mm.last", n); }
+  try { await uploadBlobs(n, S.doc); await post(`/api/project?name=${encodeURIComponent(n)}`, S.doc); S.dirty = false; clearAutosave(); setName(n); toast("Saved " + n, "ok"); localStorage.setItem("mm.last", n); }
   catch (e) { toast(e.message, "err"); }
 }
 export async function openProject(n) {
@@ -79,7 +81,12 @@ export async function downloadPage() {
 
 /* runs once at start-up, in the original order (see main.js) */
 export function init_editor_project() {
-  setInterval(() => { if (S.doc && S.dirty) try { localStorage.setItem("mm.autosave", JSON.stringify({ name: S.name, doc: S.doc })); } catch { } }, 5000);
+  let saving = false;
+  setInterval(() => {
+    if (!S.doc || !S.dirty || saving) return;
+    saving = true;
+    writeAutosave(S.name, S.doc).catch(() => { try { localStorage.setItem("mm.autosave", JSON.stringify({ name: S.name, doc: S.doc })); } catch { } }).finally(() => { saving = false; });
+  }, 5000);
 
   addEventListener("beforeunload", e => { if (S.dirty) { e.preventDefault(); e.returnValue = ""; } });
 }
