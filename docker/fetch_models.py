@@ -24,7 +24,7 @@ import yaml
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
-from mp.civitai import API, UA, _slug, blocked  # noqa: E402
+from mp.civitai import API, UA, _slug, base_model_tag, blocked, recommended_strength  # noqa: E402
 
 # Registered as `name|series` for each of these series too, so "series: Naruto" also lands on the adult file.
 SERIES_ALIASES = ["", "naruto", "boruto", "naruto shippuden", "boruto naruto next generations"]
@@ -89,6 +89,7 @@ def fetch_loras(comfy: Path, home: Path, cfg: dict, sets: list[str], key: str | 
         meta_dir.mkdir(parents=True, exist_ok=True)
     index = json.loads(index_path.read_text()) if index_path.exists() else {}
     extra_block = cfg.get("blocklist", [])
+    min_posts = int(cfg.get("base_knows_min_posts", 1500) or 0)
     problems = []
 
     for set_name, group in cfg.get("lora_sets", {}).items():
@@ -97,6 +98,19 @@ def fetch_loras(comfy: Path, home: Path, cfg: dict, sets: list[str], key: str | 
         subdir = group.get("subdir", "civitai_characters")
         for it in group.get("items", []):
             label = it.get("character") or it.get("concept") or str(it["model"])
+            if it.get("character") and not it.get("keep") and min_posts > 0:
+                try:
+                    known = base_model_tag(it["character"], it.get("series", ""), min_posts, civ.s)
+                except Exception as e:
+                    known = None
+                    log(f"note  {label}: Danbooru lookup failed ({e}), fetching the LoRA")
+                if known:
+                    log(f"base  {label}: checkpoint knows {known[0]} ({known[1]} posts), no LoRA")
+                    if not check and it.get("register", True):
+                        name = it["character"].strip().lower()
+                        for series in {it.get("series", "").strip().lower(), *SERIES_ALIASES}:
+                            index[f"{name}|{series}"] = {"base": known[0], "checked": time.time()}
+                    continue
             try:
                 model = civ.get(f"models/{it['model']}")
             except Exception as e:
@@ -155,14 +169,15 @@ def fetch_loras(comfy: Path, home: Path, cfg: dict, sets: list[str], key: str | 
             (meta_dir / f"{fname}.json").write_text(json.dumps({
                 "modelId": model["id"], "modelName": model.get("name"),
                 "versionId": v["id"], "versionName": v.get("name"),
-                "baseModel": v.get("baseModel"), "trainedWords": words,
+                "baseModel": v.get("baseModel"), "trainedWords": words, "strength": recommended_strength(model, v),
                 "url": f"https://civitai.com/models/{model['id']}?modelVersionId={v['id']}",
                 "bundled": set_name, "concept": it.get("concept"),
             }, indent=2))
             if it.get("character") and it.get("register", True):
                 name = it["character"].strip().lower()
                 for series in {it.get("series", "").strip().lower(), *SERIES_ALIASES}:
-                    index[f"{name}|{series}"] = {"lora": comfy_name, "modelId": model["id"], "checked": time.time(), "bundled": True}
+                    index[f"{name}|{series}"] = {"lora": comfy_name, "modelId": model["id"], "checked": time.time(), "bundled": True,
+                                                 **({"keep": True} if it.get("keep") else {})}
     if not check:
         index_path.write_text(json.dumps(index, indent=2))
     return problems

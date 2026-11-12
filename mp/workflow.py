@@ -45,12 +45,13 @@ def count_tag(chars: list[dict], solo: bool = True) -> str:
 
 
 def character_parts(shot: dict, loras: list[dict]) -> list[str]:
-    """Per character, in characters[] order: LoRA triggers (or "Name \\(series\\)") plus its tags.
+    """Per character, in characters[] order: LoRA triggers or the checkpoint's own Danbooru tag
+    (else "Name \\(series\\)") plus its tags.
     Unnamed (generic) characters contribute only their tags."""
     parts = []
     for c, l in zip(shot["characters"], loras):
         bits = []
-        if l["lora"] and l["triggers"]:
+        if l["triggers"]:
             bits += l["triggers"]
         elif not c.get("generic"):
             tag = c["name"].strip()
