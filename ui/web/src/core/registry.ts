@@ -27,6 +27,10 @@ export interface LayerTypeDef<L extends Layer = Layer> {
   printable?: boolean;
   /** Layers with clip set to this layer's id are cropped to its outline (panels). */
   clipsOthers?: boolean;
+  /** Paint once into a bitmap and reuse it on screen until the layer changes; needs `bounds`. Files are always painted fresh. */
+  cache?: boolean;
+  /** Everything the layer paints, in page px, including strokes and shadows. */
+  bounds?(l: L): { x: number; y: number; w: number; h: number };
 }
 
 const defs = new Map<string, LayerTypeDef<any>>();

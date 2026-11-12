@@ -661,8 +661,25 @@ class Handler(BaseHTTPRequestHandler):
                     return self.json({"error": "bad name"}, 400)
                 d = PROJECTS / name
                 d.mkdir(parents=True, exist_ok=True)
-                im = Image.open(io.BytesIO(self.body())).convert("RGB")
                 dest = d / f"page_{n:02d}.png"
+                if "bands" in q:
+                    k, count = int(q["band"]), int(q["bands"])
+                    if not (0 <= k < count <= 64):
+                        return self.json({"error": "bad band"}, 400)
+                    (d / f".page_{n:02d}.band{k:02d}.png").write_bytes(self.body())
+                    parts = [d / f".page_{n:02d}.band{j:02d}.png" for j in range(count)]
+                    if not all(p.exists() for p in parts):
+                        return self.json({"ok": True, "band": k})
+                    ims = [Image.open(p).convert("RGB") for p in parts]
+                    im = Image.new("RGB", (ims[0].width, sum(i.height for i in ims)), "white")
+                    y = 0
+                    for i in ims:
+                        im.paste(i, (0, y))
+                        y += i.height
+                    for p in parts:
+                        p.unlink()
+                else:
+                    im = Image.open(io.BytesIO(self.body())).convert("RGB")
                 im.save(dest)
                 return self.json({"ok": True, "path": str(dest)})
             if u.path == "/api/export/pdf":
@@ -745,8 +762,25 @@ class Handler(BaseHTTPRequestHandler):
                     return self.json({"error": "bad name"}, 400)
                 d = PROJECTS / name
                 d.mkdir(parents=True, exist_ok=True)
-                im = Image.open(io.BytesIO(self.body())).convert("RGB")
                 dest = d / f"page_{n:02d}.png"
+                if "bands" in q:
+                    k, count = int(q["band"]), int(q["bands"])
+                    if not (0 <= k < count <= 64):
+                        return self.json({"error": "bad band"}, 400)
+                    (d / f".page_{n:02d}.band{k:02d}.png").write_bytes(self.body())
+                    parts = [d / f".page_{n:02d}.band{j:02d}.png" for j in range(count)]
+                    if not all(p.exists() for p in parts):
+                        return self.json({"ok": True, "band": k})
+                    ims = [Image.open(p).convert("RGB") for p in parts]
+                    im = Image.new("RGB", (ims[0].width, sum(i.height for i in ims)), "white")
+                    y = 0
+                    for i in ims:
+                        im.paste(i, (0, y))
+                        y += i.height
+                    for p in parts:
+                        p.unlink()
+                else:
+                    im = Image.open(io.BytesIO(self.body())).convert("RGB")
                 im.save(dest)
                 return self.json({"ok": True, "path": str(dest)})
             if u.path == "/api/export/pdf":

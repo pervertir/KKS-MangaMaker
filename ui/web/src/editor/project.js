@@ -9,6 +9,7 @@ import { renderPages } from "./pages.js";
 import { H, S, W, newDoc, normalize } from "./state.ts";
 import { fitView } from "./view.js";
 import { uploadBlobs } from "../core/blobs.ts";
+import { planBands } from "../core/bands.ts";
 import { clearAutosave, writeAutosave } from "../core/autosave.ts";
 
 /* ================================================================ save / open / export */
@@ -59,15 +60,31 @@ export async function renderFull(i) {
   drawPage(g, S.doc.pages[i], { export: true, rs: 1 });
   return c;
 }
+/* one horizontal strip of page i, rows [y, y + h), at `scale` canvas px per page px */
+export async function renderBand(i, y, h, scale = 1) {
+  const c = document.createElement("canvas"); c.width = Math.round(W() * scale); c.height = h;
+  const g = c.getContext("2d");
+  await document.fonts.ready;
+  const paint = () => { g.setTransform(scale, 0, 0, scale, 0, -y); drawPage(g, S.doc.pages[i], { export: true, rs: scale }); };
+  for (let k = 0; k < 3; k++) { paint(); await waitImages(); }
+  paint();
+  return c;
+}
+/* sends page i to the server, in bands when it is too big for one canvas */
+export async function uploadPage(i, scale = 1) {
+  const url = `/api/export/page?name=${encodeURIComponent(S.name)}&n=${i + 1}`;
+  const bands = planBands(Math.round(W() * scale), Math.round(H() * scale));
+  const png = c => new Promise(r => c.toBlob(r, "image/png"));
+  if (bands.length === 1) return post(url, await png(scale === 1 ? await renderFull(i) : await renderBand(i, 0, bands[0].h, scale)), true);
+  for (const [k, b] of bands.entries()) await post(`${url}&band=${k}&bands=${bands.length}`, await png(await renderBand(i, b.y, b.h, scale)), true);
+}
 export async function exportPages(which) {
   if (!S.name) { await save(); if (!S.name) return; }
   const idx = which === "all" ? S.doc.pages.map((_, i) => i) : [S.page];
   status("Exporting…");
   try {
     for (const i of idx) {
-      const c = await renderFull(i);
-      const blob = await new Promise(r => c.toBlob(r, "image/png"));
-      await post(`/api/export/page?name=${encodeURIComponent(S.name)}&n=${i + 1}`, blob, true);
+      await uploadPage(i);
     }
     let msg = `Exported ${idx.length} page${idx.length > 1 ? "s" : ""} to pages/${S.name}/`;
     if (which === "all") { await post(`/api/export/pdf?name=${encodeURIComponent(S.name)}&count=${S.doc.pages.length}`); msg += ` + ${S.name}.pdf`; }

@@ -6,6 +6,7 @@ import { S, bubbleMeta } from "./state.ts";
 import { drawText } from "./text.js";
 import { layerType, outlineOf } from "../core/registry.ts";
 import { clipTo } from "../core/geometry/region.ts";
+import { drawCached } from "../core/layer-cache.ts";
 
 /* ================================================================ drawing */
 export function imageRect(l, im) {
@@ -45,7 +46,11 @@ export function drawLayer(ctx, l, opt = {}) {
   const maxFont = S.doc.maxFont || 56;
   const clipPanel = l.type !== "panel" && clipPanelOf(l);
   if (clipPanel) clipTo(ctx, outlineOf(clipPanel));
-  if (def) { def.draw(ctx, l, opt); ctx.restore(); return; }
+  if (def) {
+    if (def.cache && def.bounds && !opt.export && opt.rs) drawCached(ctx, l.id, l, String(TH), opt.rs, def.bounds(l), g => def.draw(g, l, opt));
+    else def.draw(ctx, l, opt);
+    ctx.restore(); return;
+  }
   switch (l.type) {
     case "panel": {
       ctx.fillStyle = l.fill || "#fff";

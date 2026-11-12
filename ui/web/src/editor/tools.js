@@ -21,6 +21,7 @@ import { fitView, requestDraw, requestView, stage, zoomAt } from "./view.js";
 import { poseKey, setMode } from "../pose/open.js";
 import { scriptWizard } from "../wizard/prompt.js";
 import { getTool, onToolsChanged, registeredTools } from "../core/tools.ts";
+import { deselect, invertSelection, selectAll } from "../select/tools.ts";
 
 /* ================================================================ tools & keys */
 export const ICON = {
@@ -110,6 +111,11 @@ export const SHORTCUTS = [
   ["Tools", "c", "Caption box", () => setTool("caption")],
   ["Tools", "g", "Screentone", () => setTool("tone")],
   ["Tools", "l", "Speed / focus lines", () => setTool("speed")],
+  ["Tools", "q", "Selection (rectangle, ellipse, lasso, polygon, wand)", () => setTool("select")],
+  // selection
+  ["Select", "mod+a", "Select the whole page", () => selectAll()],
+  ["Select", "mod+shift+a", "Deselect", () => deselect()],
+  ["Select", "mod+shift+i", "Invert selection", () => invertSelection()],
   // file
   ["File", "mod+n", "New project", () => newProject()],
   ["File", "mod+o", "Open project", () => openDialog(), true],

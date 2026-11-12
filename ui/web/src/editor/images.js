@@ -1,5 +1,6 @@
 import { schedThumbs } from "./pages.js";
 import { requestDraw } from "./view.js";
+import { bumpRenderEpoch } from "../core/layer-cache.ts";
 
 /* ================================================================ images */
 /* Every picture is fetched at the smallest size that is sharp on screen (256 … 2048 px wide, resized
@@ -14,7 +15,7 @@ export function getImg(ref, w = 0) {
   if (!im) {
     im = new Image();
     im.decoding = "async";
-    im.onload = () => { requestDraw(); schedThumbs(true); };
+    im.onload = () => { bumpRenderEpoch(); requestDraw(); schedThumbs(true); };
     im.src = `/img?ref=${encodeURIComponent(ref)}${w ? "&w=" + w : ""}`;
     IMG.set(k, im);
   }
