@@ -6,6 +6,7 @@
   mangapipe lora NAME [--series SERIES] [--refresh]              test the Civitai lookup only
   mangapipe render <shot_dir> [--seed N] [--dry-run]             ComfyUI render only
   mangapipe compose <shot_dir> [--image FILE]                    dialogue overlay only
+  mangapipe matte <shot_dir> [--image FILE] [--prompt person]    cut the characters out of a render (SAM 3 on the pod)
   mangapipe run <shot_dir> [--seed N] [--no-compose] [--dry-run] everything, end to end
   mangapipe page <script.yaml> [--page N] [--pdf]                lay renders into manga pages with dialogue
   mangapipe layouts                                              contact sheet of the 100 page templates
@@ -266,6 +267,7 @@ def main(argv=None):
     p = sub.add_parser("grab");    p.add_argument("shot_dir", type=Path); p.add_argument("--pose", type=Path); p.add_argument("--ref", type=Path)
     p = sub.add_parser("lora");    p.add_argument("name"); p.add_argument("--series", default=""); p.add_argument("--refresh", action="store_true")
     p = sub.add_parser("render");  p.add_argument("shot_dir", type=Path); p.add_argument("--seed", type=int); p.add_argument("--dry-run", action="store_true"); p.add_argument("--refresh-lora", action="store_true")
+    p = sub.add_parser("matte");   p.add_argument("shot_dir", type=Path); p.add_argument("--image", type=Path); p.add_argument("--prompt", default="person")
     p = sub.add_parser("compose"); p.add_argument("shot_dir", type=Path); p.add_argument("--image", type=Path, action="append")
     p = sub.add_parser("page");    p.add_argument("script", type=Path); p.add_argument("--page", type=int, action="append"); p.add_argument("--pdf", action="store_true"); p.add_argument("--out", type=Path)
     p = sub.add_parser("layouts"); p.add_argument("--ltr", action="store_true"); p.add_argument("--out", type=Path)
@@ -318,6 +320,16 @@ def main(argv=None):
         shot = load_shot(a.shot_dir, cfg)
         if a.cmd == "render":
             render(shot, cfg, a.seed, a.dry_run, a.refresh_lora)
+            return 0
+        if a.cmd == "matte":
+            from mp.subject import make_matte
+            img = Path(a.image) if a.image else (sorted(shot["_out"].glob("render_*.png"), key=lambda p: p.stat().st_mtime) or [None])[-1]
+            if img is None or not img.exists():
+                raise ShotError("no render to cut out; render first or pass --image")
+            comfy = Comfy(cfg.comfy_url, log)
+            if not comfy.alive():
+                raise ComfyError(f"ComfyUI is not reachable at {cfg.comfy_url}; run `mangapipe pod start` and retry.")
+            make_matte(comfy, img, cfg, a.prompt, log=log)
             return 0
         if a.cmd == "compose":
             imgs = a.image or sorted(shot["_out"].glob("render_*.png"))

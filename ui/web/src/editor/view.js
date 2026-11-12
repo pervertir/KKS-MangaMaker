@@ -1,6 +1,6 @@
 import { $, clamp } from "./core.js";
 import { paperOf } from "./creation.js";
-import { drawLayer, imageRect } from "./drawing.js";
+import { drawLayer, drawLayers, imageRect } from "./drawing.js";
 import { imgFor } from "./images.js";
 import { placeInline } from "./inline-edit.js";
 import { drawFlipped, drawPage } from "./manga-tools.js";
@@ -53,7 +53,7 @@ export function paintCache(target, cs, from, to) {           // layers [from, to
   if (from === 0) { g.fillStyle = paperOf(page()); g.fillRect(0, 0, W(), H()); }
   const ls = layers();
   const paper = paperOf(page());
-  for (let i = from; i < to; i++) drawLayer(g, ls[i], { rs: cs, paper });
+  drawLayers(g, ls, from, to, { rs: cs, paper });
   return target;
 }
 export function liveRange() {                                  // contiguous layer range that moves with the drag
@@ -86,7 +86,7 @@ export function draw() {
     }
     const ls = layers();
     ctx.drawImage(DC.below, 0, 0, W(), H());
-    for (let i = DC.from; i < DC.to; i++) drawLayer(ctx, ls[i], { rs: v.s * d, paper: paperOf(page()) });
+    drawLayers(ctx, ls, DC.from, DC.to, { rs: v.s * d, paper: paperOf(page()) });
     ctx.drawImage(DC.above, 0, 0, W(), H());
   } else if (!S.busy && v.s * d > cs * 1.01) {
     drawPage(ctx, page(), { rs: v.s * d });            // zoomed past the cache: paint directly once settled

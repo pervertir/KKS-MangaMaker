@@ -123,3 +123,49 @@ export function drawLayer(ctx, l, opt = {}) {
   }
   ctx.restore();
 }
+
+/* ================================================================ break-out art */
+/* A panel with `breakout` draws its characters a second time, cut out with the render's matte (out/matte_<render>.png,
+   made on the pod), over its own border and the gutter, after every panel, so a figure can reach out of its frame.
+   breakout: { reach: px past the frame, sides: any of "t", "r", "b", "l" }. Lettering still sits on top. */
+export const CUTS = new Map();
+export const matteRef = ref => ref.replace(/\/(render_[^/]+)\.png$/, "/matte_$1.png");
+export function cutoutCanvas(l, r, rs) {
+  const I = l.image, w = Math.max(1, Math.round(Math.min(r.w * rs, 2048))), hh = Math.max(1, Math.round(w * r.h / r.w));
+  const im = imgFor(I.ref, r.w * rs), mm = imgFor(I.matte, r.w * rs);
+  if (!im || !mm) return null;
+  const key = [I.ref, I.matte, w, im.naturalWidth, mm.naturalWidth].join("|");
+  let c = CUTS.get(key);
+  if (!c) {
+    c = document.createElement("canvas"); c.width = w; c.height = hh;
+    const g = c.getContext("2d");
+    g.drawImage(im, 0, 0, w, hh); g.globalCompositeOperation = "destination-in"; g.drawImage(mm, 0, 0, w, hh);
+    if (CUTS.size > 24) CUTS.delete(CUTS.keys().next().value);
+    CUTS.set(key, c);
+  }
+  return c;
+}
+export function drawBreakout(ctx, l, opt = {}) {
+  const B = l.breakout;
+  if (!B || !l.visible || !l.image?.matte) return;
+  const r = imageRect(l), cut = cutoutCanvas(l, r, opt.rs || 1);
+  if (!cut) return;
+  const reach = B.reach ?? 160, s = B.sides ?? "trbl", b = (l.border || 0) + (l.gap || 0);
+  const x0 = l.x - (s.includes("l") ? reach : b), y0 = l.y - (s.includes("t") ? reach : b);
+  const x1 = l.x + l.w + (s.includes("r") ? reach : b), y1 = l.y + l.h + (s.includes("b") ? reach : b);
+  ctx.save();
+  ctx.globalAlpha = l.opacity ?? 1;
+  ctx.beginPath(); ctx.rect(x0, y0, x1 - x0, y1 - y0); ctx.clip();
+  if (l.image.gray) ctx.filter = "grayscale(1) contrast(1.18)";
+  drawFlipped(ctx, cut, r, l.image.flip);
+  ctx.restore();
+}
+/* layers [from, to) of a page; the break-out art goes right after the last panel, under the lettering */
+export function drawLayers(ctx, ls, from, to, opt = {}) {
+  let last = -1;
+  for (let i = 0; i < ls.length; i++) if (ls[i].type === "panel") last = i;
+  for (let i = from; i < to; i++) {
+    drawLayer(ctx, ls[i], opt);
+    if (i === last) for (const q of ls) if (q.type === "panel" && q.breakout) drawBreakout(ctx, q, opt);
+  }
+}

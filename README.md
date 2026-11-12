@@ -174,6 +174,10 @@ top (or Ctrl/⌘+Shift+P):
   Edit corners (drag a corner, drag an edge dot to add one, ⌥-click to remove). Renders, screentones
   and speed lines are clipped to the shape on screen and in exports. Layouts > Shaped frames has
   slanted tiers, zigzag, diagonal, shattered, perspective, inset, dream, memory, shock and bleed pages.
+- **Break out of frame**: Properties > Render in panel > Break out of frame lets a panel's characters reach
+  over its border and into the gutter or the next panel while the background stays inside. The first
+  time, the characters are cut out of the render with SAM 3 on the pod (`mangapipe matte <shot>`, saved
+  as `out/matte_<render>.png`); then pick how far (Reach) and which sides. Lettering stays on top.
 - **Pose**: builds the OpenPose image for a shot instead of a CharaStudio capture. Pick a pose from the
   library (click, or drag onto the canvas) for each character, then turn, tilt, rotate, size and mirror
   it, and pose by dragging: a hand or foot pulls its whole arm or leg along (IK with soft limits:

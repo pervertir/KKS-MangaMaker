@@ -5,10 +5,10 @@ import { setPanelImage } from "./creation.js";
 import { showLib } from "./dock-tabs.js";
 import { commit } from "./history.js";
 import { thumb } from "./images.js";
-import { renderShot } from "./jobs.js";
+import { renderShot, startJob } from "./jobs.js";
 import { layoutDialog } from "./layouts.js";
 import { VSHAPES } from "./manga-tools.js";
-import { refreshPanels } from "./misc.js";
+import { refreshPanels, status, toast } from "./misc.js";
 import { shotDialog } from "./shots.js";
 import { S, bubbleMeta, layers, page, selL } from "./state.js";
 import { FONTS, LAZY_FONTS, loadFontCss } from "./text.js";
@@ -16,9 +16,37 @@ import { TONE_PRESETS, keyLabel, sc } from "./tools.js";
 import { panelOrder, requestDraw, isPolyPanel } from "./view.js";
 import { poseForPanel } from "../pose/open.js";
 import { FRAME_EDGES, FRAME_SHAPES, frameShapeKey, tracePanel } from "./frames.js";
+import { matteRef } from "./drawing.js";
 
 
 /* ================================================================ panels: properties */
+/* Break out of frame: the characters, cut out with a matte made on the pod, drawn over the border */
+export function breakoutProps(l) {
+  const I = l.image, B = l.breakout;
+  if (!B) return [h("div", { class: "btnrow" }, h("button", { title: "Let the characters reach past the border (cuts them out of the render on the pod the first time)",
+    onclick: () => startBreakout(l) }, I.matte ? "Break out of frame" : "Break out of frame (cut out on pod)"))];
+  const side = (k, t) => check(t, () => (B.sides ?? "trbl").includes(k), v => { const s = new Set(B.sides ?? "trbl"); v ? s.add(k) : s.delete(k); B.sides = [..."trbl"].filter(c => s.has(c)).join(""); });
+  return [h("div", { class: "section" }, "Break out of frame"),
+    slider("Reach", () => B.reach ?? 160, v => B.reach = v, 0, 600, 1, v => Math.round(v) + " px"),
+    h("div", { class: "btnrow" }, side("t", "Top"), side("r", "Right"), side("b", "Bottom"), side("l", "Left")),
+    h("div", { class: "btnrow" },
+      h("button", { title: "Cut the characters out again (after a new render or a bad mask)", onclick: () => cutOut(l) }, "Re-cut on pod"),
+      h("button", { onclick: () => { l.breakout = null; commit("Break-out off"); requestDraw(); refreshProps(); } }, "Stay inside")),
+    h("p", { class: "hint" }, "The characters are drawn over this panel's border and up to Reach px past the ticked sides; the background stays inside the frame. Lettering stays on top.")];
+}
+export async function startBreakout(l) {
+  const m = matteRef(l.image.ref);
+  if (l.image.matte || (await fetch(`/img?ref=${encodeURIComponent(m)}&w=256`).then(r => r.ok, () => false))) {
+    l.image.matte = m; l.breakout = { reach: 160, sides: "trbl" }; commit("Breaks out of its frame"); requestDraw(); refreshProps(); return;
+  }
+  cutOut(l);
+}
+export function cutOut(l) {
+  if (!l.shot || !/\/render_[^/]+\.png$/.test(l.image.ref)) return toast("Break-out needs a shot render in the panel (cut-outs are made from shots/<shot>/out/render_*.png)", "err");
+  if (S.pod && !S.pod.running) return toast("The pod isn't running: Pipeline › Start pod first", "err");
+  startJob({ cmd: "matte", shot: l.shot, image: l.image.ref });
+  status("Cutting the characters out on the pod…");
+}
 export function num(label, l, key, opt = {}) {
   const inp = h("input", { type: "number", value: Math.round((l[key] ?? 0) * (opt.mul || 1) * 100) / 100, step: opt.step || 1,
     onchange: () => { l[key] = +inp.value / (opt.mul || 1); commit(); requestDraw(); } });
@@ -155,7 +183,8 @@ export function panelProps(P, l) {
       slider("Zoom", () => I.zoom || 1, v => I.zoom = v, I.fit === "contain" ? 0.2 : 1, 5, 0.01, v => v.toFixed(2) + "×"),
       h("div", { class: "btnrow" }, check("Flip", () => I.flip, v => I.flip = v), check("B/W", () => I.gray, v => I.gray = v),
         h("button", { onclick: () => enterAdjust(l) }, "Reposition (Enter)"),
-        h("button", { onclick: () => { l.image = null; commit("Image removed"); requestDraw(); refreshPanels(); } }, "Remove image")));
+        h("button", { onclick: () => { l.image = null; commit("Image removed"); requestDraw(); refreshPanels(); } }, "Remove image")),
+      ...breakoutProps(l));
   }
   const cur = frameShapeKey(l);
   P.append(h("div", { class: "section" }, "Frame"),

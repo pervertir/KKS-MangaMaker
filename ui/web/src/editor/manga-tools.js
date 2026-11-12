@@ -1,6 +1,6 @@
 import { clamp } from "./core.js";
 import { paperOf } from "./creation.js";
-import { drawLayer } from "./drawing.js";
+import { drawBreakout, drawLayer } from "./drawing.js";
 import { H, S, W } from "./state.js";
 import { drawText } from "./text.js";
 
@@ -180,5 +180,10 @@ export function drawPage(ctx, pg, opt = {}) {
   const paper = paperOf(pg, opt);
   ctx.fillStyle = paper;
   ctx.fillRect(0, 0, W(), H());
-  for (const l of pg.layers) drawLayer(ctx, l, { ...opt, paper, ghost: opt.ghostId === l.id });
+  const ls = pg.layers;
+  let last = -1; ls.forEach((l, i) => { if (l.type === "panel") last = i; });
+  ls.forEach((l, i) => {
+    drawLayer(ctx, l, { ...opt, paper, ghost: opt.ghostId === l.id });
+    if (i === last) for (const q of ls) if (q.type === "panel" && q.breakout) drawBreakout(ctx, q, { ...opt, paper });
+  });
 }
