@@ -21,6 +21,7 @@ import { fitView, requestDraw, requestView, stage, zoomAt } from "./view.js";
 import { poseKey, setMode } from "../pose/open.js";
 import { scriptWizard } from "../wizard/prompt.js";
 import { getTool, onToolsChanged, registeredTools } from "../core/tools.ts";
+import { deselect, invertSelection, selectAll } from "../select/tools.ts";
 
 /* ================================================================ tools & keys */
 export const ICON = {
@@ -35,9 +36,6 @@ export const ICON = {
   tone: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="5" r="1.2"/><circle cx="10" cy="5" r="1.2"/><circle cx="15" cy="5" r="1.4"/><circle cx="20" cy="5" r="1.6"/><circle cx="7.5" cy="9.5" r="1.4"/><circle cx="12.5" cy="9.5" r="1.6"/><circle cx="17.5" cy="9.5" r="1.8"/><circle cx="5" cy="14" r="1.6"/><circle cx="10" cy="14" r="1.8"/><circle cx="15" cy="14" r="2"/><circle cx="20" cy="14" r="2.2"/><circle cx="7.5" cy="18.5" r="2"/><circle cx="12.5" cy="18.5" r="2.2"/><circle cx="17.5" cy="18.5" r="2.4"/></svg>',
   speed: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 12L2 3l1-1zM12 12L22 3l-1-1zM12 12L2 21l1 1zM12 12l10 9-1 1zM12 12L12 1h.8zM12 12L1 12.4v-.8zM12 12l11 .4v-.8zM12 12l-.4 11h.8z" opacity=".85"/><circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor"/></svg>',
 };
-export const TOOLS = [["move", "Move / select (V)", "v"], ["hand", "Hand (H, or hold Space)", "h"], null, ["panel", "Panel: drag a frame (P)", "p"], null,
-  ["bubble", "Template bubble (B)", "b"], ["vbubble", "Drawn bubble with a draggable tail (O)", "o"], ["text", "Text (T)", "t"], ["sfx", "Sound effect (S)", "s"],
-  ["caption", "Caption box (C)", "c"], null, ["tone", "Screentone: click a panel or drag an area (G)", "g"], ["speed", "Speed / focus lines: click a panel or drag (L)", "l"]];
 export const TONE_PRESETS = [
   ["Dots 30%", { pattern: "dots", size: 10, density: 0.3, angle: 45, fade: "none" }],
   ["Dots 60%", { pattern: "dots", size: 10, density: 0.6, angle: 45, fade: "none" }],
@@ -53,15 +51,12 @@ export const TONE_PRESETS = [
 ];
 export function buildToolbar() {
   const tb = $("#toolbar"); tb.innerHTML = "";
-  for (const t of TOOLS) {
-    if (!t) { tb.append(h("div", { class: "tsep" })); continue; }
-    const b = h("button", { title: t[1].replace(/ \([A-Z]\)$/, "") + " (" + t[2].toUpperCase() + ")", "data-tool": t[0], onclick: () => setTool(t[0]) }); b.innerHTML = ICON[t[0]]; tb.append(b);
-  }
   let group;
-  for (const t of registeredTools()) {
-    if (t.group !== group || group === undefined) { tb.append(h("div", { class: "tsep" })); group = t.group; }
+  registeredTools().forEach((t, i) => {
+    if (i && t.group !== group) tb.append(h("div", { class: "tsep" }));
+    group = t.group;
     const b = h("button", { title: t.label + (t.key ? ` (${t.key.toUpperCase()})` : ""), "data-tool": t.id, onclick: () => setTool(t.id) }); b.innerHTML = t.icon; tb.append(b);
-  }
+  });
   tb.querySelectorAll("button[data-tool]").forEach(b => b.classList.toggle("on", b.dataset.tool === S.tool));
   tb.append(h("div", { class: "spacer" }), h("button", { title: "Keyboard shortcuts (?)", onclick: shortcutSheet, style: "font-size:13px;font-weight:700" }, "?"));
 }
@@ -69,10 +64,9 @@ export function setTool(t) {
   if (t === "bubble" && !S.cat?.bubbles?.length) { t = "vbubble"; status("No bubble templates installed: using drawn bubbles"); }
   if (S.tool !== t) { const old = getTool(S.tool); old?.cancel?.(); old?.deactivate?.(); }
   const changed = S.tool !== t;
-  S.tool = t; if (S.adjust) exitAdjust();
+  S.tool = t; S.polyDraft = null; if (S.adjust) exitAdjust();
   if (changed) getTool(t)?.activate?.();
   $$("#toolbar button").forEach(b => b.classList.toggle("on", b.dataset.tool === t));
-  stage.classList.toggle("hand", t === "hand");
   renderOptions();
 }
 /* typing fields keep their keys; sliders, checkboxes, colour wells and dropdowns don't swallow Delete */
@@ -99,17 +93,10 @@ export const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
 /* One table drives the key handler, the menus' hints and the cheat sheet (press ?).
    Combos: mod = ⌘ on Mac / Ctrl elsewhere; keys are physical (e.code), so Shift/Alt variants still match. */
 export const SHORTCUTS = [
-  // tools
-  ["Tools", "v", "Move / select", () => setTool("move")],
-  ["Tools", "h", "Hand (or hold Space)", () => setTool("hand")],
-  ["Tools", "p", "Panel frame", () => setTool("panel")],
-  ["Tools", "b", "Template bubble", () => setTool("bubble")],
-  ["Tools", "o", "Drawn bubble (tail)", () => setTool("vbubble")],
-  ["Tools", "t", "Text", () => setTool("text")],
-  ["Tools", "s", "Sound effect", () => setTool("sfx")],
-  ["Tools", "c", "Caption box", () => setTool("caption")],
-  ["Tools", "g", "Screentone", () => setTool("tone")],
-  ["Tools", "l", "Speed / focus lines", () => setTool("speed")],
+  // selection
+  ["Select", "mod+a", "Select the whole page", () => selectAll()],
+  ["Select", "mod+shift+a", "Deselect", () => deselect()],
+  ["Select", "mod+shift+i", "Invert selection", () => invertSelection()],
   // file
   ["File", "mod+n", "New project", () => newProject()],
   ["File", "mod+o", "Open project", () => openDialog(), true],
@@ -148,6 +135,8 @@ export const SHORTCUTS = [
   ["Layer", "1", "Opacity 10% … 0 = 100%", null],
   ["Layer", "\\", "Split panel side by side", () => act.split("v")],
   ["Layer", "shift+\\", "Split panel top / bottom", () => act.split("h")],
+  ["Layer", "alt+\\", "Slanted split side by side", () => act.split("v", 12)],
+  ["Layer", "shift+alt+\\", "Slanted split top / bottom", () => act.split("h", -7)],
   ["Layer", "r", "Render the panel's shot on the pod", () => act.renderSel()],
   // page
   ["Page", "pagedown", "Next page", () => gotoPage(S.page + 1)],
@@ -200,7 +189,8 @@ export const sc = label => { const r = SHORTCUTS.find(r => r[2] === label); retu
 export function shortcutSheet() {
   const box = modal("Keyboard shortcuts", "");
   const groups = {};
-  for (const [g, k, label] of SHORTCUTS) {
+  const toolRows = registeredTools().filter(t => t.key).map(t => ["Tools", t.key, t.label]);
+  for (const [g, k, label] of [...toolRows, ...SHORTCUTS]) {
     const list = (groups[g] ||= []);
     const prev = list.find(x => x.label === label);
     if (prev) prev.keys.push(keyLabel(k)); else list.push({ label, keys: [keyLabel(k)] });
