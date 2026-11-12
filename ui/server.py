@@ -32,6 +32,7 @@ from PIL import Image, ImageOps  # noqa: E402
 
 from mp.compose import _interior_rect  # noqa: E402
 from mp.config import Config  # noqa: E402
+from mp.export import ExportError, export_book  # noqa: E402
 from mp.page import STRIPS_SUBDIR, detect_panels, find_render, load_script, reading_order, _shot_dir, _shot_dialogue  # noqa: E402
 from mp.sidecar import SIDECAR_NAMES, write_example  # noqa: E402
 
@@ -725,6 +726,15 @@ class Handler(BaseHTTPRequestHandler):
                 dest = d / f"{name}.pdf"
                 ims[0].save(dest, save_all=True, append_images=ims[1:], resolution=300)
                 return self.json({"ok": True, "path": str(dest)})
+            if u.path == "/api/export/book":
+                name = q.get("name", "")
+                if not NAME_RE.match(name) or not (PROJECTS / name / "project.json").exists():
+                    return self.json({"error": "save the project first"}, 400)
+                body = self.jbody()
+                try:
+                    return self.json(export_book(PROJECTS / name, body.get("formats") or [], body.get("options") or {}))
+                except ExportError as e:
+                    return self.json({"error": str(e)}, 400)
             if u.path == "/api/import":
                 name = q.get("script", "")
                 p = (ROOT / "scripts" / name).resolve()

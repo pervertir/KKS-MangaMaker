@@ -57,20 +57,33 @@ export async function renderFull(i) {
   drawPage(g, S.doc.pages[i], { export: true, rs: 1 });
   return c;
 }
+async function uploadPages(idx) {
+  for (const i of idx) {
+    status(`Exporting page ${i + 1} of ${S.doc.pages.length}…`);
+    const c = await renderFull(i);
+    const blob = await new Promise(r => c.toBlob(r, "image/png"));
+    await post(`/api/export/page?name=${encodeURIComponent(S.name)}&n=${i + 1}`, blob, true);
+  }
+}
 export async function exportPages(which) {
   if (!S.name) { await save(); if (!S.name) return; }
   const idx = which === "all" ? S.doc.pages.map((_, i) => i) : [S.page];
   status("Exporting…");
   try {
-    for (const i of idx) {
-      const c = await renderFull(i);
-      const blob = await new Promise(r => c.toBlob(r, "image/png"));
-      await post(`/api/export/page?name=${encodeURIComponent(S.name)}&n=${i + 1}`, blob, true);
-    }
+    await uploadPages(idx);
     let msg = `Exported ${idx.length} page${idx.length > 1 ? "s" : ""} to pages/${S.name}/`;
     if (which === "all") { await post(`/api/export/pdf?name=${encodeURIComponent(S.name)}&count=${S.doc.pages.length}`); msg += ` + ${S.name}.pdf`; }
     toast(msg, "ok"); status(msg);
   } catch (e) { toast(e.message, "err"); }
+}
+/* Saves, renders every page, then has the server build the book formats from those pages (mp/export.py). */
+export async function exportBook(formats, options) {
+  if (!S.name || S.dirty) { await save(); if (!S.name) return null; }
+  await uploadPages(S.doc.pages.map((_, i) => i));
+  status("Building " + formats.join(", ") + "…");
+  const r = await post(`/api/export/book?name=${encodeURIComponent(S.name)}`, { formats, options });
+  status(`Exported to pages/${S.name}/export/`);
+  return r;
 }
 export async function downloadPage() {
   const c = await renderFull(S.page);

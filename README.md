@@ -166,6 +166,10 @@ top (or Ctrl/⌘+Shift+P):
 - **Page**: panels, renders, template or drawn bubbles, text, SFX, captions, screentones and speed
   lines, pages and spreads, export to PNG/PDF. Built-in panel layouts (splash, tiers, 4-koma, classic
   six, ...) and print guides (trim and safe area, View menu) need no template pack.
+  File > Export book (Ctrl/⌘+Alt+E) also builds a webtoon strip (panels restacked in reading order and
+  sliced, 800 px wide by default), a CBZ with ComicInfo.xml, a fixed-layout EPUB 3 and a print PDF
+  (1-bit, greyscale or CMYK with black on K only, TrimBox and BleedBox) into `pages/<project>/export/`.
+  The CMYK conversion uses the macOS Generic CMYK profile, or the one `MANGAMAKER_CMYK_PROFILE` points to.
 - **Pose**: builds the OpenPose image for a shot instead of a CharaStudio capture. Pick a pose from the
   library (click, or drag onto the canvas) for each character, then turn, tilt, rotate, size and mirror
   it, and pose by dragging: a hand or foot pulls its whole arm or leg along (IK with soft limits:
@@ -298,6 +302,7 @@ also builds, poses and renders through the MCP server). The format and craft not
 | `./mangapipe run DIR [--seed N] [--no-compose]` | everything |
 | `./mangapipe page SCRIPT [--page N] [--pdf] [--out DIR]` | build manga pages from a script |
 | `./mangapipe layouts [--ltr]` | contact sheet of the page templates with panel order |
+| `./mangapipe export PROJECT webtoon\|cbz\|epub\|print [--colour mono\|grey\|colour]` | book formats from an editor project's exported pages |
 | `./mangapipe poses build [--src DIR] [--out F]` | convert the studio pose files into `poses/library.json` |
 
 | `./mangapipe pod create\|setup\|restart\|status\|url\|start\|stop\|remove\|ssh ["cmd"]` | RunPod pod lifecycle (`restart` relaunches ComfyUI after adding nodes) |
