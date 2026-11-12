@@ -6,9 +6,11 @@ import { refreshPanels, toast } from "./misc.js";
 import { S } from "./state.ts";
 import { cv, stage, toPage, toScreen } from "./view.js";
 import { ui } from "../ui/store.svelte.ts";
+import { addEffect, toneFields } from "./effects/apply.ts";
+import { toneById } from "./effects/tones.ts";
 
 /* ================================================================ library */
-export const LIBTABS = [["shots", "Shots"], ["bubbles", "Bubbles"], ["layouts", "Layouts"], ["decor", "Decor"], ["speedlines", "Speed lines"], ["particles", "Particles"], ["uploads", "Uploads"]];
+export const LIBTABS = [["shots", "Shots"], ["bubbles", "Bubbles"], ["layouts", "Layouts"], ["tones", "Tones"], ["decor", "Decor"], ["speedlines", "Speed lines"], ["particles", "Particles"], ["uploads", "Uploads"]];
 /* The tab itself is src/ui/Library.svelte; this tells it to read the editor state again. */
 export function renderLibrary() { ui.rev++; }
 export function imgSize(ref) {
@@ -58,6 +60,10 @@ export function init_editor_library() {
       if (pl) { S.sel = pl.id; setPanelImage(pl, d.ref, d.shot); }
       else { const dim = await imgSize(d.ref); addImageLayer(d.ref, dim.w, dim.h, p, false); }
     } else if (d.kind === "bubble") { S.bubble = d.key; createAt("bubble", { x: p.x, y: p.y, w: 0, h: 0 }, true); }
+    else if (d.kind === "tone") {
+      const t = toneById(d.id);
+      if (t) { S.toneId = t.id; const box = pl ? { x: pl.x, y: pl.y, w: pl.w, h: pl.h } : { x: p.x - 300, y: p.y - 300, w: 600, h: 600 }; addEffect("tone", toneFields(t.spec), box, pl); }
+    }
     else if (d.kind === "asset") { const dim = await imgSize(d.ref); addImageLayer(d.ref, dim.w, dim.h, p, d.multiply); }
     refreshPanels();
   });

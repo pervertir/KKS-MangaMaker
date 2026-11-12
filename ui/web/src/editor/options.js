@@ -4,7 +4,10 @@ import { thumb } from "./images.js";
 import { layoutDialog } from "./layouts.js";
 import { VSHAPES } from "./manga-tools.js";
 import { S, bubbleMeta } from "./state.ts";
-import { TONE_PRESETS } from "./tools.js";
+import { addEffect, currentToneFields, pageSelection, speedFields } from "./effects/apply.ts";
+import { MODES } from "./effects/speed.ts";
+import { allTones } from "./effects/tones.ts";
+import { setTool } from "./tools.js";
 import { getTool } from "../core/tools.ts";
 
 /* ================================================================ options bar */
@@ -30,16 +33,26 @@ export function renderOptions() {
     L.append(seg(VSHAPES.map(([k, t]) => [k, k[0].toUpperCase() + k.slice(1), t]), S.vshape, k => { S.vshape = k; }));
     say("Click or drag to place; drag the pink dot to aim the tail");
   }
+  const fill = (type, props) => h("button", { title: "Fill the selection", onclick: () => { if (addEffect(type, props())) setTool("move"); } }, "Fill selection");
   if (S.tool === "tone") {
-    L.append(h("select", { title: "Screentone preset", onchange: e => { S.tonePreset = +e.target.value; } },
-      ...TONE_PRESETS.map(([t], i) => h("option", { value: i, selected: i === S.tonePreset }, t))));
-    say("Click a panel to fill it (clipped to the panel), or drag an area. Use Multiply blend over renders.");
+    L.append(tonePicker(), h("button", { onclick: () => showLib("tones") }, "Tones…"), ...(pageSelection() ? [fill("tone", currentToneFields)] : []));
+    say(pageSelection() ? "Click inside the selection or Fill selection; a click elsewhere fills that panel, a drag fills a box."
+      : "Click a panel to fill it, drag a box, or select an area first. Use Multiply blend over renders.");
   }
   if (S.tool === "speed") {
-    L.append(seg([["focus", "Focus", "Focus lines 集中線: wedges toward an empty centre"], ["parallel", "Speed", "Speed lines 流線: parallel streaks"]], S.speedMode, k => { S.speedMode = k; }));
-    say("Click a panel to fill it, or drag an area. Tweak count, thickness and the empty centre in Properties.");
+    L.append(seg(MODES.map(([k, t]) => [k, t.split(" (")[0].replace(" lines", ""), t]), S.speedMode, k => { S.speedMode = k; }),
+      ...(pageSelection() ? [fill("speed", () => speedFields())] : []));
+    say("Click a panel to fill it, or drag an area. With Move, drag the pink centre and the orange ring to aim the lines.");
   }
   getTool(S.tool)?.options?.(L);
   o.append(L, hint, h("div", { class: "ob-r" },
     h("button", { class: "ghost", title: "Snapping guides (;)", "aria-pressed": String(S.showGuides), onclick: () => { S.showGuides = !S.showGuides; renderOptions(); } }, S.showGuides ? "Snap: on" : "Snap: off")));
+}
+
+/* the tone the tone tool lays down, grouped as in the library */
+function tonePicker() {
+  const groups = {};
+  for (const t of allTones()) (groups[t.group] ||= []).push(t);
+  return h("select", { title: "Screentone", onchange: e => { S.toneId = e.target.value; } },
+    ...Object.entries(groups).map(([g, ts]) => h("optgroup", { label: g }, ...ts.map(t => h("option", { value: t.id, selected: t.id === S.toneId }, t.name)))));
 }

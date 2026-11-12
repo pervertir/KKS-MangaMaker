@@ -16,6 +16,9 @@
   import { S, selL } from "../editor/state.ts";
   import { setTool } from "../editor/tools.js";
   import { requestDraw } from "../editor/view.js";
+  import { allTones, removeUserTone, type LibTone } from "../editor/effects/tones.ts";
+  import { toneSwatch } from "../editor/effects/render.ts";
+  import { applyTone, pageSelection } from "../editor/effects/apply.ts";
 
   type Obj = Record<string, any>;
   const tab = (): string => (ui.rev, S.libTab);
@@ -39,6 +42,26 @@
     const l = selL();
     if (l?.type === "bubble") { l.bubble = b.key; l.h = l.w * b.h / b.w; commit("Bubble changed"); requestDraw(); }
     else setTool("bubble");
+    renderLibrary(); renderOptions();
+  }
+  const toneGroups = (): [string, LibTone[]][] => {
+    ui.rev;
+    const g = new Map<string, LibTone[]>();
+    for (const t of allTones()) (g.get(t.group) || g.set(t.group, []).get(t.group)!).push(t);
+    return [...g];
+  };
+  const SW = new Map<string, HTMLCanvasElement>();
+  function swatch(el: HTMLElement, t: LibTone) {
+    const key = t.id + JSON.stringify(t.spec);
+    if (!SW.has(key)) SW.set(key, toneSwatch(t.spec));
+    el.replaceChildren(SW.get(key)!.cloneNode() as HTMLCanvasElement);
+    (el.firstChild as HTMLCanvasElement).getContext("2d")!.drawImage(SW.get(key)!, 0, 0);
+  }
+  function pickTone(t: LibTone) {
+    S.toneId = t.id;
+    const l = selL();
+    if (pageSelection() || l?.type === "tone") applyTone(t.spec);
+    else { setTool("tone"); status(`${t.name}: click a panel or drag an area`); }
     renderLibrary(); renderOptions();
   }
   async function addAsset(a: Obj) { const dim = await imgSize(a.ref); addImageLayer(a.ref, dim.w, dim.h, null, a.multiply); }
@@ -106,6 +129,20 @@
         {/each}
       </div>
     {/if}
+  {:else if tab() === "tones"}
+    <div class="hint">Click to lay the tone over the selection, swap the selected tone, or pick it for the tone tool (G). Drag onto a panel to fill it.</div>
+    {#each toneGroups() as [g, ts] (g)}
+      <div class="section">{g}</div>
+      <div class="tiles">
+        {#each ts as t (t.id)}
+          <div class="tile light" class:on={t.id === (ui.rev, S.toneId)} title={t.name} draggable="true" role="button" tabindex="-1"
+            onclick={() => pickTone(t)} ondragstart={drag({ kind: "tone", id: t.id })}>
+            <div class="sw" use:swatch={t}></div><div class="cap">{t.name}</div>
+            {#if t.group === "Mine"}<button class="rm" title="Remove from the library" onclick={e => { e.stopPropagation(); removeUserTone(t.id); renderLibrary(); }}>×</button>{/if}
+          </div>
+        {/each}
+      </div>
+    {/each}
   {:else}
     {#if tab() === "uploads" && !assets().length}
       <div class="hint">Upload screentones, backgrounds or logos, or drop image files straight onto the page.</div>
@@ -122,4 +159,8 @@
 
 <style>
   .slot { display: contents; }
+  .sw { display: flex; justify-content: center; }
+  .sw :global(canvas) { width: 84px; height: 84px; border-radius: 3px; }
+  .tile { position: relative; }
+  .rm { position: absolute; top: 2px; right: 2px; padding: 0 5px; line-height: 16px; }
 </style>

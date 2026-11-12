@@ -38,19 +38,6 @@ export const ICON = {
 export const TOOLS = [["move", "Move / select (V)", "v"], ["hand", "Hand (H, or hold Space)", "h"], null, ["panel", "Panel: drag a frame (P)", "p"], null,
   ["bubble", "Template bubble (B)", "b"], ["vbubble", "Drawn bubble with a draggable tail (O)", "o"], ["text", "Text (T)", "t"], ["sfx", "Sound effect (S)", "s"],
   ["caption", "Caption box (C)", "c"], null, ["tone", "Screentone: click a panel or drag an area (G)", "g"], ["speed", "Speed / focus lines: click a panel or drag (L)", "l"]];
-export const TONE_PRESETS = [
-  ["Dots 30%", { pattern: "dots", size: 10, density: 0.3, angle: 45, fade: "none" }],
-  ["Dots 60%", { pattern: "dots", size: 10, density: 0.6, angle: 45, fade: "none" }],
-  ["Gradient down", { pattern: "dots", size: 12, density: 0.75, angle: 45, fade: "down" }],
-  ["Gradient up", { pattern: "dots", size: 12, density: 0.75, angle: 45, fade: "up" }],
-  ["Vignette", { pattern: "dots", size: 12, density: 0.85, angle: 45, fade: "edges" }],
-  ["Lines", { pattern: "lines", size: 9, density: 0.35, angle: 0, fade: "none" }],
-  ["Diagonal lines", { pattern: "lines", size: 10, density: 0.3, angle: 45, fade: "none" }],
-  ["Crosshatch", { pattern: "cross", size: 12, density: 0.22, angle: 45, fade: "none" }],
-  ["Sand / noise", { pattern: "noise", size: 10, density: 0.5, angle: 0, fade: "none" }],
-  ["Flat grey", { pattern: "solid", size: 4, density: 0.25, angle: 0, fade: "none" }],
-  ["Night (dark)", { pattern: "dots", size: 8, density: 0.9, angle: 45, fade: "none" }],
-];
 export function buildToolbar() {
   const tb = $("#toolbar"); tb.innerHTML = "";
   for (const t of TOOLS) {

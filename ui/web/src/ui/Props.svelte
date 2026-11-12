@@ -15,10 +15,10 @@
   import { VSHAPES } from "../editor/manga-tools.js";
   import { refreshPanels } from "../editor/misc.js";
   import { shotDialog } from "../editor/shots.js";
-  import { S, bubbleMeta, layers, page, selL } from "../editor/state.ts";
+  import { S, bubbleMeta, page, selL } from "../editor/state.ts";
   import { FONTS, LAZY_FONTS, loadFontCss } from "../editor/text.js";
-  import { TONE_PRESETS } from "../editor/tools.js";
-  import { panelOrder, requestDraw } from "../editor/view.js";
+  import EffectProps from "./EffectProps.svelte";
+  import { requestDraw } from "../editor/view.js";
   import { poseForPanel } from "../pose/open.js";
 
   type Obj = Record<string, any>;
@@ -31,7 +31,7 @@
 
   const TITLES: Record<string, (l: Obj) => string> = {
     panel: () => "Panel", bubble: () => "Speech bubble", caption: () => "Caption", text: l => l.sfx ? "Sound effect" : "Text",
-    image: () => "Image", vbubble: () => "Drawn bubble", tone: () => "Screentone", speed: l => l.mode === "focus" ? "Focus lines" : "Speed lines",
+    image: () => "Image", vbubble: () => "Drawn bubble", tone: () => "Screentone", speed: l => ({ focus: "Focus lines", parallel: "Speed lines", beta: "Beta flash", uni: "Uni flash" } as Record<string, string>)[l.mode] || "Speed lines",
   };
   $effect(() => {
     const l = sel(), t = document.getElementById("propstitle");
@@ -65,9 +65,6 @@
   const lazyFonts = () => Object.keys(LAZY_FONTS).forEach(loadFontCss);        // fetch the faces when the list opens
 
   const BLENDS: Opt[] = [["source-over", "Normal"], ["multiply", "Multiply"], ["screen", "Screen"], ["overlay", "Overlay"], ["darken", "Darken"], ["lighten", "Lighten"], ["difference", "Difference"]];
-  const PATTERNS: Opt[] = [["dots", "Dots (amitone)"], ["lines", "Lines"], ["cross", "Crosshatch"], ["noise", "Sand / noise"], ["solid", "Flat"]];
-  const FADES: Opt[] = [["none", "None"], ["down", "Fade downward"], ["up", "Fade upward"], ["right", "Fade to the right"], ["left", "Fade to the left"], ["edges", "Dark edges (vignette)"], ["center", "Dark centre"]];
-  const clipOpts = (): Opt[] => [["", "— none —"], ...panelOrder(layers()).map((q: Obj, i: number): Opt => [q.id, `Panel ${i + 1}${q.shot ? " · " + q.shot : ""}`])];
   const reseed = (l: Obj) => put(l, "seed", Math.floor(Math.random() * 1e6), "Reshuffled");
 
   function pickShot(l: Obj, name: string) {
@@ -78,11 +75,6 @@
   function autoColor(e: Event, o: Obj, k: string) {
     const c = (e.currentTarget as HTMLElement).closest(".row")!.querySelector<HTMLInputElement>("input[type=color]")!;
     put(o, k, on(e) ? "auto" : c.value);
-  }
-  function tonePreset(e: Event, l: Obj) {
-    const s = e.currentTarget as HTMLSelectElement;
-    if (s.value !== "") { Object.assign(l, TONE_PRESETS[+s.value][1]); done("Tone preset"); }
-    s.value = "";
   }
 </script>
 
@@ -126,9 +118,6 @@
     {@render check("Bold", l, "bold")}{@render check("Italic", l, "italic")}<span class="hint">0 = fit</span></div>
 {/snippet}
 
-{#snippet clip(l: Obj)}
-  {@render select("Clip to", clipOpts(), R(l).clip || "", v => put(l, "clip", v || null))}
-{/snippet}
 
 {#snippet panel(l: Obj)}
   {@const shot = shots().find(s => s.name === R(l).shot)}
@@ -232,31 +221,8 @@
         {@render check("Vertical text", sel()!, "vertical")}
       </div>
       <p class="hint">Drag the pink dot to aim the tail.</p>
-    {:else if type === "tone"}
-      <div class="row"><label>Preset</label>
-        <select onchange={e => tonePreset(e, sel()!)}>
-          <option value="">— apply a preset —</option>
-          {#each TONE_PRESETS as [t], i (i)}<option value={i}>{t}</option>{/each}
-        </select></div>
-      {@render select("Pattern", PATTERNS, sel()!.pattern, v => put(sel()!, "pattern", v))}
-      {@render slider("Cell size", sel()!, "size", 3, 40, 1, v => v + "px")}
-      {@render slider("Density", sel()!, "density", 0.02, 1, 0.01, pct)}
-      {@render slider("Angle", sel()!, "angle", 0, 180, 1, v => v + "°")}
-      {@render select("Gradient", FADES, sel()!.fade, v => put(sel()!, "fade", v))}
-      {@render color("Color", sel()!, "color")}
-      {@render clip(sel()!)}
-      {#if sel()!.pattern === "noise"}<div class="btnrow"><button onclick={() => reseed(sel()!)}>Reshuffle</button></div>{/if}
-    {:else if type === "speed"}
-      {@const focus = sel()!.mode === "focus"}
-      {@render select("Kind", [["focus", "Focus lines (集中線)"], ["parallel", "Speed lines (流線)"]], sel()!.mode, v => put(sel()!, "mode", v))}
-      {@render slider("Lines", sel()!, "count", 10, 600, 1)}
-      {@render slider("Thickness", sel()!, "thick", 1, 60, 0.5)}
-      {@render slider(focus ? "Empty centre" : "Gap", sel()!, "inner", 0, 0.95, 0.01, pct)}
-      {@render slider("Jitter", sel()!, "jitter", 0, 1, 0.01, pct)}
-      {#if !focus}{@render slider("Direction", sel()!, "angle", -90, 90, 1, v => v + "°")}{/if}
-      {@render color("Color", sel()!, "color")}
-      {@render clip(sel()!)}
-      <div class="btnrow"><button onclick={() => reseed(sel()!)}>Reshuffle</button></div>
+    {:else if type === "tone" || type === "speed"}
+      <EffectProps l={sel()!} />
     {/if}
 
     <div class="section">Layer</div>

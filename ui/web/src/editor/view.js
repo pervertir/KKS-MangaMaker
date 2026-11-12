@@ -5,6 +5,7 @@ import { imgFor } from "./images.js";
 import { placeInline } from "./inline-edit.js";
 import { drawFlipped, drawPage } from "./manga-tools.js";
 import { H, S, W, layers, page, selL } from "./state.ts";
+import { drawFxHandles } from "./effects/handles.ts";
 import { boxes } from "../core/format.ts";
 import { getTool } from "../core/tools.ts";
 import { drawAnts, hasSelection, selectionPage } from "../core/selection.ts";
@@ -124,7 +125,7 @@ export function draw() {
     ctx.stroke();
   }
   const s = selL();
-  if (s && !ad) drawSelection(s, px);
+  if (s && !ad) { drawSelection(s, px); if (S.tool === "move") drawFxHandles(ctx, s, px); }
   getTool(S.tool)?.overlay?.(ctx, px);
   if (hasSelection() && selectionPage() === page().id) { drawAnts(ctx, px); antsTick(); }
 }

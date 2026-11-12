@@ -18,7 +18,8 @@ export interface EditorState {
   libTab: string;
   libFilter: string;
   vshape: string;
-  tonePreset: number;
+  /** the library tone the tone tool lays down */
+  toneId: string;
   speedMode: string;
   /** which list the dock shows under Properties */
   dockTab: DockTab;
@@ -42,7 +43,7 @@ export const S: EditorState = {
   cat: null, shots: [], projects: [],
   doc: null, name: "", page: 0, sel: null, tool: "move",
   view: { s: 0.25, tx: 0, ty: 0 },
-  bubble: "001", libTab: "shots", libFilter: "", vshape: "oval", tonePreset: 2, speedMode: "focus",
+  bubble: "001", libTab: "shots", libFilter: "", vshape: "oval", toneId: "dots-60-l-30-", speedMode: "focus",
   dockTab: "panels",
   adjust: null,
   guides: [], showOrder: true, showGuides: true,
@@ -73,8 +74,6 @@ export function normalize(doc: Doc): Doc {
       if (l.type === "text") { l.font ||= l.sfx ? "Bangers" : "MMComic"; l.stroke ||= "#000000"; l.strokeWidth ??= l.sfx ? 10 : 0; l.align ||= "center"; }
       if (l.type === "caption") { l.fill ||= "#ffffff"; l.borderW ??= 4; }
       if (l.type === "vbubble") { l.shape ||= "oval"; l.fill ||= "#ffffff"; l.stroke ||= "#000000"; l.strokeW ??= 5; l.tailW ??= 0.22; l.seed ??= 1; l.spikes ??= 16; }
-      if (l.type === "tone") { l.pattern ||= "dots"; l.size ??= 12; l.density ??= 0.35; l.angle ??= 45; l.fade ||= "none"; l.color ||= "#000000"; l.seed ??= 1; }
-      if (l.type === "speed") { l.mode ||= "focus"; l.count ??= 160; l.thick ??= 14; l.inner ??= 0.45; l.jitter ??= 0.35; l.angle ??= 0; l.color ||= "#000000"; l.seed ??= 1; }
       if (["bubble", "caption", "text", "vbubble"].includes(l.type)) { l.color ||= "auto"; l.fontSize ??= 0; l.text ??= ""; }
       layerType(l.type)?.defaults?.(l);
     }

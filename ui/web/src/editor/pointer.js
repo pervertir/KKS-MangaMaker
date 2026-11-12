@@ -15,6 +15,7 @@ import { H, S, W, layers, selL } from "./state.ts";
 import { keyLabel } from "./tools.js";
 import { getTool } from "../core/tools.ts";
 import { samplesOf, stabilizer } from "../core/input.ts";
+import { fxDrag, fxHit } from "./effects/handles.ts";
 import { DC, corners, cv, interacting, requestDraw, requestView, stage, toPage, zoomAt, set_DC } from "./view.js";
 
 /* ================================================================ pointer */
@@ -68,6 +69,7 @@ export function hoverCursor(p) {
   if (spaceDown || S.tool === "hand") c = "grab";
   else if (S.adjust) c = "move";
   else if (S.tool !== "move") c = "crosshair";
+  else if (fxHit(selL(), p)) c = "pointer";
   else {
     const hh = hitHandle(selL(), p);
     if (hh) c = hh.rot ? "alias" : (hh.hx && hh.hy ? (hh.hx === hh.hy ? "nwse-resize" : "nesw-resize") : hh.hx ? "ew-resize" : "ns-resize");
@@ -129,7 +131,9 @@ export function init_editor_pointer() {
       exitAdjust();
     }
     if (S.tool === "move") {
-      const cur = selL(), hh = hitHandle(cur, p);
+      const cur = selL(), fh = fxHit(cur, p);
+      if (fh) { S.drag = { layer: cur, l0: deep(cur), p0: p, fx: fh }; return; }
+      const hh = hitHandle(cur, p);
       if (hh) {
         S.drag = { layer: cur, l0: deep(cur), p0: p, kids: clipKids(cur), ...(hh.tail ? { tail: true } : hh.rot ? { rot: true } : { hx: hh.hx, hy: hh.hy }) }; return;
       }
@@ -149,6 +153,7 @@ export function init_editor_pointer() {
     const d = S.drag;
     if (!d && getTool(S.tool)) { cv.style.cursor = spaceDown ? "grab" : getTool(S.tool).cursor || "crosshair"; routeToTool("move", e); return; }
     if (!d) { hoverCursor(p); return; }
+    if (d.fx) { fxDrag(d.layer, d.fx, p, d.l0, e.shiftKey); requestDraw(); refreshProps(true); return; }
     if (d.pan) { S.view.tx = d.tx + sp.x - d.sx; S.view.ty = d.ty + sp.y - d.sy; interacting(); requestView(); return; }
     if (d.adjust) {
       const l = d.adjust;
@@ -195,6 +200,7 @@ export function init_editor_pointer() {
     if (!d) return;
     if (d.pan) return;
     if (d.adjust) { commit("Image moved"); return; }
+    if (d.fx) { if (JSON.stringify(d.layer) !== JSON.stringify(d.l0)) commit(d.layer.type === "tone" ? "Gradient edited" : "Lines edited"); return; }
     if (d.creating) {
       const c = d.creating, small = c.w < 12 && c.h < 12;
       createAt(d.tool, c, small);
