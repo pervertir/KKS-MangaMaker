@@ -35,6 +35,9 @@ fetch https://huggingface.co/h94/IP-Adapter/resolve/main/sdxl_models/ip-adapter-
       "$M/ipadapter/ip-adapter-plus_sdxl_vit-h.safetensors"
 fetch https://huggingface.co/h94/IP-Adapter/resolve/main/models/image_encoder/model.safetensors \
       "$M/clip_vision/clip_vision_h.safetensors"
+# SAM 3.1: finds each head for the multi-character head pass
+fetch https://huggingface.co/Comfy-Org/sam3.1/resolve/main/checkpoints/sam3.1_multiplex_fp16.safetensors \
+      "$M/checkpoints/sam3.1_multiplex_fp16.safetensors"
 mkdir -p "$M/loras/civitai_characters"
 
 echo "--- disk"; df -h /workspace | tail -1

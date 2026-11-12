@@ -110,7 +110,7 @@ def load_shot(shot_dir: Path, cfg) -> dict:
     if ref is None and (shot_dir / "reference.png").exists():
         ref = "reference.png"
     shot["_reference_path"] = (shot_dir / ref) if ref and (shot_dir / ref).exists() else None
-    if ref and shot["_reference_path"] is None:
+    if ref and shot["_reference_path"] is None and ref != "reference.png":   # the template's default may simply not exist yet
         raise ShotError(f"reference image listed but missing: {shot_dir / ref}")
 
     # Optional depth capture (xukmi Depth item, same camera): adds a depth ControlNet pass.
@@ -131,7 +131,7 @@ def write_example(shot_dir: Path, name: str, series: str = "") -> Path:
     text = f"""# MangaPipeline shot sidecar. See MangaPipeline/README.md for every key.
 shot: {shot_dir.name}
 pose: pose.png              # F11 render of the OpenPose card (mangapipe grab fills this)
-reference: reference.png    # optional: F11 render of the real character, same camera
+reference: reference.png    # optional: identity image (Studio F11 render or the character's reference sheet)
 
 characters:
   - name: "{name}"

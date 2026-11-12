@@ -75,6 +75,10 @@ class Config:
         return _abs(HERE, self.raw.get("studio_pose_dir", "../UserData/studio/pose"))
 
     @property
+    def h_anim_dir(self) -> Path:
+        return _abs(HERE, self.raw.get("h_anim_dir", "../abdata/h/anim"))
+
+    @property
     def templates_dir(self) -> Path:
         return _abs(HERE, self.raw["templates_dir"])
 

@@ -187,7 +187,14 @@ def pose_library() -> dict:
     if not lib.exists() and CFG.studio_pose_dir.is_dir():
         build_library(CFG.studio_pose_dir, lib)
     poses = basic_poses()
-    for f in (lib, POSES / "custom.json"):
+    hlib = POSES / "h_library.json"
+    if not hlib.exists() and CFG.h_anim_dir.is_dir():
+        try:   # needs UnityPy; without it the H positions are simply not offered
+            from mp.khanim import build_h_library
+            build_h_library(CFG.h_anim_dir, hlib)
+        except Exception as e:  # noqa: BLE001
+            sys.stderr.write(f"[ui] H-scene poses not built: {e}\n")
+    for f in (lib, hlib, POSES / "custom.json"):
         if f.exists():
             poses += json.loads(f.read_text(encoding="utf-8")).get("poses", [])
     from mp.kkpose import KINDS, pose_kind
@@ -196,7 +203,9 @@ def pose_library() -> dict:
     for p in poses:   # older libraries and saved poses get a type too
         if not p.get("kind") and p.get("body"):
             p["kind"] = pose_kind(p, " ".join([p.get("group", ""), p.get("name", "")]))
-    return {"poses": poses, "kinds": ["Group poses", *KINDS]}
+    from mp.khanim import CATEGORIES
+    adult = list(dict.fromkeys(CATEGORIES.values()))
+    return {"poses": poses, "kinds": ["Group poses", *KINDS, *adult]}
 
 
 def save_custom_pose(pose: dict) -> dict:
@@ -208,7 +217,7 @@ def save_custom_pose(pose: dict) -> dict:
              **{k: pose[k] for k in ("body", "hands", "feet") if k in pose}}
     from mp.kkpose import pose_kind
     if pose.get("members"):   # a group pose: several figures with their places on the canvas
-        keep = ("body", "hands", "x", "y", "scale", "label", "gender")
+        keep = ("body", "hands", "x", "y", "scale", "z", "label", "gender")
         entry.update(id=pid.replace("custom/", "group/", 1), kind="Group poses", aspect=float(pose.get("aspect") or 0.7),
                      members=[{k: m[k] for k in keep if k in m} for m in pose["members"] if m.get("body")])
     else:
@@ -243,10 +252,42 @@ def save_pose_shot(body: dict) -> dict:
             line = "prompt: " + json.dumps(str(body["prompt"]), ensure_ascii=False)
             text = re.sub(r"(?m)^prompt:.*$", lambda m: line, text) if re.search(r"(?m)^prompt:", text) else text + line + "\n"
         side.write_text(text, encoding="utf-8")
+    if body.get("count_tag") and side.suffix != ".json":
+        t = side.read_text(encoding="utf-8")
+        line = "count_tag: " + json.dumps(str(body["count_tag"]))
+        t = re.sub(r"(?m)^count_tag:.*$", lambda m: line, t) if re.search(r"(?m)^count_tag:", t) else t.replace("\nidentity:", "\n" + line + "\nidentity:", 1)
+        side.write_text(t, encoding="utf-8")
+    if isinstance(body.get("extra"), dict) and side.suffix != ".json":   # plain sidecar keys, e.g. head_inpaint: false
+        t = side.read_text(encoding="utf-8")
+        for k, v in body["extra"].items():
+            if not re.fullmatch(r"[a-z_]{1,40}", str(k)):
+                continue
+            line = f"{k}: {json.dumps(v)}"
+            t = re.sub(rf"(?m)^{k}:.*$", lambda m: line, t) if re.search(rf"(?m)^{k}:", t) else t.replace("\nidentity:", "\n" + line + "\nidentity:", 1)
+        side.write_text(t, encoding="utf-8")
+    apply_reference(d, chars)
     png = body["png"].split(",", 1)[-1]
     Image.open(io.BytesIO(base64.b64decode(png))).convert("RGB").save(d / "pose.png")
     (d / "pose_scene.json").write_text(json.dumps(body.get("scene") or {}, indent=1), encoding="utf-8")
     return {"ok": True, "pose": mp_ref(d / "pose.png")}
+
+
+def apply_reference(d: Path, chars: list[dict]) -> None:
+    """A single-character shot whose character has a reference sheet gets that character's front view
+    as reference.png, so `identity: auto` falls back to IPAdapter when no LoRA is found. (A sheet is
+    drawn front | turned | turned, so the front view is its leftmost third.) Never overwrites a
+    reference the shot already has."""
+    if len(chars) != 1 or not chars[0].get("ref") or (d / "reference.png").exists():
+        return
+    try:
+        src = resolve_ref(str(chars[0]["ref"]))
+    except (ValueError, FileNotFoundError):
+        return
+    with Image.open(src) as im:
+        w, h = im.size
+        # the front figure stands at 20% of the width (see makeRefSheet); crop around it, not a blind third
+        front = im.crop((int(w * 0.04), 0, int(w * 0.36), h)) if w > h * 1.2 else im.copy()
+        front.convert("RGB").save(d / "reference.png")
 
 
 def projects() -> list[str]:
@@ -497,7 +538,7 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == "/api/pod":
                 return self.json(pod_status())
             if u.path == "/api/poses":
-                return self.cached_json("poses", pose_library, deps=[POSES / "library.json", POSES / "custom.json", CFG.studio_pose_dir])
+                return self.cached_json("poses", pose_library, deps=[POSES / "library.json", POSES / "h_library.json", POSES / "custom.json", CFG.studio_pose_dir])
             if u.path == "/api/cast":
                 return self.json({"cast": json.loads(CAST.read_text(encoding="utf-8")) if CAST.exists() else []})
             if u.path == "/api/pose/scene":
@@ -596,6 +637,7 @@ class Handler(BaseHTTPRequestHandler):
                 if body.get("keep"):   # made by the script wizard: the editor letters the page, no sample line
                     text = re.sub(r"(?ms)^dialogue:\n.*\Z", "dialogue: []\n", text)
                 side.write_text(text, encoding="utf-8")
+                apply_reference(d, chars)
                 return self.json({"ok": True})
             if u.path == "/api/cast":
                 CAST.write_text(json.dumps(self.jbody().get("cast", []), indent=1, ensure_ascii=False), encoding="utf-8")
@@ -658,7 +700,10 @@ def with_characters(text: str, chars: list[dict]) -> str:
         lines.append(f"    tags: {q(c.get('tags', ''))}" + ("" if c.get("tags") else "                  # appearance tags used when no LoRA is found"))
         return "\n".join(lines) + "\n"
     block = "characters:                  # left to right in the frame\n" + "".join(one(c) for c in chars)
-    start = text.index("characters:\n")
+    m = re.search(r"(?m)^characters:.*\n", text)   # the line may carry a comment after a first rewrite
+    if not m:
+        raise ValueError("no characters block")
+    start = m.start()
     end = text.index("\nidentity:", start) + 1
     return text[:start] + block + "\n" + text[end:]
 

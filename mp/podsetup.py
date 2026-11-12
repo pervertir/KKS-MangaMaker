@@ -20,6 +20,9 @@ MODELS = [
      "ipadapter", "ip-adapter-plus_sdxl_vit-h.safetensors"),
     ("https://huggingface.co/h94/IP-Adapter/resolve/main/models/image_encoder/model.safetensors",
      "clip_vision", "clip_vision_h.safetensors"),
+    # SAM 3.1 for the multi-character head pass (finds each head left to right)
+    ("https://huggingface.co/Comfy-Org/sam3.1/resolve/main/checkpoints/sam3.1_multiplex_fp16.safetensors",
+     "checkpoints", "sam3.1_multiplex_fp16.safetensors"),
 ]
 NODE_PACKS = [{"id": "ComfyUI_IPAdapter_plus", "git": "https://github.com/cubiq/ComfyUI_IPAdapter_plus"}]  # Manager list key
 

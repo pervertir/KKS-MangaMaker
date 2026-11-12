@@ -140,7 +140,7 @@ class Civitai:
                 sm = sum(t in toks for t in series_toks)
                 if len(name_toks) == 1 and series_toks and sm == 0 and len(name_toks[0]) <= 4:
                     continue  # a short single name ("Rem") without the series is too ambiguous
-                dl = (m.get("stats") or {}).get("downloadCount", 0)
+                dl = (m.get("stats") or {}).get("downloadCount") or 0   # the API sends null for some models
                 score = nm * 10 + sm * 5 - rank * 6 + math.log10(dl + 10)
                 if nm == len(name_toks):
                     score += 6
