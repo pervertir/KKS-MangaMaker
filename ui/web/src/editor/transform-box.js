@@ -2,6 +2,8 @@ import { deep } from "./core.js";
 import { H, S, W, layers } from "./state.ts";
 import { layerType } from "../core/registry.ts";
 import { frame, handles, hitHandle, rotateTo, scaleBox } from "../core/transform.ts";
+import { isPlainRect, tracePanel } from "./frames.js";
+import { boxPad, drawVertices, hitVertex } from "./polygon-panels.js";
 
 /* ================================================================ transform box */
 /* One move / scale / rotate box for every layer type. Built-in types set their rules here; registered types
@@ -18,6 +20,8 @@ export function rulesFor(l) {
   if (def && "transform" in def) return def.transform === false ? null : (def.transform || {});
   return BUILTIN[l.type] || {};
 }
+/* a polygon panel's box stands a little outside its corner handles */
+const padded = (l, k) => k ? { ...l, x: l.x - k, y: l.y - k, w: l.w + 2 * k, h: l.h + 2 * k } : l;
 /* what is under p on the selected layer's box: a scale or rotate handle, or the drawn bubble's tail */
 export function boxHit(l, p) {
   if (!l || l.locked) return null;
@@ -27,14 +31,14 @@ export function boxHit(l, p) {
     const q = frame(l).toLocal([p.x, p.y]);
     if (Math.hypot(q[0] - l.tail.x, q[1] - l.tail.y) < 11 * px) return { kind: "tail" };
   }
-  return hitHandle(l, [p.x, p.y], px, R);
+  return hitVertex(l, p, px) || hitHandle(padded(l, boxPad(l, px)), [p.x, p.y], px, R);
 }
-export function beginTransform(l, h, p) { return { layer: l, l0: deep(l), p0: p, handle: h }; }
+export function beginTransform(l, h, p) { return { layer: l, l0: deep(l), p0: p, handle: h, pad: boxPad(l, 1 / S.view.s) }; }
 /* Shift flips the type's aspect rule, Alt scales about the centre; panels snap their moving edges */
 export function applyScale(l, d, p, e) {
   const R = rulesFor(l) || {}, h = d.handle;
-  const b = scaleBox(d.l0, h, [p.x, p.y], { keepAspect: !!R.aspect !== !!e.shiftKey, fromCentre: e.altKey, min: R.min });
-  l.x = b.x; l.y = b.y; l.w = b.w; l.h = b.h;
+  const k = d.pad || 0, b = scaleBox(padded(d.l0, k), h, [p.x, p.y], { keepAspect: !!R.aspect !== !!e.shiftKey, fromCentre: e.altKey, min: R.min });
+  l.x = b.x + k; l.y = b.y + k; l.w = Math.max(1, b.w - 2 * k); l.h = Math.max(1, b.h - 2 * k);
   R.onScale?.(l, d.l0);
   if (l.type === "panel" && S.showGuides && !l.rotate && !e.altKey) snapPanelEdges(l, h);
 }
@@ -51,13 +55,16 @@ function snapPanelEdges(l, h) {
   if (h.hy === -1) { const t = snapV(l.y, ys); if (t != null) { l.h += l.y - t; l.y = t; S.guides.push({ y: t }); } }
 }
 export function drawTransformBox(ctx, l, px) {
-  const R = rulesFor(l), f = frame(l), hw = l.w / 2, hh = l.h / 2;
+  const R = rulesFor(l), b = padded(l, boxPad(l, px)), f = frame(b), hw = b.w / 2, hh = b.h / 2;
   const pts = [f.P(-hw, -hh), f.P(hw, -hh), f.P(hw, hh), f.P(-hw, hh)];
   ctx.save();
   ctx.strokeStyle = l.locked ? "#f5b84b" : "#4c8dff"; ctx.lineWidth = 1.5 * px;
+  if (l.type === "panel" && !isPlainRect(l)) { ctx.beginPath(); tracePanel(ctx, l); ctx.stroke(); ctx.setLineDash([6 * px, 5 * px]); }
   ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])); ctx.closePath(); ctx.stroke();
+  ctx.setLineDash([]);
   if (!l.locked && R) {
-    for (const { handle, pt } of handles(l, px, R)) {
+    drawVertices(ctx, l, px);
+    for (const { handle, pt } of handles(b, px, R)) {
       if (handle.kind === "rotate") {
         const t = f.P(0, -hh);
         ctx.beginPath(); ctx.moveTo(t[0], t[1]); ctx.lineTo(pt[0], pt[1]); ctx.stroke();

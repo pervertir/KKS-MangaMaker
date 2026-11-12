@@ -1,5 +1,6 @@
 import { S, layers } from "./state.ts";
 import { corners } from "./view.js";
+import { panelHit } from "./frames.js";
 import { layerType, outlineOf } from "../core/registry.ts";
 import { contains } from "../core/geometry/region.ts";
 
@@ -13,6 +14,7 @@ export function hitLayer(p, pred = () => true) {
   for (let i = ls.length - 1; i >= 0; i--) {
     const l = ls[i];
     if (!l.visible || !pred(l)) continue;
+    if (l.type === "panel") { if (panelHit(l, p.x, p.y)) return l; continue; }
     const def = layerType(l.type);
     if (def) { if (def.hit ? def.hit(l, p.x, p.y) : contains(outlineOf(l), p.x, p.y)) return l; continue; }
     const q = local(l, p);

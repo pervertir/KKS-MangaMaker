@@ -64,7 +64,7 @@ export function setTool(t) {
   if (t === "bubble" && !S.cat?.bubbles?.length) { t = "vbubble"; status("No bubble templates installed: using drawn bubbles"); }
   if (S.tool !== t) { const old = getTool(S.tool); old?.cancel?.(); old?.deactivate?.(); }
   const changed = S.tool !== t;
-  S.tool = t; if (S.adjust) exitAdjust();
+  S.tool = t; S.polyDraft = null; if (S.adjust) exitAdjust();
   if (changed) getTool(t)?.activate?.();
   $$("#toolbar button").forEach(b => b.classList.toggle("on", b.dataset.tool === t));
   renderOptions();
@@ -135,6 +135,8 @@ export const SHORTCUTS = [
   ["Layer", "1", "Opacity 10% … 0 = 100%", null],
   ["Layer", "\\", "Split panel side by side", () => act.split("v")],
   ["Layer", "shift+\\", "Split panel top / bottom", () => act.split("h")],
+  ["Layer", "alt+\\", "Slanted split side by side", () => act.split("v", 12)],
+  ["Layer", "shift+alt+\\", "Slanted split top / bottom", () => act.split("h", -7)],
   ["Layer", "r", "Render the panel's shot on the pod", () => act.renderSel()],
   // page
   ["Page", "pagedown", "Next page", () => gotoPage(S.page + 1)],

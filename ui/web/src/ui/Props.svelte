@@ -17,8 +17,11 @@
   import { shotDialog } from "../editor/shots.js";
   import { S, bubbleMeta, layers, page, selL } from "../editor/state.ts";
   import { FONTS, LAZY_FONTS, loadFontCss } from "../editor/text.js";
-  import { TONE_PRESETS } from "../editor/tools.js";
+  import { TONE_PRESETS, keyLabel, sc } from "../editor/tools.js";
   import { panelOrder, requestDraw } from "../editor/view.js";
+  import { isPolyPanel } from "../editor/polygon-panels.js";
+  import { FRAME_EDGES, FRAME_SHAPES, frameShapeKey } from "../editor/frames.js";
+  import { cutOut, frameIcon, refreshProps, startBreakout } from "../editor/props.js";
   import { poseForPanel } from "../pose/open.js";
 
   type Obj = Record<string, any>;
@@ -70,6 +73,12 @@
   const clipOpts = (): Opt[] => [["", "— none —"], ...panelOrder(layers()).map((q: Obj, i: number): Opt => [q.id, `Panel ${i + 1}${q.shot ? " · " + q.shot : ""}`])];
   const reseed = (l: Obj) => put(l, "seed", Math.floor(Math.random() * 1e6), "Reshuffled");
 
+  function side(l: Obj, k: string, v: boolean) {
+    const B = l.breakout, s = new Set(B.sides ?? "trbl");
+    if (v) s.add(k); else s.delete(k);
+    B.sides = [..."trbl"].filter(c => s.has(c)).join(""); done();
+  }
+  function icon(el: HTMLElement, k: string) { el.replaceChildren(frameIcon(k)); }
   function pickShot(l: Obj, name: string) {
     l.shot = name;
     const s = S.shots.find((q: Obj) => q.name === name);
@@ -155,14 +164,47 @@
       <button onclick={() => enterAdjust(l)}>Reposition (Enter)</button>
       <button onclick={() => { R(l).image = null; commit("Image removed"); requestDraw(); refreshPanels(); }}>Remove image</button>
     </div>
+    {#if !R(l).breakout}
+      <div class="btnrow"><button title="Let the characters reach past the border (cuts them out of the render on the pod the first time)" onclick={() => startBreakout(l)}>{R(l).image.matte ? "Break out of frame" : "Break out of frame (cut out on pod)"}</button></div>
+    {:else}
+      <div class="section">Break out of frame</div>
+      {@render slider("Reach", R(l).breakout, "reach", 0, 600, 1, v => Math.round(v) + " px", 160)}
+      <div class="btnrow">
+        {#each [["t", "Top"], ["r", "Right"], ["b", "Bottom"], ["l", "Left"]] as [k, t] (k)}
+          <label class="inl"><input type="checkbox" use:tick={() => (R(l).breakout?.sides ?? "trbl").includes(k)} onchange={e => side(l, k, on(e))} />{t}</label>
+        {/each}
+      </div>
+      <div class="btnrow">
+        <button title="Cut the characters out again (after a new render or a bad mask)" onclick={() => cutOut(l)}>Re-cut on pod</button>
+        <button onclick={() => { R(l).breakout = null; commit("Break-out off"); requestDraw(); refreshProps(); }}>Stay inside</button>
+      </div>
+      <p class="hint">The characters are drawn over this panel's border and up to Reach px past the ticked sides; the background stays inside the frame. Lettering stays on top.</p>
+    {/if}
   {/if}
   <div class="section">Frame</div>
+  <div class="shapes">
+    {#each FRAME_SHAPES as [k, t] (k)}
+      <button class="shapebtn" class:on={frameShapeKey(R(l)) === k} title={t} onclick={() => act.frame(k)} use:icon={k}></button>
+    {/each}
+  </div>
+  {@render select("Edge", FRAME_EDGES, R(l).edge || "solid", v => { l.edge = v; if (v === "jagged" || v === "wavy") l.seed ??= 1; done(); })}
+  {#if R(l).shape === "rect"}{@render slider("Corners", l, "radius", 0, Math.round(Math.min(R(l).w, R(l).h) / 2), 1, v => Math.round(v) + " px")}{/if}
+  <div class="row"><label>Gap</label>
+    <input type="number" min="0" style="width:64px" title="Paper-coloured band outside the border, for an inset laid over another panel" use:field={() => R(l).gap || 0} onchange={e => put(l, "gap", Math.max(0, +val(e)))} />
+    <span class="hint">px around an inset</span></div>
   <div class="row"><label>Border</label>
     <input type="number" min="0" style="width:64px" use:field={() => R(l).border} onchange={e => put(l, "border", +val(e))} />
     <input type="color" use:field={() => R(l).borderColor} oninput={e => { R(l).borderColor = val(e); live(); }} onchange={() => commit()} />
     <span class="hint">fill</span>
     <input type="color" use:field={() => R(l).fill} oninput={e => { R(l).fill = val(e); live(); }} onchange={() => commit()} /></div>
-  <div class="btnrow"><button onclick={() => act.split("v")}>Split ⇆</button><button onclick={() => act.split("h")}>Split ⇅</button></div>
+  <div class="btnrow"><button onclick={() => act.split("v")}>Split ⇆</button><button onclick={() => act.split("h")}>Split ⇅</button>
+    <button title={"Split with a slanted gutter, side by side (" + sc("Slanted split side by side") + ")"} onclick={() => act.split("v", 12)}>Slant ⇆</button>
+    <button title={"Split with a slanted gutter, top / bottom (" + sc("Slanted split top / bottom") + ")"} onclick={() => act.split("h", -7)}>Slant ⇅</button></div>
+  <div class="btnrow">
+    <button title="Make every corner draggable (drag the dots between corners to add one)" disabled={R(l).shape === "ellipse"} onclick={act.editCorners}>{isPolyPanel(R(l)) ? "Corners: drag on page" : "Edit corners"}</button>
+    <button title="Run the panel off the page edges it is near (a bleed panel)" onclick={act.bleed}>Bleed</button>
+    <button title="No border (a borderless panel)" onclick={() => { l.border = 0; done("Borderless"); }}>Borderless</button></div>
+  {#if isPolyPanel(R(l))}<p class="hint">{(R(l).locked ? `Unlock the panel (${keyLabel("mod+l")}), then drag` : "Drag") + " a corner, drag a small dot to add a corner, ⌥-click a corner to remove it. Shift keeps it level, Ctrl skips snapping."}</p>{/if}
 {/snippet}
 
 {#snippet pageProps(d: Obj)}

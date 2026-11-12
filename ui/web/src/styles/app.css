@@ -436,3 +436,11 @@ kbd { font: 11px ui-monospace, Menlo, monospace; background: #1b1b1e; border: 1p
 body.pages-dark .tile.page { background: #0b0b0d; }
 body.pages-dark .tile.page img, body.pages-dark .tile.page canvas, body.pages-dark .wizpage canvas { filter: invert(1) hue-rotate(180deg); }
 body.pages-dark .ghostpage { background: #0b0b0d; }
+
+/* panel frame shapes */
+.shapes { display: flex; flex-wrap: wrap; gap: 4px; margin: 2px 0 6px; }
+.shapebtn { padding: 2px; min-height: 0; line-height: 0; background: var(--panel2); }
+.shapebtn canvas { width: 26px; height: 26px; }
+.shapebtn.on { box-shadow: 0 0 0 2px var(--accent); }
+.shapeseg button { padding: 0 4px; line-height: 0; }
+.shapeseg canvas { width: 20px; height: 20px; }

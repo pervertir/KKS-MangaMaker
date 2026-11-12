@@ -1,8 +1,9 @@
 import { clamp } from "./core.js";
 import { paperOf } from "./creation.js";
-import { drawLayer } from "./drawing.js";
+import { drawBreakout, drawLayer } from "./drawing.js";
 import { H, S, W } from "./state.ts";
 import { drawText } from "./text.js";
+
 
 /* ================================================================ manga tools */
 export function rng(seed) { // mulberry32: same seed, same lines
@@ -176,7 +177,13 @@ export function lum(hex) {             // 0 (black) .. 1 (white)
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 export function drawPage(ctx, pg, opt = {}) {
-  ctx.fillStyle = paperOf(pg, opt);
+  const paper = paperOf(pg, opt);
+  ctx.fillStyle = paper;
   ctx.fillRect(0, 0, W(), H());
-  for (const l of pg.layers) drawLayer(ctx, l, { ...opt, ghost: opt.ghostId === l.id });
+  const ls = pg.layers;
+  let last = -1; ls.forEach((l, i) => { if (l.type === "panel") last = i; });
+  ls.forEach((l, i) => {
+    drawLayer(ctx, l, { ...opt, paper, ghost: opt.ghostId === l.id });
+    if (i === last) for (const q of ls) if (q.type === "panel" && q.breakout) drawBreakout(ctx, q, { ...opt, paper });
+  });
 }

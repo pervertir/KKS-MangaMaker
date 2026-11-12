@@ -15,6 +15,8 @@ import { applyRotate, applyScale, beginTransform, boxHit } from "./transform-box
 import { cv, requestDraw, requestView, set_DC, stage } from "./view.js";
 import { registerTool } from "../core/tools.ts";
 import { cursorFor, frame } from "../core/transform.ts";
+import { finishPoly, moveVertex, polyClick, removeVertex, snapPoint } from "./polygon-panels.js";
+import { panelBase, setPanelPoly } from "./frames.js";
 
 /* ================================================================ built-in tools */
 /* tones and lines clipped to a panel move and stretch with it */
@@ -34,10 +36,16 @@ registerTool({
   id: "move", label: "Move / select", key: "v", icon: ICON.move, group: "nav", order: 0, cursor: "default",
   hover(e) {
     const p = pt(e), l = selL(), h = boxHit(l, p);
-    cv.style.cursor = h ? (h.kind === "tail" ? "move" : cursorFor(h, l.rotate || 0)) : hitLayer(p) ? "move" : "default";
+    cv.style.cursor = h ? (h.kind === "tail" || h.kind === "vert" || h.kind === "mid" ? "move" : cursorFor(h, l.rotate || 0)) : hitLayer(p) ? "move" : "default";
   },
   down(e) {
     const p = pt(e), cur = selL(), h = boxHit(cur, p);
+    if (h?.kind === "vert" && e.alt) { removeVertex(cur, h.i); return; }
+    if (h?.kind === "vert" || h?.kind === "mid") {
+      const V = panelBase(cur), i = h.kind === "mid" ? h.i + 1 : h.i, l0 = deep(cur);
+      if (h.kind === "mid") { const a = V[h.i], b = V[(h.i + 1) % V.length]; V.splice(i, 0, { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }); setPanelPoly(cur, V, true); }
+      S.drag = { layer: cur, l0, p0: p, kids: clipKids(cur), vert: i, v0: V.map(v => ({ ...v })), added: h.kind === "mid" }; return;
+    }
     if (h) { S.drag = { ...beginTransform(cur, h, p), kids: clipKids(cur) }; return; }
     const hit = (e.alt || e.native.metaKey) ? hitLayer(p, l => l.type === "panel") : hitLayer(p);
     S.sel = hit ? hit.id : null;
@@ -56,6 +64,9 @@ registerTool({
       S.guides = S.showGuides && !ev.ctrlKey ? snapBox(box, l.id, 7 / S.view.s) : [];
       l.x = box.x; l.y = box.y;
       followPanel(d, l);
+    } else if (d.vert != null) {
+      moveVertex(l, d, p, ev);
+      followPanel(d, l);
     } else if (d.handle?.kind === "tail") {
       const q = frame(l).toLocal([p.x, p.y]); l.tail = { x: +q[0].toFixed(1), y: +q[1].toFixed(1) };
     } else if (d.handle?.kind === "rotate") applyRotate(l, d, p, ev.shiftKey);
@@ -66,7 +77,7 @@ registerTool({
     const d = S.drag; finish();
     if (!d?.layer) return;
     const l = d.layer, k = d.handle?.kind;
-    if (JSON.stringify(l) !== JSON.stringify(d.l0) || d.duped) commit(d.duped ? "Duplicated" : d.move ? "Moved" : k === "tail" ? "Tail moved" : k === "rotate" ? "Rotated" : "Resized");
+    if (JSON.stringify(l) !== JSON.stringify(d.l0) || d.duped || d.added) commit(d.duped ? "Duplicated" : d.move ? "Moved" : d.vert != null ? (d.added ? "Corner added" : "Corner moved") : k === "tail" ? "Tail moved" : k === "rotate" ? "Rotated" : "Resized");
   },
   cancel() {
     const d = S.drag;
@@ -90,11 +101,14 @@ registerTool({
   down(e) { startPan(e.native); },
 });
 
-/* tools that drag out a box and create a layer in it (a click places a default size) */
+/* tools that drag out a box and create a layer in it (a click places a default size); the panel tool's
+   Polygon shape clicks corners instead */
+const polygon = id => id === "panel" && S.panelShape === "polygon";
 function creator(id, label, key, group, order) {
   registerTool({
     id, label, key, icon: ICON[id], group, order,
-    down(e) { const p = pt(e); S.drag = { creating: { x: p.x, y: p.y, w: 0, h: 0 }, p0: p, tool: id }; requestDraw(); },
+    hover(e) { if (polygon(id) && S.polyDraft) { S.polyHover = snapPoint(pt(e), e.native); requestView(); } },
+    down(e) { const p = pt(e); if (polygon(id)) { polyClick(p); return; } S.drag = { creating: { x: p.x, y: p.y, w: 0, h: 0 }, p0: p, tool: id }; requestDraw(); },
     move(e) {
       const d = S.drag; if (!d?.creating) return;
       const p = pt(e), c = d.creating;
@@ -107,8 +121,9 @@ function creator(id, label, key, group, order) {
       if (!d?.creating) return;
       const c = d.creating; createAt(id, c, c.w < 12 && c.h < 12);
     },
-    cancel() { finish(); },
-    dblclick(p) { const l = hitLayer(p); if (l && ["bubble", "caption", "text", "vbubble"].includes(l.type)) { S.sel = l.id; showInline(l); refreshPanels(); } },
+    cancel() { if (S.polyDraft) { S.polyDraft = null; S.polyHover = null; } finish(); },
+    dblclick(p) {
+      if (polygon(id) && S.polyDraft) { finishPoly(); return; } const l = hitLayer(p); if (l && ["bubble", "caption", "text", "vbubble"].includes(l.type)) { S.sel = l.id; showInline(l); refreshPanels(); } },
   });
 }
 creator("panel", "Panel: drag a frame", "p", "frame", 10);
