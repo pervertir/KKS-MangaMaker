@@ -45,6 +45,7 @@ TRUST = {"sdpose": 1.0, "humanart": 1.0, "dwpose": 0.55, "openpose": 0.5}   # th
 JOINT_T = [0.40, 0.40, 0.40, 0.45, 0.50, 0.40, 0.45, 0.50, 0.40, 0.45, 0.50, 0.40, 0.45, 0.50, 0.40, 0.40, 0.50, 0.50]
 JOINT_T_MORE = {"humanart": {3: 0.50, 6: 0.50, 9: 0.50, 12: 0.50}}      # SimCC scores run higher on elbows and knees
 HAND_T, HAND_MIN, HAND_ALONE = 0.40, 12, 0.60    # a hand point; points a hand needs; mean score of a hand with no wrist
+CUT_M = 0.06                                     # a limb's last seen joint this close to an edge is the cut, not a joint
 BORDER_T, BORDER_M = 0.65, 0.015                 # within BORDER_M x the short side of an edge a joint needs this score
 FRAME_SLACK = 0.004                              # a joint this far (x short side) past the edge is rounding: pulled in
 VETO = 0.20                                      # a better detector scoring a joint under this overrules a weaker one's claim
@@ -296,6 +297,17 @@ def gate_body(pts, src, rect, W, H) -> list:
             if q and q[2] < BORDER_T and min(q[0] - x0, q[1] - y0, x1 - q[0], y1 - q[1]) < m:
                 q = None
         out.append(q)
+    # A figure cut by the frame: the last joint of a limb before the cut is drawn by detectors right on the
+    # edge with a confident score (hips at the bottom of a bust shot). A joint that close to an edge whose
+    # next joint down the limb was not seen is the cut itself, not a joint.
+    cut = CUT_M * min(W, H)
+    for chain in ((2, 3, 4), (5, 6, 7), (8, 9, 10), (11, 12, 13)):
+        for k in (2, 1, 0):
+            q = out[chain[k]]
+            below = out[chain[k + 1]] if k < 2 else None
+            if q and not below and min(q[0] - x0, q[1] - y0, x1 - q[0], y1 - q[1]) < cut and (k < 2 or q[2] < 0.8):
+                if chain[0] in (8, 11) or k > 0:          # shoulders stay: they anchor the figure
+                    out[chain[k]] = None
     return out
 
 

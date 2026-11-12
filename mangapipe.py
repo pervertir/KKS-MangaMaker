@@ -185,7 +185,7 @@ def pod_cmd(cfg: Config, action: str, cmdline: str = "") -> int:
             ip = None
         if ip:
             if action == "setup":
-                log("[pod] ssh: installing ComfyUI_IPAdapter_plus and the models (skips what is already on the volume)")
+                log("[pod] ssh: installing the custom nodes, the render models and the pose detectors (skips what is already there)")
                 log(pod.ssh_script((here / "setup_pod.sh").read_text(), env={"COMFY_DIR": pod.comfy_dir}, timeout=3600))
             log("[pod] ssh: restarting ComfyUI")
             log(pod.ssh_script((here / "restart_comfy.sh").read_text(), env={"COMFY_DIR": pod.comfy_dir}, timeout=120))
