@@ -50,7 +50,6 @@ export function init_editor_boot() {
   }
 
   /* dock tabs: the first run opens on Panels (the pipeline starts there), later runs on the tab last picked by hand */
-  $$("#docktabs button").forEach(b => b.addEventListener("click", () => setDockTab(b.dataset.tab, true)));
 
   { let t = null; try { t = localStorage.getItem("mm.dock.tab"); } catch { } setDockTab(t || "panels"); }
 

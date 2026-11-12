@@ -7,4 +7,6 @@ export const ui = $state({
   jobView: null,
   jobLog: "",
   toasts: [],        // [{id, text, kind}]
+  rev: 0,            // bumped whenever the document, the selection or a shot changes: lists re-read the editor state
+  dockTab: "panels", // layers | panels | library
 });

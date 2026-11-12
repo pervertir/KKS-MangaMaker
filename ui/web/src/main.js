@@ -2,6 +2,7 @@
 import "./styles/app.css";
 import "./styles/wizard.css";
 import { attach } from "./ui/mount.js";
+import Dock from "./ui/Dock.svelte";
 import JobsDrawer from "./ui/JobsDrawer.svelte";
 import Toasts from "./ui/Toasts.svelte";
 import * as m0 from "./editor/core.js";
@@ -58,6 +59,9 @@ import * as m50 from "./helpers/manga.js";
 import * as m51 from "./helpers/tips.js";
 import * as m52 from "./helpers/guide.js";
 import * as m53 from "./helpers/wiring.js";
+
+/* the dock is markup the start-up code below looks up by id, so it goes in first */
+attach(Dock, document.getElementById("stackpanel"));
 
 m0.init_editor_core();
 m10.init_editor_pointer();

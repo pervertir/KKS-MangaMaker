@@ -78,7 +78,6 @@ export const act = {
 
 /* runs once at start-up, in the original order (see main.js) */
 export function init_editor_actions() {
-  $("#laydel").onclick = () => deleteSelected();
 
   document.addEventListener("click", e => { const b = e.target.closest("[data-act]"); if (b && act[b.dataset.act]) act[b.dataset.act](); });
 }
