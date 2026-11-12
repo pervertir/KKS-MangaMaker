@@ -39,6 +39,7 @@ import * as m28 from "./editor/jobs.js";
 import * as m29 from "./editor/project.js";
 import * as m30 from "./editor/misc.js";
 import * as m31 from "./editor/boot.js";
+import "./draw/index.ts";
 import * as m32 from "./pose/model.js";
 import * as m33 from "./pose/scene.js";
 import * as m34 from "./pose/geometry.js";
