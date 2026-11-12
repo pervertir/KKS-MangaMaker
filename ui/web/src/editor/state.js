@@ -25,7 +25,7 @@ export function newDoc(title = "Untitled") {
 export function normalize(doc) {
   doc.width ||= 1800; doc.height ||= 2700; doc.reading ||= "rtl"; doc.maxFont ||= 56;
   for (const p of doc.pages) {
-    p.id ||= uid(); p.bg ||= "#ffffff"; p.layers ||= [];
+    p.id ||= uid(); p.bg ||= "#ffffff"; p.layers ||= []; p.cuts ||= [];
     for (const l of p.layers) {
       // panels are the page's skeleton: locked unless unlocked on purpose, so lettering work cannot nudge a frame
       l.id ||= uid(); l.visible ??= true; l.locked ??= l.type === "panel"; l.opacity ??= 1; l.blend ||= "source-over"; l.rotate ||= 0;

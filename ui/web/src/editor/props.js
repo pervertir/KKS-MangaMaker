@@ -17,6 +17,7 @@ import { panelOrder, requestDraw, isPolyPanel } from "./view.js";
 import { poseForPanel } from "../pose/open.js";
 import { FRAME_EDGES, FRAME_SHAPES, frameShapeKey, tracePanel } from "./frames.js";
 import { matteRef } from "./drawing.js";
+import { gutterControls } from "./knife.js";
 
 
 /* ================================================================ panels: properties */
@@ -187,6 +188,7 @@ export function panelProps(P, l) {
       ...breakoutProps(l));
   }
   const cur = frameShapeKey(l);
+  if (l.knife) P.append(h("p", { class: "hint" }, "Cut with the knife: its edges follow the cut lines and gutters (Knife tool, " + sc("Knife: cut panels at any angle") + "). Moving it or editing its corners makes it a free shape."));
   P.append(h("div", { class: "section" }, "Frame"),
     h("div", { class: "shapes" }, ...FRAME_SHAPES.map(([k, t]) => h("button", { class: "shapebtn" + (cur === k ? " on" : ""), title: t, onclick: () => act.frame(k) }, frameIcon(k)))),
     select("Edge", FRAME_EDGES, () => l.edge || "solid", v => { l.edge = v; if (v === "jagged" || v === "wavy") l.seed ??= 1; }),
@@ -221,6 +223,9 @@ export function pageProps(P) {
     colorRow("Paper", pg, "bg"),
     h("div", { class: "row" }, h("label", {}, "Max text"), h("input", { type: "number", value: S.doc.maxFont, onchange: e => { S.doc.maxFont = +e.target.value; commit(); requestDraw(); } }),
       h("span", { class: "hint" }, "px, keeps fitted text even")),
+    h("div", { class: "section" }, "Gutters"),
+    h("div", { class: "btnrow gutrow" }, ...gutterControls(msg => { commit(msg || "Gutters"); requestDraw(); refreshProps(); }, { all: true })),
+    h("p", { class: "hint" }, "Gutters follow the cut lines of layouts and the Knife (K); hand-drawn frames keep their own spacing. Margin moves the outer panel edges."),
     h("div", { class: "btnrow" }, h("button", { onclick: layoutDialog }, "Choose layout…")),
     h("p", { class: "hint" }, "Pick a layout, drag renders from the Library onto panels, then letter the page with bubbles, text and sound effects."));
 }

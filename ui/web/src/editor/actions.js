@@ -12,7 +12,9 @@ import { deleteSelected, setTool } from "./tools.js";
 import { requestDraw, requestView } from "./view.js";
 
 import { ui } from "../ui/store.svelte.js";
-import { applyFrameShape, bleedPanel, isPlainRect, panelBase, setPanelPoly, splitOutline } from "./frames.js";
+import { applyFrameShape, bleedPanel, panelBase, setPanelPoly } from "./frames.js";
+import { bleedPoints, derivePage, splitPanel } from "./knife.js";
+import { renderOptions } from "./options.js";
 import { finishPoly } from "./pointer.js";
 import { refreshProps } from "./props.js";
 
@@ -33,6 +35,7 @@ export const act = {
     if (!$("#overview").hidden) return toggleOverview(false);
     if (ui.jobsOpen && !selL()) return toggleJobs(false);
     if (S.adjust) return exitAdjust();
+    if (S.cut) { S.cut = null; renderOptions(); return requestView(); }
     if (S.tool !== "move") return setTool("move");
     S.sel = null; refreshPanels(); requestView();
   },
@@ -74,20 +77,11 @@ export const act = {
   toBack() { const ls = layers(), l = selL(); if (!l) return; ls.splice(ls.indexOf(l), 1); ls.unshift(l); commit("To back"); requestDraw(); },
   split(dir, tilt = 0) {
     const l = selL(); if (!l || l.type !== "panel") return;
-    const g = 30 + l.border, b = deep(l); b.id = uid(); b.image = null; b.shot = "";
-    if (!tilt && isPlainRect(l)) {
-      if (dir === "v") { const w = (l.w - g) / 2; l.w = w; b.x = l.x + w + g; b.w = w; }
-      else { const hh = (l.h - g) / 2; l.h = hh; b.y = l.y + hh + g; b.h = hh; }
-    } else {                      // any other outline, or a slanted gutter: cut the outline itself
-      const [A, B] = splitOutline(l, dir, tilt, g);
-      if (A.length < 3 || B.length < 3) return toast("This panel is too small to split there");
-      for (const q of [l, b]) { q.radius = 0; if (q.edge === "jagged" || q.edge === "wavy") q.seed = (q.seed || 1) + (q === b ? 1 : 0); }
-      setPanelPoly(l, A); setPanelPoly(b, B);
-    }
-    layers().splice(layers().indexOf(l) + 1, 0, b); commit(tilt ? "Slanted split" : "Split panel"); requestDraw();
+    if (!splitPanel(l, dir, tilt)) return toast("This panel is too small to split there");
+    commit(tilt ? "Slanted split" : "Split panel"); requestDraw();
   },
   frame(key) { const l = selL(); if (l?.type !== "panel") return; applyFrameShape(l, key); commit("Frame: " + key); requestDraw(); refreshProps(); },
-  bleed() { const l = selL(); if (l?.type !== "panel") return; bleedPanel(l, W(), H()); commit("Bleeds off the page"); requestDraw(); refreshProps(); },
+  bleed() { const l = selL(); if (l?.type !== "panel") return; if (l.knife) { l.knife.base = bleedPoints(l.knife.base, W(), H()); derivePage(); } else bleedPanel(l, W(), H()); commit("Bleeds off the page"); requestDraw(); refreshProps(); },
   editCorners() {
     const l = selL(); if (l?.type !== "panel") return;
     if (l.shape === "ellipse") return status("A circle has no corners: pick a polygon shape first");

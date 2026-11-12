@@ -2,7 +2,7 @@ import { $, $$, api, clamp } from "./core.js";
 import { applyThemeChrome } from "./creation.js";
 import { setDockTab } from "./dock-tabs.js";
 import { refreshPod } from "./jobs.js";
-import { PRESET_LAYOUTS, applyLayout, gridRects } from "./layouts.js";
+import { PRESET_LAYOUTS, applyLayout, knifeGrid } from "./layouts.js";
 import { renderLibrary } from "./library.js";
 import { buildMenus, popMenu } from "./menus.js";
 import { status, toast } from "./misc.js";
@@ -31,7 +31,7 @@ export function init_editor_boot() {
       const doc = newDoc("Chapter 1");
       const L = S.cat.layouts.find(l => l.n === 13) || S.cat.layouts[0];
       loadDoc(doc, "");
-      if (L) applyLayout(L.rects, "#" + L.n); else applyLayout(gridRects(...PRESET_LAYOUTS[6].slice(1)), PRESET_LAYOUTS[6][0]);
+      if (L) applyLayout(L.rects, "#" + L.n); else applyLayout(knifeGrid(...PRESET_LAYOUTS[6].slice(1)), PRESET_LAYOUTS[6][0]);
       S.undo = []; S.dirty = false; setName("");
     }
     localStorage.removeItem("mm.autosave");

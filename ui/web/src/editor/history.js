@@ -1,10 +1,12 @@
 import { refreshPanels, status } from "./misc.js";
 import { renderPages } from "./pages.js";
-import { S, selL } from "./state.js";
+import { S, page, selL } from "./state.js";
+import { derivePage } from "./knife.js";
 import { requestDraw } from "./view.js";
 
 /* ================================================================ history */
 export function commit(msg) {
+  if (S.doc) derivePage(page());
   S.undo.push(S.snap); if (S.undo.length > 150) S.undo.shift();
   S.redo = []; snapshot(); S.dirty = true; refreshPanels(); if (msg) status(msg);
 }

@@ -444,3 +444,4 @@ body.pages-dark .ghostpage { background: #0b0b0d; }
 .shapebtn.on { box-shadow: 0 0 0 2px var(--accent); }
 .shapeseg button { padding: 0 4px; line-height: 0; }
 .shapeseg canvas { width: 20px; height: 20px; }
+.gutin { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); white-space: nowrap; }

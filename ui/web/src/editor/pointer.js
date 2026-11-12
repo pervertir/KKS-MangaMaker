@@ -8,13 +8,15 @@ import { hitHandle, hitLayer, local } from "./hit.js";
 import { hideInline, placeInline, showInline } from "./inline-edit.js";
 import { layerMenu } from "./layers.js";
 import { popMenu } from "./menus.js";
-import { refreshPanels, status } from "./misc.js";
+import { refreshPanels, status, toast } from "./misc.js";
 import { refreshProps } from "./props.js";
 import { snapBox } from "./snapping.js";
-import { H, S, W, layers, selL } from "./state.js";
+import { H, S, W, layers, page, selL } from "./state.js";
 import { keyLabel } from "./tools.js";
 import { DC, corners, cv, interacting, requestDraw, requestView, stage, toPage, zoomAt, set_DC, boxPad } from "./view.js";
 import { dedupe, panelBase, polyArea, setPanelPoly } from "./frames.js";
+import { cutFits, derivePage, gutters, hitCut, knifeCut, snapAngle } from "./knife.js";
+import { renderOptions } from "./options.js";
 
 /* ================================================================ pointer */
 export const DRAG_TOOLS = { panel: 1, caption: 1, text: 1, sfx: 1, bubble: 1, vbubble: 1, tone: 1, speed: 1 };
@@ -102,8 +104,9 @@ export function resizeLayer(l, d, p, shift) {
     S.guides = [];
     // snap only the moving edges
     const thr = 7 / S.view.s, snapV = (v, ts) => { for (const t of ts) if (Math.abs(t - v) < thr) return t; return null; };
-    const xs = [0, W(), ...layers().filter(o => o.id !== l.id && o.type === "panel").flatMap(o => [o.x, o.x + o.w, o.x - 30 - o.border, o.x + o.w + 30 + o.border])];
-    const ys = [0, H(), ...layers().filter(o => o.id !== l.id && o.type === "panel").flatMap(o => [o.y, o.y + o.h, o.y - 30 - o.border, o.y + o.h + 30 + o.border])];
+    const G = gutters();
+    const xs = [0, W(), ...layers().filter(o => o.id !== l.id && o.type === "panel").flatMap(o => [o.x, o.x + o.w, o.x - G.v - o.border - l.border, o.x + o.w + G.v + o.border + l.border])];
+    const ys = [0, H(), ...layers().filter(o => o.id !== l.id && o.type === "panel").flatMap(o => [o.y, o.y + o.h, o.y - G.h - o.border - l.border, o.y + o.h + G.h + o.border + l.border])];
     if (d.hx === 1) { const t = snapV(box.x + box.w, xs); if (t != null) { l.w = t - l.x; S.guides.push({ x: t }); } }
     if (d.hx === -1) { const t = snapV(box.x, xs); if (t != null) { l.w += l.x - t; l.x = t; S.guides.push({ x: t }); } }
     if (d.hy === 1) { const t = snapV(box.y + box.h, ys); if (t != null) { l.h = t - l.y; S.guides.push({ y: t }); } }
@@ -114,6 +117,7 @@ export function hoverCursor(p) {
   let c = "default";
   if (spaceDown || S.tool === "hand") c = "grab";
   else if (S.adjust) c = "move";
+  else if (S.tool === "knife") { const hc = hitCut(p); c = hc ? (hc.end == null ? "move" : "alias") : "crosshair"; }
   else if (S.tool !== "move") c = "crosshair";
   else {
     const hh = hitHandle(selL(), p);
@@ -169,6 +173,12 @@ export function init_editor_pointer() {
       requestView(); return;
     }
     if (S.tool === "panel" && S.panelShape === "polygon") { polyClick(p); return; }
+    if (S.tool === "knife") {
+      const hc = hitCut(p);
+      S.cut = hc ? hc.cut.id : null; renderOptions();
+      S.drag = { knife: hc ? { cut: hc.cut, end: hc.end, a0: [...hc.cut.a], b0: [...hc.cut.b], p0: p } : { draw: true, a: p, b: p } };
+      requestView(); return;
+    }
     if (DRAG_TOOLS[S.tool]) { S.drag = { creating: { x: p.x, y: p.y, w: 0, h: 0 }, p0: p, tool: S.tool }; requestDraw(); }
   });
 
@@ -178,6 +188,20 @@ export function init_editor_pointer() {
     const d = S.drag;
     if (S.polyDraft) { S.polyHover = snapPoint(p, e); requestView(); }
     if (!d) { hoverCursor(p); return; }
+    if (d.knife) {
+      const k = d.knife;
+      if (k.draw) k.b = snapAngle(k.a, p, e);
+      else {
+        const c = k.cut, dx = p.x - k.p0.x, dy = p.y - k.p0.y;
+        if (k.end === 0) { const q = snapAngle({ x: k.b0[0], y: k.b0[1] }, p, e); c.a = [+q.x.toFixed(1), +q.y.toFixed(1)]; }
+        else if (k.end === 1) { const q = snapAngle({ x: k.a0[0], y: k.a0[1] }, p, e); c.b = [+q.x.toFixed(1), +q.y.toFixed(1)]; }
+        else { c.a = [k.a0[0] + dx, k.a0[1] + dy].map(v => +v.toFixed(1)); c.b = [k.b0[0] + dx, k.b0[1] + dy].map(v => +v.toFixed(1)); }
+        if (cutFits(c)) { k.ok = [[...c.a], [...c.b]]; k.moved = true; derivePage(); }
+        else if (k.ok) { c.a = k.ok[0]; c.b = k.ok[1]; }
+        else { c.a = [...k.a0]; c.b = [...k.b0]; }
+      }
+      requestDraw(); return;
+    }
     if (d.pan) { S.view.tx = d.tx + sp.x - d.sx; S.view.ty = d.ty + sp.y - d.sy; interacting(); requestView(); return; }
     if (d.adjust) {
       const l = d.adjust;
@@ -224,6 +248,15 @@ export function init_editor_pointer() {
     if (d && !d.pan) requestDraw();
     if (!d) return;
     if (d.pan) return;
+    if (d.knife) {
+      const k = d.knife;
+      if (k.draw) {
+        const n = knifeCut(k.a, k.b);
+        if (n) { S.cut = page().cuts[page().cuts.length - 1]?.id || null; commit(n === 1 ? "Panel cut" : `${n} panels cut`); renderOptions(); }
+        else if (Math.hypot(k.b.x - k.a.x, k.b.y - k.a.y) > 20) toast("Drag the line all the way across a panel, from outside one edge to outside the other");
+      } else if (k.moved) commit(k.end == null ? "Cut moved" : "Cut turned");
+      requestDraw(); return;
+    }
     if (d.adjust) { commit("Image moved"); return; }
     if (d.creating) {
       const c = d.creating, small = c.w < 12 && c.h < 12;

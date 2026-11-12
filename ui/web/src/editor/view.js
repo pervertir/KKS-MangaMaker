@@ -6,6 +6,7 @@ import { placeInline } from "./inline-edit.js";
 import { drawFlipped, drawPage } from "./manga-tools.js";
 import { H, S, W, layers, page, selL } from "./state.js";
 import { isPlainRect, panelBase, tracePanel } from "./frames.js";
+import { drawCuts } from "./knife.js";
 
 /* ================================================================ canvas view */
 export const cv = $("#canvas"), ctx = cv.getContext("2d"), stage = $("#stage");
@@ -120,6 +121,7 @@ export function draw() {
     D.forEach((q, i) => { ctx.fillStyle = i ? "#fff" : "#4c8dff"; ctx.beginPath(); ctx.arc(q.x, q.y, (i ? 5 : 7) * px, 0, 7); ctx.fill(); ctx.stroke(); });
     ctx.restore();
   }
+  if (S.tool === "knife") drawCuts(ctx, px);
   if (S.drag?.creating) {
     const c = S.drag.creating;
     ctx.save(); ctx.setLineDash([6 * px, 4 * px]); ctx.strokeStyle = "#4c8dff"; ctx.lineWidth = 1.5 * px;

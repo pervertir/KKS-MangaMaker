@@ -20,11 +20,13 @@ import { S, layers, selL } from "./state.js";
 import { fitView, requestDraw, requestView, stage, zoomAt } from "./view.js";
 import { poseKey, setMode } from "../pose/open.js";
 import { scriptWizard } from "../wizard/prompt.js";
+import { mergeCut } from "./knife.js";
 
 /* ================================================================ tools & keys */
 export const ICON = {
   move: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 3l13 7-6 1.5L9 18z" fill="currentColor"/></svg>',
   hand: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M8 12V5.5a1.5 1.5 0 013 0V11m0-6.5a1.5 1.5 0 013 0V11m0-4.5a1.5 1.5 0 013 0V14a7 7 0 01-7 7h-.5A6.5 6.5 0 015 17.6L3.4 14a1.6 1.6 0 012.7-1.6L8 15"/></svg>',
+  knife: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 21L21 3"/><path d="M14.5 4.5l5 5-3 1-3-3z" fill="currentColor"/><path d="M4 9h5M15 20v-5" stroke-dasharray="2 2"/></svg>',
   panel: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="8" height="10"/><rect x="13" y="3" width="8" height="6"/><rect x="13" y="11" width="8" height="10"/><rect x="3" y="15" width="8" height="6"/></svg>',
   bubble: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 4c5 0 9 3 9 6.8s-4 6.7-9 6.7c-.9 0-1.8-.1-2.6-.3L5 20l1.1-4C4.2 14.8 3 12.9 3 10.8 3 7 7 4 12 4z"/></svg>',
   text: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 5h14M12 5v15M9 20h6"/></svg>',
@@ -34,7 +36,7 @@ export const ICON = {
   tone: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="5" r="1.2"/><circle cx="10" cy="5" r="1.2"/><circle cx="15" cy="5" r="1.4"/><circle cx="20" cy="5" r="1.6"/><circle cx="7.5" cy="9.5" r="1.4"/><circle cx="12.5" cy="9.5" r="1.6"/><circle cx="17.5" cy="9.5" r="1.8"/><circle cx="5" cy="14" r="1.6"/><circle cx="10" cy="14" r="1.8"/><circle cx="15" cy="14" r="2"/><circle cx="20" cy="14" r="2.2"/><circle cx="7.5" cy="18.5" r="2"/><circle cx="12.5" cy="18.5" r="2.2"/><circle cx="17.5" cy="18.5" r="2.4"/></svg>',
   speed: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 12L2 3l1-1zM12 12L22 3l-1-1zM12 12L2 21l1 1zM12 12l10 9-1 1zM12 12L12 1h.8zM12 12L1 12.4v-.8zM12 12l11 .4v-.8zM12 12l-.4 11h.8z" opacity=".85"/><circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor"/></svg>',
 };
-export const TOOLS = [["move", "Move / select (V)", "v"], ["hand", "Hand (H, or hold Space)", "h"], null, ["panel", "Panel: drag a frame (P)", "p"], null,
+export const TOOLS = [["move", "Move / select (V)", "v"], ["hand", "Hand (H, or hold Space)", "h"], null, ["panel", "Panel: drag a frame (P)", "p"], ["knife", "Knife: drag a line across panels to cut them (K)", "k"], null,
   ["bubble", "Template bubble (B)", "b"], ["vbubble", "Drawn bubble with a draggable tail (O)", "o"], ["text", "Text (T)", "t"], ["sfx", "Sound effect (S)", "s"],
   ["caption", "Caption box (C)", "c"], null, ["tone", "Screentone: click a panel or drag an area (G)", "g"], ["speed", "Speed / focus lines: click a panel or drag (L)", "l"]];
 export const TONE_PRESETS = [
@@ -60,10 +62,10 @@ export function buildToolbar() {
 }
 export function setTool(t) {
   if (t === "bubble" && !S.cat?.bubbles?.length) { t = "vbubble"; status("No bubble templates installed: using drawn bubbles"); }
-  S.tool = t; S.polyDraft = null; if (S.adjust) exitAdjust();
+  S.tool = t; S.polyDraft = null; S.cut = null; if (S.adjust) exitAdjust();
   $$("#toolbar button").forEach(b => b.classList.toggle("on", b.dataset.tool === t));
   stage.classList.toggle("hand", t === "hand");
-  renderOptions();
+  renderOptions(); requestView();
 }
 /* typing fields keep their keys; sliders, checkboxes, colour wells and dropdowns don't swallow Delete */
 export const NONTEXT = ["range", "checkbox", "radio", "color", "button", "submit", "file"];
@@ -78,6 +80,7 @@ export const inField = e => {
    the book overview, otherwise the selected layer */
 export let deleteScope = "layers";
 export function deleteSelected() {
+  if (S.tool === "knife" && S.cut) { mergeCut(S.cut); S.cut = null; commit("Cut removed: panels merged"); renderOptions(); return requestDraw(); }
   const l = selL();                         // a selected layer always wins; a page only when no layer is selected
   if (!l && (deleteScope === "pages" || !$("#overview").hidden)) return pageOps.del(true);
   if (!l) return status("Nothing selected to delete");
@@ -93,6 +96,7 @@ export const SHORTCUTS = [
   ["Tools", "v", "Move / select", () => setTool("move")],
   ["Tools", "h", "Hand (or hold Space)", () => setTool("hand")],
   ["Tools", "p", "Panel frame", () => setTool("panel")],
+  ["Tools", "k", "Knife: cut panels at any angle", () => setTool("knife")],
   ["Tools", "b", "Template bubble", () => setTool("bubble")],
   ["Tools", "o", "Drawn bubble (tail)", () => setTool("vbubble")],
   ["Tools", "t", "Text", () => setTool("text")],
