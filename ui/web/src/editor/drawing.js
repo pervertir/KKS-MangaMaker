@@ -8,6 +8,7 @@ import { layerType, outlineOf } from "../core/registry.ts";
 import { clipTo } from "../core/geometry/region.ts";
 import { drawCached } from "../core/layer-cache.ts";
 import { clipToPanel, strokePanel } from "./frames.js";
+import { liveImage } from "./live.js";
 
 /* ================================================================ drawing */
 export function imageRect(l, im) {
@@ -59,7 +60,7 @@ export function drawLayer(ctx, l, opt = {}) {
       ctx.fillStyle = l.fill || "#fff";
       ctx.fillRect(l.x, l.y, l.w, l.h);
       const r0 = l.image ? imageRect(l) : null;
-      const im = l.image ? imgFor(l.image.ref, r0.w * (opt.rs || 1)) : null;
+      const im = (!opt.export && liveImage(l)) || (l.image ? imgFor(l.image.ref, r0.w * (opt.rs || 1)) : null);   // Live Manga frame while playing
       if (l.image && im) {
         const r = r0;
         if (opt.ghost) { ctx.restore(); ctx.save(); ctx.globalAlpha = 0.3; drawFlipped(ctx, im, r, l.image.flip); ctx.restore(); ctx.save(); clipToPanel(ctx, l); }

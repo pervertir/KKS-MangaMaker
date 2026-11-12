@@ -54,7 +54,7 @@ ASSET_DIRS = {
     "particles": "Particles",
     "speedlines": "SpeedLines",
 }
-NAME_RE = re.compile(r"^[A-Za-z0-9_\-. ]{1,80}$")
+NAME_RE = re.compile(r"^(?!\.)[A-Za-z0-9_\-. ]{1,80}$")   # no leading dot: "..", ".git", ".env"
 
 
 # ------------------------------------------------------------------------------ images
@@ -557,7 +557,7 @@ def dialogue_layer(d: dict, rect, bmap) -> dict | None:
 # ---------------------------------------------------------------------------- jobs
 JOBS: dict[str, dict] = {}
 MANGAPIPE = ROOT / "mangapipe"
-SHOT_CMDS = {"run", "render", "grab", "compose", "matte"}
+SHOT_CMDS = {"run", "render", "grab", "compose", "matte", "live"}
 POD_ACTIONS = {"status", "start", "stop", "url", "restart"}
 
 
@@ -665,6 +665,10 @@ class Handler(BaseHTTPRequestHandler):
         if etag:
             self.send_header("ETag", etag)
         self.send_header("Cache-Control", "max-age=86400" if cache else "no-cache" if etag else "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")                      # no clickjacking the editor
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Cross-Origin-Resource-Policy", "same-origin")   # other sites can't embed its images or data
         self.end_headers()
         self.wfile.write(body)
 
@@ -685,18 +689,44 @@ class Handler(BaseHTTPRequestHandler):
     def json(self, data, code: int = 200):
         self.send(code, json.dumps(data).encode(), "application/json")
 
+    MAX_BODY = 768 << 20                 # a long chapter export (base64 page images) fits; anything bigger is refused
+
     def body(self) -> bytes:
-        return self.rfile.read(int(self.headers.get("Content-Length") or 0))
+        n = int(self.headers.get("Content-Length") or 0)
+        if n < 0 or n > self.MAX_BODY:
+            raise ValueError("request too large")
+        return self.rfile.read(n)
+
+    def allowed(self, write: bool) -> bool:
+        """The editor only answers itself. A page on any other site can make the browser send requests
+        to 127.0.0.1 (cross-site POSTs need no permission), and a DNS-rebinding site can even read the
+        answers, so: the Host must be this machine, a request from a page must come from this origin,
+        and every write must carry the X-MangaMaker header, which no other site can add without a
+        CORS preflight this server never grants."""
+        local = re.compile(r"(127\.0\.0\.1|localhost|\[::1\])(:\d{1,5})?")   # any port: a container may be mapped to another
+        if not local.fullmatch(self.headers.get("Host") or ""):
+            return False
+        origin = self.headers.get("Origin")
+        if origin is not None and not (origin.startswith("http://") and local.fullmatch(origin[7:])):
+            return False
+        if write and self.headers.get("X-MangaMaker") != "1":
+            return False
+        return True
+
+    def refuse(self):
+        self.send(403, b'{"error":"forbidden: requests must come from the MangaMaker editor itself"}', "application/json")
 
     def jbody(self) -> dict:
         b = self.body()
         return json.loads(b) if b else {}
 
     def do_GET(self):
+        if not self.allowed(write=False):
+            return self.refuse()
         u = urlparse(self.path)
         q = {k: v[0] for k, v in parse_qs(u.query).items()}
         try:
-            if u.path in ("/", "/index.html", "/favicon.ico") or u.path.startswith(("/assets/", "/static/")) or u.path == "/favicon.svg":
+            if u.path in ("/", "/index.html", "/favicon.ico") or u.path.startswith(("/assets/", "/static/")) or u.path in ("/favicon.svg", "/livemanga.js"):
                 if not (STATIC / "index.html").exists():
                     return self.send(503, b"The editor has not been built yet. Run: cd ui/web && npm install && npm run build  (./mangapipe-ui does this for you)",
                                      "text/plain; charset=utf-8")
@@ -736,7 +766,19 @@ class Handler(BaseHTTPRequestHandler):
                 if not NAME_RE.match(name):
                     return self.json({"error": "bad name"}, 400)
                 p = PROJECTS / name / "project.json"
-                return self.json(json.loads(p.read_text()) if p.exists() else {"error": "not found"}, 200 if p.exists() else 404)
+                if not p.exists():
+                    return self.json({"error": "not found"}, 404)
+                doc = json.loads(p.read_text())
+                try:   # version 2: every panel carries its shot's scene (pose, prompt, seed); see mp/chapter.py
+                    from mp.chapter import sync
+                    sync(doc, SHOTS, json.loads(CAST.read_text(encoding="utf-8")) if CAST.exists() else [], newer_than=p.stat().st_mtime)
+                except Exception as e:  # noqa: BLE001  (an odd shot folder must not stop the project opening)
+                    sys.stderr.write(f"[ui] chapter sync: {e}\n")
+                return self.json(doc)
+            if u.path == "/api/live/layers":
+                from mp.live import latest
+                r = latest(shot_dir(q.get("shot", "")))
+                return self.json({"bg": mp_ref(r["bg"]) if r["bg"] else None, "actors": {k: mp_ref(v) for k, v in r["actors"].items()}})
             m = BLOB_RE.fullmatch(u.path)
             if m:
                 f = blob_path(*m.groups())
@@ -774,6 +816,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.json({"error": str(e)}, 400)
 
     def do_PUT(self):
+        if not self.allowed(write=True):
+            return self.refuse()
         u = urlparse(self.path)
         try:
             m = BLOB_RE.fullmatch(u.path)
@@ -895,6 +939,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.json({"error": str(e)}, 400)
 
     def do_POST(self):
+        if not self.allowed(write=True):
+            return self.refuse()
         u = urlparse(self.path)
         q = {k: v[0] for k, v in parse_qs(u.query).items()}
         try:
@@ -934,6 +980,11 @@ class Handler(BaseHTTPRequestHandler):
                     im = Image.open(io.BytesIO(self.body())).convert("RGB")
                 im.save(dest)
                 return self.json({"ok": True, "path": str(dest)})
+            if u.path == "/api/export/livemanga":
+                name = q.get("name", "")
+                if not NAME_RE.match(name):
+                    return self.json({"error": "bad name"}, 400)
+                return self.json(export_livemanga(name, self.jbody()))
             if u.path == "/api/export/pdf":
                 name, count = q["name"], int(q["count"])
                 d = PROJECTS / name
@@ -1076,6 +1127,12 @@ class Handler(BaseHTTPRequestHandler):
                         if d not in img.parents:
                             return self.json({"error": "that render is not in this shot"}, 400)
                         args += ["--image", str(img.relative_to(ROOT))]
+                    if cmd == "live":
+                        for c in body.get("chars") or []:
+                            if re.fullmatch(r"[A-Za-z0-9_#-]{1,40}", str(c)):
+                                args += ["--char", str(c)]
+                        if body.get("bg_prompt"):
+                            args.append("--bg-prompt=" + str(body["bg_prompt"])[:500])   # "=" form: a prompt starting with "-" stays a value
                     label = f"{cmd} {d.name}"
                 elif cmd == "pod" and body.get("action") in POD_ACTIONS:
                     args, label = ["pod", body["action"]], f"pod {body['action']}"
@@ -1086,6 +1143,142 @@ class Handler(BaseHTTPRequestHandler):
             return self.json({"error": "not found"}, 404)
         except Exception as e:  # noqa: BLE001
             return self.json({"error": str(e)}, 400)
+
+
+# The bundle's reader page: no inline script, and a Content Security Policy that lets it load only
+# its own files (no other scripts, no remote images, no forms, no plugins).
+LIVE_READER = """<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; connect-src 'self'; img-src 'self'; style-src 'self' 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<title>{title}</title>
+<style>html,body{{margin:0;background:#18181b;color:#eee}} #reader{{max-width:900px;margin:0 auto;padding:12px}}</style>
+</head><body><div id="reader"></div>
+<script src="livemanga.js"></script>
+<script src="reader.js"></script>
+</body></html>
+"""
+LIVE_READER_JS = """LiveManga.reader(document.getElementById("reader"), "manga.json")
+  .catch(e => { document.getElementById("reader").textContent = e.message; });
+"""
+LIVE_MAX_SIDE = 8192
+LIVE_PATH_RE = re.compile(r"^(pages/\d{2,4}/(base|overlay)|panels/[A-Za-z0-9_-]{1,64}/(bg|actor_\d{1,2}))\.png$")
+LIVE_COPY_RE = re.compile(r"^mp:shots/[A-Za-z0-9_\-. ]{1,80}/(live|out)/[A-Za-z0-9_\-.]{1,120}\.(png|webp|jpe?g)$")
+
+
+def _clean_png(src, dest: Path) -> None:
+    """Decode and re-encode as a plain PNG: refuses anything that is not an image, and drops every
+    metadata chunk. ComfyUI writes the whole workflow and prompt (LoRA names, file paths, seeds) into
+    its PNGs; none of that belongs in a published bundle."""
+    with Image.open(src) as im:
+        if im.width * im.height > LIVE_MAX_SIDE * LIVE_MAX_SIDE or max(im.size) > LIVE_MAX_SIDE:
+            raise ValueError("image too large")
+        im.load()
+        keep = im.convert("RGBA" if im.mode in ("RGBA", "LA", "P") else "RGB")
+    keep.save(dest, "PNG", optimize=False)
+
+
+def _live_manifest(m: dict) -> dict:
+    """The manifest as the format defines it, rebuilt from known keys only, every number and path checked
+    (the same rules as LiveManga.validate in livemanga.js)."""
+    def num(v, lo, hi, what):
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or not (lo <= v <= hi) or v != v:
+            raise ValueError(f"manifest: {what} out of range")
+        return v
+
+    def path(v, what):
+        if not isinstance(v, str) or not LIVE_PATH_RE.fullmatch(v):
+            raise ValueError(f"manifest: bad path for {what}")
+        return v
+
+    def pts(v, side, what):
+        if not isinstance(v, list) or len(v) != 18:
+            raise ValueError(f"manifest: {what} needs 18 points")
+        return [None if p is None else [num(p[0], -4 * side, 5 * side, what), num(p[1], -4 * side, 5 * side, what)] for p in v]
+
+    if m.get("format") != "livemanga" or m.get("version") != "1.0":
+        raise ValueError("not a Live Manga 1.0 manifest")
+    W, H = (int(num(m["page"][k], 64, LIVE_MAX_SIDE, "page size")) for k in ("width", "height"))
+    out = {"format": "livemanga", "version": "1.0", "title": str(m.get("title") or "")[:200],
+           "reading": "ltr" if m.get("reading") == "ltr" else "rtl", "page": {"width": W, "height": H}, "pages": []}
+    for pg in m.get("pages") or []:
+        po = {"base": path(pg["base"], "page"), "panels": []}
+        if pg.get("overlay"):
+            po["overlay"] = path(pg["overlay"], "overlay")
+        for p in (pg.get("panels") or [])[:32]:
+            aw, ah = (int(num(p["art"][k], 16, 4096, "art size")) for k in ("width", "height"))
+            side = max(aw, ah)
+            po["panels"].append({
+                "id": re.sub(r"[^A-Za-z0-9_-]", "", str(p.get("id", "")))[:64],
+                "clip": [num(v, -LIVE_MAX_SIDE, 2 * LIVE_MAX_SIDE, "clip") for v in p["clip"][:4]],
+                "art": {"width": aw, "height": ah, "rect": [num(v, -4 * LIVE_MAX_SIDE, 8 * LIVE_MAX_SIDE, "art rect") for v in p["art"]["rect"][:4]],
+                        "flip": p["art"].get("flip") is True},
+                "fps": num(p.get("fps", 12), 1, 60, "fps"), "loop": "once" if p.get("loop") == "once" else "loop",
+                "background": path(p["background"], "background"),
+                "actors": [{"image": path(a["image"], "actor"), "bind": pts(a["bind"], side, "bind"),
+                            "frames": [pts(f, side, "frame") for f in a["frames"][:1440]]} for a in p["actors"][:16]],
+            })
+        out["pages"].append(po)
+        if len(out["pages"]) > 2000:
+            raise ValueError("manifest: too many pages")
+    if not out["pages"]:
+        raise ValueError("manifest: no pages")
+    return out
+
+
+def export_livemanga(name: str, body: dict) -> dict:
+    """Write a Live Manga bundle (docs/LIVEMANGA_FORMAT.md): pages/<name>/<name>_livemanga/ with
+    manga.json, the page images, the panel layers, the reference player and a reader page, plus the
+    same folder zipped as pages/<name>/<name>.livemanga. Everything that goes in is checked: images are
+    re-encoded without metadata, copies come only from shot renders, and the manifest is rebuilt."""
+    import base64
+    import html
+    import shutil
+    import zipfile
+    man = _live_manifest(body["manifest"])
+    images, copies = body.get("images") or {}, body.get("copies") or {}
+    for rel in [*images, *copies]:
+        if not LIVE_PATH_RE.fullmatch(str(rel)):
+            raise ValueError(f"bad path {rel!r}")
+    needed = {pg["base"] for pg in man["pages"]} | {pg["overlay"] for pg in man["pages"] if pg.get("overlay")} | \
+             {p["background"] for pg in man["pages"] for p in pg["panels"]} | \
+             {a["image"] for pg in man["pages"] for p in pg["panels"] for a in p["actors"]}
+    missing = needed - set(images) - set(copies)
+    if missing:
+        raise ValueError(f"bundle is missing {sorted(missing)[0]}")
+    proj = PROJECTS / name
+    out = proj / f"{name}_livemanga"
+    if out.is_symlink() or proj.resolve().parent != PROJECTS.resolve():
+        raise ValueError("bad project folder")
+    tmp = proj / f".{name}_livemanga.tmp"
+    shutil.rmtree(tmp, ignore_errors=True)
+    tmp.mkdir(parents=True)
+    try:
+        for rel in sorted(needed):
+            dest = tmp / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            if rel in images:
+                _clean_png(io.BytesIO(base64.b64decode(str(images[rel]).split(",", 1)[-1], validate=True)), dest)
+            else:
+                ref = str(copies[rel])
+                if not LIVE_COPY_RE.fullmatch(ref):
+                    raise ValueError(f"only shot renders can go in a bundle, not {ref!r}")
+                _clean_png(resolve_ref(ref), dest)
+        (tmp / "manga.json").write_text(json.dumps(man, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+        shutil.copyfile(STATIC / "livemanga.js", tmp / "livemanga.js")
+        (tmp / "reader.js").write_text(LIVE_READER_JS, encoding="utf-8")
+        (tmp / "index.html").write_text(LIVE_READER.format(title=html.escape(man["title"] or name)), encoding="utf-8")
+        shutil.rmtree(out, ignore_errors=True)
+        tmp.rename(out)
+    except Exception:
+        shutil.rmtree(tmp, ignore_errors=True)
+        raise
+    bundle = proj / f"{name}.livemanga"
+    with zipfile.ZipFile(bundle, "w", zipfile.ZIP_DEFLATED) as z:
+        for f in sorted(out.rglob("*")):
+            if f.is_file() and not f.is_symlink():
+                z.write(f, f.relative_to(out).as_posix())
+    return {"ok": True, "path": str(bundle.relative_to(ROOT)), "folder": str(out.relative_to(ROOT))}
 
 
 def with_characters(text: str, chars: list[dict]) -> str:

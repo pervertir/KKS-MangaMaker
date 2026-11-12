@@ -260,6 +260,15 @@ AnimationLoader mods add (`mods/Sideloader Modpack - Animations`; 155 in this in
 Paths to the game (captures, templates, poses) can be overridden per machine in an untracked
 `config.local.yaml` next to `config.yaml`.
 
+## Live Manga (moving characters)
+
+Switch on **✦ Live Manga** in the editor to give panels characters that move: the background is
+rendered once with nobody in it, each character is rendered alone and cut out with SAM 3, and the
+editor warps every cutout along OpenPose keyframes you set in the Pose tab. The project file keeps
+each panel's scene and keyframes, so a chapter re-renders from JSON (`mangapipe chapter render`).
+**Export .livemanga** writes the chapter in an open format any website can play with one script
+([docs/LIVEMANGA_FORMAT.md](docs/LIVEMANGA_FORMAT.md)). See [docs/LIVE_MANGA.md](docs/LIVE_MANGA.md).
+
 ## Editor source and container
 
 The editor's front end is `ui/web`: ES modules built with Vite, with Svelte for interface components.
