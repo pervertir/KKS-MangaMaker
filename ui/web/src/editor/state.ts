@@ -42,7 +42,7 @@ export const S: EditorState = {
   cat: null, shots: [], projects: [],
   doc: null, name: "", page: 0, sel: null, tool: "move",
   view: { s: 0.25, tx: 0, ty: 0 },
-  bubble: "001", libTab: "shots", libFilter: "", vshape: "oval", tonePreset: 2, speedMode: "focus",
+  bubble: "001", panelShape: "rect", polyDraft: null, libTab: "shots", libFilter: "", vshape: "oval", tonePreset: 2, speedMode: "focus",
   dockTab: "panels",
   adjust: null,
   guides: [], showOrder: true, showGuides: true,
@@ -69,7 +69,7 @@ export function normalize(doc: Doc): Doc {
     for (const l of p.layers) {
       // panels are the page's skeleton: locked unless unlocked on purpose, so lettering work cannot nudge a frame
       l.id ||= uid(); l.rev ??= 0; l.visible ??= true; l.locked ??= l.type === "panel"; l.opacity ??= 1; l.blend ||= "source-over"; l.rotate ||= 0;
-      if (l.type === "panel") { l.border ??= 6; l.borderColor ||= "#000000"; l.fill ||= "#ffffff"; }
+      if (l.type === "panel") { l.border ??= 6; l.borderColor ||= "#000000"; l.fill ||= "#ffffff"; l.shape ||= "rect"; l.edge ||= "solid"; l.gap ??= 0; l.radius ??= 0; }
       if (l.type === "text") { l.font ||= l.sfx ? "Bangers" : "MMComic"; l.stroke ||= "#000000"; l.strokeWidth ??= l.sfx ? 10 : 0; l.align ||= "center"; }
       if (l.type === "caption") { l.fill ||= "#ffffff"; l.borderW ??= 4; }
       if (l.type === "vbubble") { l.shape ||= "oval"; l.fill ||= "#ffffff"; l.stroke ||= "#000000"; l.strokeW ??= 5; l.tailW ??= 0.22; l.seed ??= 1; l.spikes ??= 16; }

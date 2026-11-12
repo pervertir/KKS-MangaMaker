@@ -1,6 +1,6 @@
 import { enterAdjust, exitAdjust } from "./adjust.js";
 import { $, clamp, deep, uid } from "./core.js";
-import { createAt } from "./creation.js";
+import { createAt, addLayer, insertIndexForPanel } from "./creation.js";
 import { showLib } from "./dock-tabs.js";
 import { imageRect } from "./drawing.js";
 import { commit } from "./history.js";
@@ -15,7 +15,8 @@ import { H, S, W, layers, selL } from "./state.ts";
 import { keyLabel } from "./tools.js";
 import { getTool } from "../core/tools.ts";
 import { samplesOf, stabilizer } from "../core/input.ts";
-import { DC, corners, cv, interacting, requestDraw, requestView, stage, toPage, zoomAt, set_DC } from "./view.js";
+import { DC, corners, cv, interacting, requestDraw, requestView, stage, toPage, zoomAt, set_DC, boxPad } from "./view.js";
+import { dedupe, panelBase, polyArea, setPanelPoly } from "./frames.js";
 
 /* ================================================================ pointer */
 export const DRAG_TOOLS = { panel: 1, caption: 1, text: 1, sfx: 1, bubble: 1, vbubble: 1, tone: 1, speed: 1 };
@@ -30,6 +31,54 @@ export function followPanel(d, l) {
   const L = d.l0, sx = l.w / L.w, sy = l.h / L.h;
   for (const k of d.kids) { k.q.x = l.x + (k.x - L.x) * sx; k.q.y = l.y + (k.y - L.y) * sy; k.q.w = k.w * sx; k.q.h = k.h * sy; }
 }
+/* the Polygon panel tool: click corners, close on the first corner, a double-click or Enter */
+export function snapPoint(p, e) {
+  if (!S.showGuides || e?.ctrlKey) return { ...p };
+  const thr = 8 / S.view.s, xs = [0, W(), 60, W() - 60], ys = [0, H(), 60, H() - 60];
+  for (const q of layers()) if (q.type === "panel" && q.visible) for (const v of panelBase(q)) { xs.push(v.x); ys.push(v.y); }
+  for (const v of S.polyDraft || []) { xs.push(v.x); ys.push(v.y); }
+  const near = (v, ts) => ts.reduce((b, t) => Math.abs(t - v) < thr && (b == null || Math.abs(t - v) < Math.abs(b - v)) ? t : b, null);
+  return { x: near(p.x, xs) ?? p.x, y: near(p.y, ys) ?? p.y };
+}
+export function polyClick(p) {
+  const D = (S.polyDraft ||= []), q = S.polyHover || p;
+  if (D.length >= 3 && Math.hypot(q.x - D[0].x, q.y - D[0].y) < 12 / S.view.s) return finishPoly();
+  const last = D[D.length - 1];
+  if (!last || Math.hypot(q.x - last.x, q.y - last.y) > 2 / S.view.s) D.push({ x: q.x, y: q.y });
+  status(`${D.length} corner${D.length > 1 ? "s" : ""}: click the first corner or press Enter to close`); requestView();
+}
+export function finishPoly() {
+  const D = dedupe(S.polyDraft || []); S.polyDraft = null; S.polyHover = null;
+  if (D.length < 3 || Math.abs(polyArea(D)) < 400) { requestView(); return status("A panel needs at least three corners"); }
+  addLayer(setPanelPoly({ type: "panel", shot: "", image: null }, D, true), insertIndexForPanel());
+  commit("Added polygon panel"); requestDraw();
+}
+/* drag one corner of a polygon panel; it snaps to page edges and to other panels' corners and edges */
+export function moveVertex(l, d, p, e) {
+  const V = d.v0.map(v => ({ ...v })), o = d.v0[d.vert];
+  let x = p.x, y = p.y;
+  if (e.shiftKey) { if (Math.abs(x - o.x) > Math.abs(y - o.y)) y = o.y; else x = o.x; }
+  S.guides = [];
+  if (S.showGuides && !e.ctrlKey) {
+    const thr = 7 / S.view.s, xs = [0, W()], ys = [0, H()];
+    for (const q of layers()) if (q.type === "panel" && q.id !== l.id && q.visible) {
+      xs.push(q.x, q.x + q.w); ys.push(q.y, q.y + q.h);
+      for (const v of panelBase(q)) { xs.push(v.x); ys.push(v.y); }
+    }
+    V.forEach((v, i) => { if (i !== d.vert) { xs.push(v.x); ys.push(v.y); } });
+    const near = (v, ts) => ts.reduce((b, t) => Math.abs(t - v) < thr && (b == null || Math.abs(t - v) < Math.abs(b - v)) ? t : b, null);
+    const sx = near(x, xs), sy = near(y, ys);
+    if (sx != null) { x = sx; S.guides.push({ x: sx }); }
+    if (sy != null) { y = sy; S.guides.push({ y: sy }); }
+  }
+  V[d.vert] = { x, y };
+  setPanelPoly(l, V, true);
+}
+export function removeVertex(l, i) {
+  const V = panelBase(l);
+  if (V.length <= 3) return status("A panel needs at least three corners");
+  V.splice(i, 1); setPanelPoly(l, V); commit("Corner removed"); requestDraw(); refreshProps(true);
+}
 export function snapEdges(c) {
   const box = { ...c }, g = snapBox(box, null, 7 / S.view.s);
   return g;
@@ -37,7 +86,7 @@ export function snapEdges(c) {
 export function resizeLayer(l, d, p, shift) {
   const L = d.l0, { a } = corners(L), c = Math.cos(-a), s = Math.sin(-a);
   const cx0 = L.x + L.w / 2, cy0 = L.y + L.h / 2;
-  const qx = (p.x - cx0) * c - (p.y - cy0) * s, qy = (p.x - cx0) * s + (p.y - cy0) * c;
+  const qx = (p.x - cx0) * c - (p.y - cy0) * s - (d.hx || 0) * (d.pad || 0), qy = (p.x - cx0) * s + (p.y - cy0) * c - (d.hy || 0) * (d.pad || 0);
   let w = d.hx ? Math.max(12, d.hx * qx + L.w / 2) : L.w;
   let hh = d.hy ? Math.max(12, d.hy * qy + L.h / 2) : L.h;
   const keep = (l.type === "bubble" || l.type === "image") !== shift;
@@ -131,7 +180,13 @@ export function init_editor_pointer() {
     if (S.tool === "move") {
       const cur = selL(), hh = hitHandle(cur, p);
       if (hh) {
-        S.drag = { layer: cur, l0: deep(cur), p0: p, kids: clipKids(cur), ...(hh.tail ? { tail: true } : hh.rot ? { rot: true } : { hx: hh.hx, hy: hh.hy }) }; return;
+        if (hh.vert != null && e.altKey) { removeVertex(cur, hh.vert); return; }
+      if (hh.vert != null || hh.mid != null) {
+        const V = panelBase(cur), i = hh.mid != null ? hh.mid + 1 : hh.vert;
+        if (hh.mid != null) { const a = V[hh.mid], b = V[(hh.mid + 1) % V.length]; V.splice(i, 0, { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }); setPanelPoly(cur, V, true); }
+        S.drag = { layer: cur, l0: deep(cur), p0: p, kids: clipKids(cur), vert: i, v0: V.map(v => ({ ...v })), added: hh.mid != null }; return;
+      }
+      S.drag = { layer: cur, l0: deep(cur), p0: p, kids: clipKids(cur), pad: boxPad(cur, 1 / S.view.s), ...(hh.tail ? { tail: true } : hh.rot ? { rot: true } : { hx: hh.hx, hy: hh.hy }) }; return;
       }
       const hit = (e.altKey || e.metaKey) ? hitLayer(p, l => l.type === "panel") : hitLayer(p);
       S.sel = hit ? hit.id : null;
@@ -140,6 +195,7 @@ export function init_editor_pointer() {
       else if (hit && hit.type === "panel") status(`Panel locked: ${keyLabel("mod+l")} unlocks it to move or resize (renders, Pose… and splitting still work)`);
       requestView(); return;
     }
+    if (S.tool === "panel" && S.panelShape === "polygon") { polyClick(p); return; }
     if (DRAG_TOOLS[S.tool]) { S.drag = { creating: { x: p.x, y: p.y, w: 0, h: 0 }, p0: p, tool: S.tool }; requestDraw(); }
   });
 
@@ -147,6 +203,7 @@ export function init_editor_pointer() {
     const r = cv.getBoundingClientRect(), sp = { x: e.clientX - r.left, y: e.clientY - r.top }, p = toPage(sp.x, sp.y);
     $("#st-pos").textContent = `${Math.round(p.x)}, ${Math.round(p.y)}`;
     const d = S.drag;
+    if (S.polyDraft) { S.polyHover = snapPoint(p, e); requestView(); }
     if (!d && getTool(S.tool)) { cv.style.cursor = spaceDown ? "grab" : getTool(S.tool).cursor || "crosshair"; routeToTool("move", e); return; }
     if (!d) { hoverCursor(p); return; }
     if (d.pan) { S.view.tx = d.tx + sp.x - d.sx; S.view.ty = d.ty + sp.y - d.sy; interacting(); requestView(); return; }
@@ -172,7 +229,10 @@ export function init_editor_pointer() {
       S.guides = S.showGuides && !e.ctrlKey ? snapBox(box, l.id, 7 / S.view.s) : [];
       l.x = box.x; l.y = box.y;
       followPanel(d, l);
-    } else if (d.tail) {
+    } else if (d.vert != null) {
+    moveVertex(l, d, p, e);
+    followPanel(d, l);
+  } else if (d.tail) {
       const q = local(l, p); l.tail = { x: +q.x.toFixed(1), y: +q.y.toFixed(1) };
     } else if (d.rot) {
       const { cx, cy } = corners(d.l0);
@@ -201,11 +261,12 @@ export function init_editor_pointer() {
       return;
     }
     const l = d.layer;
-    if (JSON.stringify(l) !== JSON.stringify(d.l0) || d.duped) commit(d.duped ? "Duplicated" : d.move ? "Moved" : d.tail ? "Tail moved" : d.rot ? "Rotated" : "Resized");
+    if (JSON.stringify(l) !== JSON.stringify(d.l0) || d.duped || d.added) commit(d.duped ? "Duplicated" : d.move ? "Moved" : d.vert != null ? (d.added ? "Corner added" : "Corner moved") : d.tail ? "Tail moved" : d.rot ? "Rotated" : "Resized");
     requestDraw();
   });
 
   cv.addEventListener("dblclick", e => {
+    if (S.polyDraft) { finishPoly(); return; }
     const r = cv.getBoundingClientRect(), p = toPage(e.clientX - r.left, e.clientY - r.top);
     const l = hitLayer(p);
     if (!l) return;
