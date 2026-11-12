@@ -23,6 +23,16 @@ else
   echo "have  ComfyUI_IPAdapter_plus"
 fi
 
+# DWPose (pose from an image, Pose tab › From image): comfyui_controlnet_aux, models fetched on first use
+if [ ! -d custom_nodes/comfyui_controlnet_aux ]; then
+  echo "clone comfyui_controlnet_aux"
+  git clone --depth 1 https://github.com/Fannovel16/comfyui_controlnet_aux custom_nodes/comfyui_controlnet_aux
+  PYBIN="$C/.venv/bin/python"; [ -x "$PYBIN" ] || PYBIN="$(command -v python3)"
+  "$PYBIN" -m pip install -q -r custom_nodes/comfyui_controlnet_aux/requirements.txt || echo "warn: controlnet_aux requirements"
+else
+  echo "have  comfyui_controlnet_aux"
+fi
+
 # --- models -----------------------------------------------------------------
 # Checkpoint: WAI Illustrious SDXL v16 (single-file mirror on Hugging Face; v17 is Civitai-login only)
 fetch https://huggingface.co/Ine007/waiIllustriousSDXL_v160/resolve/main/waiIllustriousSDXL_v160.safetensors \

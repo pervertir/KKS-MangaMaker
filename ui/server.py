@@ -235,6 +235,39 @@ def save_custom_pose(pose: dict) -> dict:
     return entry
 
 
+def save_upload(fname: str, data: bytes) -> Path:
+    fname = Path(fname).name
+    stem, ext = Path(fname).stem, Path(fname).suffix.lower()
+    if ext not in (".png", ".jpg", ".jpeg", ".webp"):
+        raise ValueError("png, jpg or webp only")
+    UPLOADS.mkdir(parents=True, exist_ok=True)
+    stem = re.sub(r"[^A-Za-z0-9_\-]", "_", stem)[:60] or "upload"
+    dest, k = UPLOADS / f"{stem}{ext}", 1
+    while dest.exists():
+        dest, k = UPLOADS / f"{stem}_{k}{ext}", k + 1
+    dest.write_bytes(data)
+    return dest
+
+
+def detect_poses(fname: str, data: bytes) -> dict:
+    """Pose tab › From image: DWPose on the pod finds every person; each becomes a saved pose (My poses)
+    plus its place in the picture. The image is kept in uploads so the editor can show it as a guide."""
+    from mp.comfy_client import Comfy
+    from mp.kkpose import pose_kind
+    from mp.posedetect import poses_from_image
+    img = save_upload(fname, data)
+    comfy = Comfy(CFG.comfy_url, lambda m: sys.stderr.write(m + "\n"))
+    if not comfy.alive():
+        raise RuntimeError("the pod's ComfyUI is not answering: start the pod (pod pill › Start pod) and try again")
+    res = poses_from_image(comfy, img)
+    out = []
+    for i, p in enumerate(res["people"], 1):
+        e = save_custom_pose({"name": f"{img.stem} #{i}", "body": p["body"], "hands": p["hands"]})
+        e["kind"] = e.get("kind") or pose_kind(e, "")
+        out.append({"pose": e, "place": p["place"]})
+    return {"guide": mp_ref(img), "w": res["w"], "h": res["h"], "people": out}
+
+
 def save_pose_shot(body: dict) -> dict:
     """Pose studio -> shot folder: pose.png (OpenPose skeletons on black), pose_scene.json (the editable
     scene) and the sidecar's characters/prompt, so `run` renders it with no Studio capture at all."""
@@ -749,6 +782,8 @@ class Handler(BaseHTTPRequestHandler):
                     t = re.sub(r"(?m)^style:.*$", line, t) if re.search(r"(?m)^style:", t) else t + line + "\n"
                     side.write_text(t, encoding="utf-8")
                 return self.json({"ok": True})
+            if u.path == "/api/pose/detect":
+                return self.json(detect_poses(q.get("name", "image.png"), self.body()))
             if u.path == "/api/pose/shot":
                 return self.json(save_pose_shot(self.jbody()))
             if u.path == "/api/poses/custom":

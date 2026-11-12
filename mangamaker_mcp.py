@@ -149,6 +149,22 @@ def t_pose_shot(a: dict) -> dict:
     return {"shot": a["shot"], "pose": f"shots/{a['shot']}/pose.png", "figures": len(scene["chars"]), "characters": [c["name"] for c in order]}
 
 
+def t_pose_from_image(a: dict) -> dict:
+    """Detect the people in a local image on the pod; save each as a pose (My poses); optionally pose a shot with them."""
+    srv = _srv()
+    p = Path(a["image"]).expanduser()
+    res = srv.detect_poses(p.name, p.read_bytes())
+    out = {"guide": res["guide"], "people": [{"pose": x["pose"]["id"], "type": x["pose"].get("kind"), "place": x["place"]} for x in res["people"]]}
+    if a.get("shot") and res["people"]:
+        ia = res["w"] / res["h"]
+        canvas = min((("832x1216", 832 / 1216), ("896x1152", 896 / 1152), ("1024x1024", 1.0), ("1152x896", 1152 / 896), ("1216x832", 1216 / 832)),
+                     key=lambda c: abs(c[1] - ia))[0]
+        w, h = (int(v) for v in canvas.split("x"))
+        figs = [{"pose": x["pose"]["id"], "x": 0.5 + (x["place"]["x"] - 0.5) * ia / (w / h), "y": x["place"]["y"], "scale": x["place"]["scale"]} for x in res["people"]]
+        out["shot"] = t_pose_shot({"shot": a["shot"], "figures": figs, "canvas": canvas})
+    return out
+
+
 def _mangapipe(args: list[str], timeout: int) -> tuple[int, str]:
     r = subprocess.run([str(ROOT / "mangapipe"), *args], cwd=ROOT, capture_output=True, text=True, timeout=timeout)
     return r.returncode, (r.stdout + r.stderr)
@@ -226,6 +242,9 @@ TOOLS = {
                       "pose": S, "name": S, "gender": {"type": "string", "enum": ["girl", "boy"]}, "x": {"type": "number"}, "y": {"type": "number"},
                       "scale": {"type": "number"}, "yaw": {"type": "number"}, "flip": {"type": "boolean"}}, "required": ["pose"]}},
                    "framing": {"type": "string", "enum": ["full", "knees", "waist", "chest", "close"]}, "canvas": S, "prompt": S}, ["shot", "figures"]),
+    "pose_from_image": (t_pose_from_image, "Find every person in a local image (pose detection on the pod) and save each as a pose; with `shot`, pose that "
+                        "shot with them as they stand in the picture. Only use images the user has the rights to.",
+                        {"image": S, "shot": S}, ["image"]),
     "render_shot": (t_render_shot, "Render a posed shot on the RunPod pod (uses the GPU: costs money while the pod runs).",
                     {"shot": S, "seed": {"type": "integer"}}, ["shot"]),
     "place_renders": (t_place_renders, "Put each panel's latest render into a project's panels.", {"project": S}, ["project"]),
