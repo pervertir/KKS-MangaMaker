@@ -1,6 +1,7 @@
 /* The shapes the editor works with. project.json on disk is a Doc. */
 
-export type LayerType = "panel" | "bubble" | "caption" | "text" | "image" | "vbubble" | "tone" | "speed";
+/** Built-in types; modules add more through core/registry.ts defineLayerType(). */
+export type LayerType = "panel" | "bubble" | "caption" | "text" | "image" | "vbubble" | "tone" | "speed" | (string & {});
 
 /** The render placed in a panel. */
 export interface PanelImage {
@@ -26,8 +27,10 @@ export interface Layer {
   /** panel: the shot it shows and the render placed in it */
   shot?: string;
   image?: PanelImage | null;
-  /** tone, speed lines: the panel that crops the layer */
+  /** the panel that crops the layer; any layer type may set it */
   clip?: string | null;
+  /** bumped whenever the layer changes, so caches can tell */
+  rev?: number;
   /** lettering */
   text?: string;
   sfx?: boolean;
@@ -35,14 +38,34 @@ export interface Layer {
   [setting: string]: any;
 }
 
-export interface Page { id: string; bg: string; layers: Layer[] }
+/** Physical page size. Lengths in mm; dpi turns them into canvas px (see core/format.ts). */
+export interface BookFormat {
+  trimW: number;
+  trimH: number;
+  bleed: number;
+  safe: number;
+  dpi: number;
+  binding: "rtl" | "ltr";
+  colour: "mono" | "grey" | "colour";
+}
+
+export interface Page {
+  id: string;
+  bg: string;
+  layers: Layer[];
+  /** 2 for a two-page spread drawn on one double-width canvas */
+  span?: 1 | 2;
+  kind?: "page" | "cover" | "blank";
+}
 
 export interface Doc {
   version: number;
   title: string;
   reading: "rtl" | "ltr";
+  /** canvas px of a single page, bleed included; equals canvasSize(format) */
   width: number;
   height: number;
+  format: BookFormat;
   maxFont: number;
   pages: Page[];
 }

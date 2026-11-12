@@ -5,6 +5,9 @@ import { imgFor } from "./images.js";
 import { placeInline } from "./inline-edit.js";
 import { drawFlipped, drawPage } from "./manga-tools.js";
 import { H, S, W, layers, page, selL } from "./state.ts";
+import { boxes } from "../core/format.ts";
+import { getTool } from "../core/tools.ts";
+import { drawAnts, hasSelection, selectionPage } from "../core/selection.ts";
 
 /* ================================================================ canvas view */
 export const cv = $("#canvas"), ctx = cv.getContext("2d"), stage = $("#stage");
@@ -122,16 +125,20 @@ export function draw() {
   }
   const s = selL();
   if (s && !ad) drawSelection(s, px);
+  getTool(S.tool)?.overlay?.(ctx, px);
+  if (hasSelection() && selectionPage() === page().id) { drawAnts(ctx, px); antsTick(); }
 }
-/* print guides on the 1800x2700 page (B5-ish tankobon at 350 dpi): trim 3 mm in from the edge (the bleed),
-   safe area 5 mm inside the trim. Art that must survive the cut stays inside the green line. */
+let antsT = 0;
+function antsTick() { if (!antsT) antsT = setTimeout(() => { antsT = 0; requestView(); }, 120); }
+/* print guides from the book format: the trim line sits one bleed in from the canvas edge, the safe area
+   inside the trim. Art that must survive the cut stays inside the green line. */
 export function drawPrintGuides(px) {
-  const mm = W() / 182 * 1, bleed = 3 * mm, safe = bleed + 5 * mm;
+  const { trim, safe } = boxes(S.doc.format, W(), H());
   ctx.save(); ctx.lineWidth = 1.5 * px; ctx.setLineDash([10 * px, 6 * px]);
-  ctx.strokeStyle = "#ff4f7b"; ctx.strokeRect(bleed, bleed, W() - 2 * bleed, H() - 2 * bleed);
-  ctx.strokeStyle = "#3ccf8e"; ctx.strokeRect(safe, safe, W() - 2 * safe, H() - 2 * safe);
+  ctx.strokeStyle = "#ff4f7b"; ctx.strokeRect(trim.x, trim.y, trim.w, trim.h);
+  ctx.strokeStyle = "#3ccf8e"; ctx.strokeRect(safe.x, safe.y, safe.w, safe.h);
   ctx.setLineDash([]); ctx.fillStyle = "#ff4f7b"; ctx.font = `${12 * px}px sans-serif`;
-  ctx.fillText("trim", bleed + 4 * px, bleed - 4 * px); ctx.fillStyle = "#3ccf8e"; ctx.fillText("safe area", safe + 4 * px, safe + 14 * px);
+  ctx.fillText("trim", trim.x + 4 * px, trim.y - 4 * px); ctx.fillStyle = "#3ccf8e"; ctx.fillText("safe area", safe.x + 4 * px, safe.y + 14 * px);
   ctx.restore();
 }
 export function drawPanelOrder(px) {

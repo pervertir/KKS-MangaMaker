@@ -1,5 +1,7 @@
 import { S, layers } from "./state.ts";
 import { HANDLES, corners } from "./view.js";
+import { layerType, outlineOf } from "../core/registry.ts";
+import { contains } from "../core/geometry/region.ts";
 
 /* ================================================================ hit testing */
 export function local(l, p) {
@@ -11,6 +13,8 @@ export function hitLayer(p, pred = () => true) {
   for (let i = ls.length - 1; i >= 0; i--) {
     const l = ls[i];
     if (!l.visible || !pred(l)) continue;
+    const def = layerType(l.type);
+    if (def) { if (def.hit ? def.hit(l, p.x, p.y) : contains(outlineOf(l), p.x, p.y)) return l; continue; }
     const q = local(l, p);
     if (Math.abs(q.x) <= l.w / 2 && Math.abs(q.y) <= l.h / 2) return l;
   }

@@ -20,6 +20,7 @@ import { S, layers, selL } from "./state.ts";
 import { fitView, requestDraw, requestView, stage, zoomAt } from "./view.js";
 import { poseKey, setMode } from "../pose/open.js";
 import { scriptWizard } from "../wizard/prompt.js";
+import { getTool, onToolsChanged, registeredTools } from "../core/tools.ts";
 
 /* ================================================================ tools & keys */
 export const ICON = {
@@ -56,11 +57,20 @@ export function buildToolbar() {
     if (!t) { tb.append(h("div", { class: "tsep" })); continue; }
     const b = h("button", { title: t[1].replace(/ \([A-Z]\)$/, "") + " (" + t[2].toUpperCase() + ")", "data-tool": t[0], onclick: () => setTool(t[0]) }); b.innerHTML = ICON[t[0]]; tb.append(b);
   }
+  let group;
+  for (const t of registeredTools()) {
+    if (t.group !== group || group === undefined) { tb.append(h("div", { class: "tsep" })); group = t.group; }
+    const b = h("button", { title: t.label + (t.key ? ` (${t.key.toUpperCase()})` : ""), "data-tool": t.id, onclick: () => setTool(t.id) }); b.innerHTML = t.icon; tb.append(b);
+  }
+  tb.querySelectorAll("button[data-tool]").forEach(b => b.classList.toggle("on", b.dataset.tool === S.tool));
   tb.append(h("div", { class: "spacer" }), h("button", { title: "Keyboard shortcuts (?)", onclick: shortcutSheet, style: "font-size:13px;font-weight:700" }, "?"));
 }
 export function setTool(t) {
   if (t === "bubble" && !S.cat?.bubbles?.length) { t = "vbubble"; status("No bubble templates installed: using drawn bubbles"); }
+  if (S.tool !== t) { const old = getTool(S.tool); old?.cancel?.(); old?.deactivate?.(); }
+  const changed = S.tool !== t;
   S.tool = t; if (S.adjust) exitAdjust();
+  if (changed) getTool(t)?.activate?.();
   $$("#toolbar button").forEach(b => b.classList.toggle("on", b.dataset.tool === t));
   stage.classList.toggle("hand", t === "hand");
   renderOptions();
@@ -231,8 +241,14 @@ export function init_editor_tools() {
       const l = selL(); if (!l) return; e.preventDefault();
       l.opacity = combo === "0" ? 1 : +combo / 10; commit(`Opacity ${Math.round(l.opacity * 100)}%`); requestDraw(); return;
     }
-    if (row) { e.preventDefault(); closeMenu(); row[3](); }
+    const active = getTool(S.tool);
+    if (e.key === "Escape" && active?.cancel) { active.cancel(); requestDraw(); }
+    if (active?.keydown?.(e)) { e.preventDefault(); requestDraw(); return; }
+    if (row) { e.preventDefault(); closeMenu(); row[3](); return; }
+    const own = registeredTools().find(t => t.key && t.key === combo);
+    if (own) { e.preventDefault(); setTool(own.id); }
   });
+  onToolsChanged(() => { if (document.getElementById("toolbar")?.childElementCount) buildToolbar(); });
 
   document.addEventListener("keyup", e => { if (e.key === " ") { set_spaceDown(false); stage.classList.toggle("hand", S.tool === "hand"); } });
 }

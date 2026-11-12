@@ -13,6 +13,8 @@ import { refreshProps } from "./props.js";
 import { snapBox } from "./snapping.js";
 import { H, S, W, layers, selL } from "./state.ts";
 import { keyLabel } from "./tools.js";
+import { getTool } from "../core/tools.ts";
+import { samplesOf, stabilizer } from "../core/input.ts";
 import { DC, corners, cv, interacting, requestDraw, requestView, stage, toPage, zoomAt, set_DC } from "./view.js";
 
 /* ================================================================ pointer */
@@ -76,6 +78,30 @@ export function hoverCursor(p) {
 
 export function set_spaceDown(v) { spaceDown = v; }
 
+/* registered tools (core/tools.ts) get every pen sample, stabilized when they ask for it */
+let toolStroke = null;
+function toolEvent(e, samples) {
+  return { samples, raw: samples[samples.length - 1], shift: e.shiftKey, alt: e.altKey, mod: e.metaKey || e.ctrlKey, button: e.button, native: e };
+}
+function routeToTool(kind, e) {
+  const t = getTool(S.tool);
+  if (!t) return false;
+  const raw = samplesOf(e, toPage, cv.getBoundingClientRect());
+  if (kind === "down") {
+    const spec = typeof t.stabilizer === "function" ? t.stabilizer() : t.stabilizer;
+    toolStroke = { tool: t, stab: spec ? stabilizer(spec) : null };
+  }
+  const st = toolStroke?.tool === t ? toolStroke : null;
+  if (kind === "move" && !st) { t.hover?.(toolEvent(e, raw)); requestView(); return true; }
+  let samples = st?.stab ? raw.flatMap(s => st.stab.push(s)) : raw;
+  if (kind === "up" && st?.stab) samples = [...samples, ...st.stab.flush()];
+  const ev = { ...toolEvent(e, samples.length ? samples : raw.slice(-1)), raw: raw[raw.length - 1] };
+  if (kind === "down") t.down?.(ev); else if (kind === "move") { if (samples.length) t.move?.(ev); } else { t.up?.(ev); toolStroke = null; }
+  requestView();
+  return true;
+}
+export function cancelToolStroke() { if (toolStroke) { toolStroke.tool.cancel?.(); toolStroke = null; requestDraw(); } }
+
 /* runs once at start-up, in the original order (see main.js) */
 export function init_editor_pointer() {
   cv.addEventListener("contextmenu", e => {
@@ -94,6 +120,7 @@ export function init_editor_pointer() {
     if (e.button === 1 || spaceDown || S.tool === "hand") {
       S.drag = { pan: true, sx: sp.x, sy: sp.y, tx: S.view.tx, ty: S.view.ty }; stage.classList.add("grabbing"); return;
     }
+    if (routeToTool("down", e)) return;
     if (S.adjust) {
       const pl = layers().find(l => l.id === S.adjust);
       if (pl && pl.image && hitLayer(p, l => l.id === pl.id)) {
@@ -120,6 +147,7 @@ export function init_editor_pointer() {
     const r = cv.getBoundingClientRect(), sp = { x: e.clientX - r.left, y: e.clientY - r.top }, p = toPage(sp.x, sp.y);
     $("#st-pos").textContent = `${Math.round(p.x)}, ${Math.round(p.y)}`;
     const d = S.drag;
+    if (!d && getTool(S.tool)) { cv.style.cursor = spaceDown ? "grab" : getTool(S.tool).cursor || "crosshair"; routeToTool("move", e); return; }
     if (!d) { hoverCursor(p); return; }
     if (d.pan) { S.view.tx = d.tx + sp.x - d.sx; S.view.ty = d.ty + sp.y - d.sy; interacting(); requestView(); return; }
     if (d.adjust) {
@@ -159,7 +187,9 @@ export function init_editor_pointer() {
     requestDraw(); refreshProps(true);
   });
 
+  cv.addEventListener("pointercancel", () => cancelToolStroke());
   cv.addEventListener("pointerup", e => {
+    if (!S.drag && toolStroke) { routeToTool("up", e); return; }
     const d = S.drag; S.drag = null; S.guides = []; set_DC(null); stage.classList.remove("grabbing");
     if (d && !d.pan) requestDraw();
     if (!d) return;
