@@ -214,9 +214,27 @@ def pod_cmd(cfg: Config, action: str, cmdline: str = "") -> int:
         log("[pod] ComfyUI ready; " + ("all nodes and models present" if not missing else "MISSING: " + ", ".join(missing)))
         return 0 if not missing else 1
     if action == "start":
-        pod.start(); log(f"starting {pod.id}; poll with: mangapipe pod status"); return 0
+        try:
+            pod.start(); log(f"starting {pod.id}; poll with: mangapipe pod status"); return 0
+        except RemoteError as e:
+            # A stopped pod is tied to its host; when that host's GPUs are taken it can never start again.
+            # Without a network volume nothing on it is worth keeping (renders are already on this Mac), so
+            # replace it: a new pod on any free GPU, then `pod setup` reinstalls nodes and models.
+            if "not enough free GPUs" not in str(e) or cfg["runpod"].get("network_volume_id"):
+                raise
+            log(f"[pod] {pod.id} cannot start (its host has no free GPU); replacing it with a new pod")
+            pod.remove()
+            r = pod.create()
+            log(f"[pod] created {r.get('id', '')}; next: mangapipe pod setup (reinstalls nodes and models)")
+            return 0
     if action == "stop":
-        pod.stop(); log(f"stopped {pod.id} (volume keeps the models; you still pay for the volume, not the GPU)"); return 0
+        pod.stop()
+        if cfg["runpod"].get("network_volume_id"):
+            log(f"stopped {pod.id} (the volume keeps the models; you still pay for the volume, not the GPU)")
+        else:
+            log(f"stopped {pod.id}. With no network volume, a stopped pod often cannot restart once its host is busy; "
+                "`pod start` then replaces it and `pod setup` reinstalls the models")
+        return 0
     if action == "remove":
         pod.remove(); log(f"removed pod {pod.id}; the network volume {cfg['runpod'].get('network_volume_id')} still exists"); return 0
     if action == "ssh":
