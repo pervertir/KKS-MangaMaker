@@ -635,7 +635,7 @@ class Handler(BaseHTTPRequestHandler):
             if hashlib.sha256(data).hexdigest() != m.group(2):
                 return self.json({"error": "content does not match its hash"}, 400)
             f.parent.mkdir(parents=True, exist_ok=True)
-            tmp = f.with_suffix(".part")
+            tmp = f.with_name(f"{f.name}.{threading.get_ident()}.part")
             tmp.write_bytes(data)
             tmp.replace(f)
             return self.json({"ok": True})
