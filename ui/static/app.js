@@ -244,6 +244,7 @@ function withBox(ctx, l, fn) {
 }
 function drawLayer(ctx, l, opt = {}) {
   if (!l.visible) return;
+  const TH = themeOf(opt); l = themed(l, TH);
   ctx.save();
   ctx.globalAlpha = l.opacity ?? 1;
   ctx.globalCompositeOperation = l.blend || "source-over";
@@ -307,7 +308,7 @@ function drawLayer(ctx, l, opt = {}) {
     case "text": {
       withBox(ctx, l, () => {
         const big = l.fontSize > 0 ? l.fontSize : Math.max(maxFont, 400);
-        drawText(ctx, l, 0, 0, l.w, l.h, big, l.color === "auto" ? ((opt.dark ?? (pageTheme(page()) === "dark")) ? "#ffffff" : "#111") : l.color);
+        drawText(ctx, l, 0, 0, l.w, l.h, big, l.color === "auto" ? THEMES[TH].ink : l.color);
       });
       break;
     }
@@ -508,9 +509,9 @@ function lum(hex) {             // 0 (black) .. 1 (white)
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 function drawPage(ctx, pg, opt = {}) {
-  ctx.fillStyle = pg.bg || "#fff";
+  ctx.fillStyle = paperOf(pg, opt);
   ctx.fillRect(0, 0, W(), H());
-  for (const l of pg.layers) drawLayer(ctx, l, { ...opt, dark: pageTheme(pg) === "dark", ghost: opt.ghostId === l.id });
+  for (const l of pg.layers) drawLayer(ctx, l, { ...opt, ghost: opt.ghostId === l.id });
 }
 
 /* ================================================================ canvas view */
@@ -556,7 +557,7 @@ function paintCache(target, cs, from, to) {           // layers [from, to) of th
   target.width = Math.ceil(W() * cs); target.height = Math.ceil(H() * cs);
   const g = target.getContext("2d");
   g.setTransform(cs, 0, 0, cs, 0, 0);
-  if (from === 0) { g.fillStyle = page().bg || "#fff"; g.fillRect(0, 0, W(), H()); }
+  if (from === 0) { g.fillStyle = paperOf(page()); g.fillRect(0, 0, W(), H()); }
   const ls = layers();
   for (let i = from; i < to; i++) drawLayer(g, ls[i], { rs: cs });
   return target;
@@ -577,7 +578,7 @@ function draw() {
   ctx.fillStyle = "#151517"; ctx.fillRect(0, 0, cv.width, cv.height);
   ctx.setTransform(d * v.s, 0, 0, d * v.s, d * v.tx, d * v.ty);
   ctx.shadowColor = "#0009"; ctx.shadowBlur = 12 * d;
-  ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, W(), H());
+  ctx.fillStyle = paperOf(page()); ctx.fillRect(0, 0, W(), H());
   ctx.shadowBlur = 0;
   // page content clipped to the paper (bubbles may hang over panel borders, not off the page)
   ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W(), H()); ctx.clip();
@@ -911,33 +912,42 @@ function hoverCursor(p) {
 }
 
 /* ================================================================ creation */
-/* Page themes. A dark page is black paper with white panel borders and white lettering outside
-   bubbles (night scenes, flashbacks). The theme lives on the page and only swaps colours that are still
-   the other theme's defaults, so anything coloured by hand is left alone. Export draws what is shown. */
+/* Page theme: ONE switch for the whole editor (Edit > Preferences), applied when drawing, never stored
+   in the layers. Dark = black paper, white panel frames, dark empty panels and captions, white lettering
+   outside bubbles. Only colours still at a theme default are swapped, so anything coloured by hand stays.
+   Export has its own setting (white pages unless changed), so the working view never leaks into a print. */
 const THEMES = {
-  light: { bg: "#ffffff", border: "#000000", fill: "#ffffff", ink: "#111111", capFill: "#ffffff", empty: ["#e7e7ea", "#c9c9cf", "#8a8a93"] },
-  dark: { bg: "#0b0b0d", border: "#ffffff", fill: "#141417", ink: "#ffffff", capFill: "#141417", empty: ["#1c1c20", "#34343a", "#8a8a93"] },
+  light: { bg: "#ffffff", border: "#000000", fill: "#ffffff", ink: "#111111", capFill: "#ffffff", tone: "#000000", empty: ["#e7e7ea", "#c9c9cf", "#8a8a93"] },
+  dark: { bg: "#0b0b0d", border: "#ffffff", fill: "#141417", ink: "#ffffff", capFill: "#141417", tone: "#ffffff", empty: ["#1c1c20", "#34343a", "#8a8a93"] },
 };
-const pageTheme = pg => (pg && pg.theme === "dark") ? "dark" : "light";
+const PREF = {
+  get(k, d) { try { const v = localStorage.getItem("mm.pref." + k); return v == null ? d : v; } catch { return d; } },
+  set(k, v) { try { v == null ? localStorage.removeItem("mm.pref." + k) : localStorage.setItem("mm.pref." + k, v); } catch { } },
+};
+const displayTheme = () => PREF.get("darkPages", "0") === "1" ? "dark" : "light";
+/* export: "light" (default) | "dark" | "screen" (whatever the editor shows) */
+const exportTheme = () => { const v = PREF.get("exportTheme", "light"); return v === "screen" ? displayTheme() : v === "dark" ? "dark" : "light"; };
+const exportPaper = () => PREF.get("exportPaper", "") || null;       // a custom paper colour for exports, or none
+const themeOf = opt => opt.theme || (opt.export ? exportTheme() : displayTheme());
 const sameCol = (a, b) => String(a || "").toLowerCase() === String(b || "").toLowerCase();
-function themeLayer(l, to, from) {
-  const T = THEMES[to], F = THEMES[from];
-  const swap = (key, tv, fv, also = []) => { if (l[key] == null || sameCol(l[key], fv) || also.some(v => sameCol(l[key], v))) l[key] = tv; };
-  if (l.type === "panel") { swap("borderColor", T.border, F.border); swap("fill", T.fill, F.fill); }
-  else if (l.type === "caption") { swap("fill", T.capFill, F.capFill, ["#fff0aa"].filter(() => to === "dark")); swap("stroke", T.border, F.border); if (l.color && l.color !== "auto") swap("color", T.ink, F.ink, ["#000000", "#111"]); }
-  else if (l.type === "text" && !l.sfx) swap("color", T.ink, F.ink, to === "dark" ? ["#000000", "#111"] : []);
-  else if (l.type === "tone" || l.type === "speed") swap("color", to === "dark" ? "#ffffff" : "#000000", to === "dark" ? "#000000" : "#ffffff");
+function tcol(c, key, T, also = []) {            // a colour at either theme's default becomes this theme's
+  return (c == null || sameCol(c, THEMES.light[key]) || sameCol(c, THEMES.dark[key]) || also.some(v => sameCol(c, v))) ? T[key] : c;
+}
+function themed(l, name) {                       // the layer as this theme draws it (a copy; the layer is untouched)
+  const T = THEMES[name];
+  if (l.type === "panel") return { ...l, fill: tcol(l.fill, "fill", T), borderColor: tcol(l.borderColor, "border", T) };
+  if (l.type === "caption") return { ...l, fill: tcol(l.fill, "capFill", T) };
+  if (l.type === "text" && !l.sfx && l.color !== "auto") return { ...l, color: tcol(l.color, "ink", T, ["#000000", "#111"]) };
+  if (l.type === "tone" || l.type === "speed") return { ...l, color: tcol(l.color, "tone", T) };
   return l;
 }
-function setPageTheme(pg, to) {
-  const from = pageTheme(pg); if (from === to) return;
-  if (sameCol(pg.bg, THEMES[from].bg) || !pg.bg) pg.bg = THEMES[to].bg;
-  pg.theme = to;
-  for (const l of pg.layers) themeLayer(l, to, from);
+function paperOf(pg, opt = {}) {
+  if (opt.export && exportPaper()) return exportPaper();
+  return tcol(pg.bg, "bg", THEMES[themeOf(opt)]);
 }
+function applyThemeChrome() { document.body.classList.toggle("pages-dark", displayTheme() === "dark"); }
 function addLayer(l, at) {
   normalize({ pages: [{ layers: [l] }] });
-  if (pageTheme(page()) === "dark") themeLayer(l, "dark", "light");
   l.id = uid();
   const ls = layers();
   if (at != null) ls.splice(at, 0, l); else ls.push(l);
@@ -1018,7 +1028,7 @@ function showInline(l) {
 /* Where a layer's text goes and how it is drawn, in page units relative to the layer's centre: the same
    boxes drawLayer uses, so the in-place editor can sit exactly on the text. */
 function textSpec(l) {
-  const maxFont = S.doc.maxFont || 56, dark = pageTheme(page()) === "dark";
+  const maxFont = S.doc.maxFont || 56, dark = displayTheme() === "dark"; l = themed(l, displayTheme());
   if (l.type === "bubble") {
     const m = bubbleMeta(l.bubble); let [bx0, by0, bx1, by1] = m.box;
     if (l.flip) [bx0, bx1] = [1 - bx1, 1 - bx0];
@@ -1183,6 +1193,7 @@ const SHORTCUTS = [
   ["Edit", "escape", "Deselect / leave mode", () => act.escape()],
   ["Edit", "enter", "Type in bubble / reposition render", () => act.enter()],
   ["Edit", "arrows", "Nudge 1 px (Shift: 10 px)", null],
+  ["Edit", "mod+,", "Preferences", () => preferencesDialog(), true],
   // layer
   ["Layer", "]", "Bring forward", () => act.layerUp()],
   ["Layer", "[", "Send backward", () => act.layerDown()],
@@ -1349,6 +1360,30 @@ const act = {
 $("#laydel").onclick = () => deleteSelected();
 document.addEventListener("click", e => { const b = e.target.closest("[data-act]"); if (b && act[b.dataset.act]) act[b.dataset.act](); });
 
+/* ================================================================ preferences */
+function preferencesDialog() {
+  const box = modal("Preferences", "small"), body = $(".mbody", box);
+  const redraw = () => { applyThemeChrome(); THUMBS.clear(); requestDraw(); refreshPanels(); renderPages(); if (S.libTab === "layouts") renderLibrary(); };
+  const dark = h("input", { type: "checkbox", checked: displayTheme() === "dark", onchange: e => { PREF.set("darkPages", e.target.checked ? "1" : "0"); redraw(); } });
+  const exp = h("select", { onchange: e => { PREF.set("exportTheme", e.target.value); } },
+    h("option", { value: "light" }, "White pages (default)"), h("option", { value: "dark" }, "Dark pages"), h("option", { value: "screen" }, "Same as on screen"));
+  exp.value = PREF.get("exportTheme", "light");
+  const custom = h("input", { type: "checkbox", checked: !!exportPaper(), onchange: e => { PREF.set("exportPaper", e.target.checked ? col.value : null); col.disabled = !e.target.checked; } });
+  const col = h("input", { type: "color", value: exportPaper() || "#ffffff", disabled: !exportPaper(), oninput: e => { if (custom.checked) PREF.set("exportPaper", e.target.value); } });
+  const tips = h("input", { type: "checkbox", checked: typeof TIPS_ON === "function" ? TIPS_ON() : true, onchange: () => typeof toggleTips === "function" && toggleTips() });
+  body.append(h("div", { class: "form" },
+    h("div", { class: "section", style: "margin-top:0;border-top:none;padding-top:0" }, "Pages"),
+    h("label", { class: "chkrow" }, dark, h("span", {}, h("b", {}, "Dark pages"), h("br"), h("span", { class: "hint", style: "margin:0" },
+      "Black paper, white panel frames and white lettering everywhere in the editor: every page, thumbnails, the book overview and layouts. Bubbles stay white, and colours you chose yourself are kept."))),
+    h("div", { class: "section" }, "Export (PNG, PDF, download)"),
+    rowOf("Pages", exp),
+    h("div", { class: "row" }, h("label", {}, "Paper"), h("label", { class: "hint", style: "display:flex;gap:6px;align-items:center;margin:0" }, custom, "custom colour"), col),
+    h("p", { class: "hint" }, "Exports use white pages unless you change this, whatever the editor shows. A custom paper colour replaces the page background in exports only."),
+    h("div", { class: "section" }, "Help"),
+    h("label", { class: "chkrow" }, tips, h("span", {}, "Show a tip for the active tool"))));
+  box.append(h("div", { class: "mfoot" }, h("div", { class: "spacer" }), h("button", { class: "primary", onclick: closeModal }, "Done")));
+}
+
 /* ================================================================ layouts */
 function gridRects(rows, heights, margin = 60, gutter = 30, line = 4) {
   const avH = H() - 2 * margin - gutter * (rows.length - 1), out = [];
@@ -1367,7 +1402,6 @@ function applyLayout(rects, label) {
   const keep = ls.filter(l => l.type !== "panel");
   const sx = W() / 1800, sy = H() / 2700;
   const fresh = rects.map(([x, y, w, hh]) => normalize({ pages: [{ layers: [{ type: "panel", x: x * sx, y: y * sy, w: w * sx, h: hh * sy, shot: "", image: null }] }] }).pages[0].layers[0]);
-  if (pageTheme(page()) === "dark") fresh.forEach(p => themeLayer(p, "dark", "light"));
   const order = panelOrder(fresh);
   order.forEach((p, i) => { const o = old[i]; if (o) { p.image = o.image; p.shot = o.shot; p.border = o.border; p.borderColor = o.borderColor; } });
   page().layers = [...fresh, ...keep];
@@ -1572,11 +1606,6 @@ function pageProps(P) {
   P.append(
     rowOf("Title", h("input", { value: S.doc.title, style: "flex:1", onchange: e => { S.doc.title = e.target.value; commit(); } })),
     select("Reading", [["rtl", "Right to left (manga)"], ["ltr", "Left to right"]], () => S.doc.reading, v => S.doc.reading = v),
-    select("Theme", [["light", "Light: white paper, black frames"], ["dark", "Dark: black paper, white frames"]], () => pageTheme(pg), v => { setPageTheme(pg, v); refreshPanels(); renderPageThumbs(); }),
-    h("div", { class: "btnrow" }, h("button", { title: "Give every page this page's theme", onclick: () => {
-      const t = pageTheme(pg); S.doc.theme = t; for (const q of S.doc.pages) setPageTheme(q, t);
-      commit(`All pages ${t}`); requestDraw(); refreshPanels(); renderPages(); toast(`All ${S.doc.pages.length} pages are now ${t}`, "ok");
-    } }, "Use on all pages")),
     colorRow("Paper", pg, "bg"),
     h("div", { class: "row" }, h("label", {}, "Max text"), h("input", { type: "number", value: S.doc.maxFont, onchange: e => { S.doc.maxFont = +e.target.value; commit(); requestDraw(); } }),
       h("span", { class: "hint" }, "px, keeps fitted text even")),
@@ -2011,7 +2040,7 @@ $("#ovspreads").onchange = renderOverview;
 $("#ovadd").onclick = () => { S.page = S.doc.pages.length - 1; pageOps.add(); };
 function gotoPage(i) { if (S.adjust) exitAdjust(); S.page = clamp(i, 0, S.doc.pages.length - 1); S.sel = null; snapshot(); refreshPanels(); renderPages(); requestDraw(); }
 const pageOps = {
-  add() { const t = pageTheme(page()); S.doc.pages.splice(S.page + 1, 0, { id: uid(), bg: THEMES[t].bg, theme: t, layers: [] }); S.page++; commit("Page added"); renderPages(); requestDraw(); if ($("#overview").hidden) layoutDialog(); },
+  add() { S.doc.pages.splice(S.page + 1, 0, { id: uid(), bg: "#ffffff", layers: [] }); S.page++; commit("Page added"); renderPages(); requestDraw(); if ($("#overview").hidden) layoutDialog(); },
   dup() { const c = deep(page()); c.id = uid(); c.layers.forEach(l => l.id = uid()); S.doc.pages.splice(S.page + 1, 0, c); S.page++; commit("Page duplicated"); renderPages(); requestDraw(); },
   del(fromKey) { if (S.doc.pages.length < 2) return toast("A project needs one page"); if (!fromKey && !confirm(`Delete page ${S.page + 1}?`)) return;
     const n = S.page + 1; S.doc.pages.splice(S.page, 1); S.page = Math.max(0, S.page - 1); S.sel = null; commit("Page deleted");
@@ -2031,7 +2060,7 @@ const MENUS = {
   Edit: () => [["Undo", undo, sc("Undo"), !S.undo.length], ["Redo", redo, sc("Redo"), !S.redo.length], null,
     ["Cut", act.cut, sc("Cut layer"), !selL()], ["Copy", act.copy, sc("Copy layer"), !selL()], ["Paste", act.paste, sc("Paste layer (works across pages)"), !S.clip],
     ["Duplicate", act.duplicate, sc("Duplicate layer"), !selL()], ["Delete", act.remove, "Del", !selL()], null,
-    ["Deselect", act.escape, "Esc"], ["Keyboard shortcuts", shortcutSheet, "?"]],
+    ["Deselect", act.escape, "Esc"], ["Keyboard shortcuts", shortcutSheet, "?"], null, ["Preferences…", preferencesDialog, sc("Preferences")]],
   Layer: () => [["Bring forward", act.layerUp, sc("Bring forward")], ["Send backward", act.layerDown, sc("Send backward")],
     ["Bring to front", act.toFront, sc("Bring to front")], ["Send to back", act.toBack, sc("Send to back")], null,
     ["Select layer above", () => act.selectStep(1), sc("Select layer above")], ["Select layer below", () => act.selectStep(-1), sc("Select layer below")], null,
@@ -2317,7 +2346,7 @@ new ResizeObserver(resize).observe(stage);
 
 /* ================================================================ boot */
 (async function boot() {
-  buildMenus(); buildToolbar();
+  buildMenus(); buildToolbar(); applyThemeChrome();
   status("Loading templates (first start indexes 104 bubbles and 100 layouts)…");
   S.cat = await api("/api/catalog");
   S.shots = await api("/api/shots").catch(() => []);

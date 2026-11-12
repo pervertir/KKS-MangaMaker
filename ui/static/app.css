@@ -431,3 +431,8 @@ kbd { font: 11px ui-monospace, Menlo, monospace; background: #1b1b1e; border: 1p
 .jobchip .jx { padding: 0 8px; color: var(--muted); border-left: 1px solid var(--line); min-width: 26px; }
 .jobchip .jx:hover { color: #fff; background: var(--danger); }
 #inlineedit::placeholder { color: #8a8a93; -webkit-text-stroke: 0; opacity: .9; }
+
+/* ----- dark pages (Preferences): layout previews follow the page theme */
+body.pages-dark .tile.page { background: #0b0b0d; }
+body.pages-dark .tile.page img, body.pages-dark .tile.page canvas, body.pages-dark .wizpage canvas { filter: invert(1) hue-rotate(180deg); }
+body.pages-dark .ghostpage { background: #0b0b0d; }
