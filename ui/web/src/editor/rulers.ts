@@ -7,6 +7,7 @@ import { renderOptions } from "./options.js";
 import { S, layers, selL } from "./state.ts";
 import { requestDraw } from "./view.js";
 import { defineLayerType } from "../core/registry.ts";
+import { addSnapSource } from "../core/snap.ts";
 import { registerTool, type ToolEvent } from "../core/tools.ts";
 import type { Layer } from "../types.ts";
 
@@ -311,5 +312,18 @@ registerTool({
       h("button", { class: "ghost danger", title: "Delete this ruler (Del)", onclick: () => deleteRuler(r) }, "Delete"));
     bar.append(h("button", { class: "ghost", title: "Show or hide every ruler. Rulers never print or export.",
       onclick: () => { S.showRulers = S.showRulers === false; renderOptions(); requestDraw(); } }, S.showRulers === false ? "Show rulers" : "Hide rulers"));
+  },
+});
+
+/* the snapping service asks rulers first: a point drawn from q.from lands on the nearest-angle guide */
+addSnapSource({
+  id: "rulers", priority: 10,
+  enabled: () => S.showRulers !== false && rulers().some(r => r.visible && r.snap),
+  snap(pt, q) {
+    if (!q.from) return null;
+    const hit = rulerSnap({ x: pt[0], y: pt[1] }, { start: { x: q.from[0], y: q.from[1] } });
+    if (!hit) return null;
+    const p: [number, number] = [hit.x, hit.y], g = hit.guide;
+    return { pt: p, source: "rulers", guide: "d" in g ? { line: [[g.o.x, g.o.y], [g.o.x + g.d.x * 100, g.o.y + g.d.y * 100]] } : { point: p } };
   },
 });
