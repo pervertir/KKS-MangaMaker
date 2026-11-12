@@ -1,7 +1,7 @@
 import { clamp } from "./core.js";
 import { THEMES, themeOf, themed, paperOf } from "./creation.js";
 import { imgFor } from "./images.js";
-import { drawFlipped, drawVBubble, lum, speedCanvas, toneCanvas } from "./manga-tools.js";
+import { drawFlipped, drawVBubble, lum } from "./manga-tools.js";
 import { S, bubbleMeta, page } from "./state.ts";
 import { drawSfxText, drawText } from "./text.js";
 import { layerType, outlineOf } from "../core/registry.ts";
@@ -118,12 +118,6 @@ export function drawLayer(ctx, l, opt = {}) {
     }
     case "vbubble": {
       withBox(ctx, l, () => drawVBubble(ctx, l, maxFont));
-      break;
-    }
-    case "tone":
-    case "speed": {
-      const art = l.type === "tone" ? toneCanvas(l) : speedCanvas(l);
-      withBox(ctx, l, () => ctx.drawImage(art, -l.w / 2, -l.h / 2, l.w, l.h));
       break;
     }
     case "image": {

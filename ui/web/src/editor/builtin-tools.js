@@ -4,6 +4,7 @@ import { createAt } from "./creation.js";
 import { showLib } from "./dock-tabs.js";
 import { commit } from "./history.js";
 import { hitLayer, local } from "./hit.js";
+import { fxDrag, fxHit } from "./effects/handles.ts";
 import { dblOutline, dragHandle, hitExtra, onOutline, pressHandle } from "../lettering/handles.ts";
 import { showInline } from "./inline-edit.js";
 import { refreshPanels, status } from "./misc.js";
@@ -37,11 +38,14 @@ registerTool({
   id: "move", label: "Move / select", key: "v", icon: ICON.move, group: "nav", order: 0, cursor: "default",
   hover(e) {
     const p = pt(e), l = selL(), h = boxHit(l, p);
+    if (fxHit(l, p)) { cv.style.cursor = "pointer"; return; }
     if (l && !l.locked && hitExtra(l, local(l, p), 10 / S.view.s)) { cv.style.cursor = "move"; return; }
     cv.style.cursor = h ? (h.kind === "tail" || h.kind === "vert" || h.kind === "mid" ? "move" : cursorFor(h, l.rotate || 0)) : hitLayer(p) ? "move" : "default";
   },
   down(e) {
-    const p = pt(e), cur = selL(), h = boxHit(cur, p);
+    const p = pt(e), cur = selL(), fh = fxHit(cur, p);
+    if (fh) { S.drag = { layer: cur, l0: deep(cur), p0: p, fx: fh }; return; }             // a gradient's or speed lines' own handles
+    const h = boxHit(cur, p);
     const x = cur && !cur.locked ? hitExtra(cur, local(cur, p), 10 / S.view.s) : null;      // a balloon's own points and tails
     if (x && pressHandle(cur, x, e.alt)) { commit("Point removed"); refreshPanels(); requestDraw(); return; }
     if (x) { S.drag = { layer: cur, l0: deep(cur), p0: p, q0: local(cur, p), extra: x }; refreshPanels(); requestDraw(); return; }
@@ -63,6 +67,7 @@ registerTool({
   move(e) {
     const d = S.drag; if (!d?.layer) return;
     const p = pt(e), l = d.layer, ev = e.native;
+    if (d.fx) { fxDrag(l, d.fx, p, d.l0, ev.shiftKey); requestDraw(); refreshProps(true); return; }
     if (d.dup && !d.duped) { d.duped = true; const c = deep(d.l0); c.id = uid(); layers().splice(layers().indexOf(l), 0, c); }
     if (d.move) {
       const box = { x: d.l0.x + p.x - d.p0.x, y: d.l0.y + p.y - d.p0.y, w: l.w, h: l.h };
@@ -85,6 +90,7 @@ registerTool({
     const d = S.drag; finish();
     if (!d?.layer) return;
     const l = d.layer, k = d.handle?.kind;
+    if (d.fx) { if (JSON.stringify(l) !== JSON.stringify(d.l0)) commit(l.type === "tone" ? "Gradient edited" : "Lines edited"); return; }
     if (JSON.stringify(l) !== JSON.stringify(d.l0) || d.duped || d.added) commit(d.duped ? "Duplicated" : d.move ? "Moved" : d.vert != null ? (d.added ? "Corner added" : "Corner moved") : d.extra ? (d.extra.startsWith("tip") ? "Tail moved" : "Shape edited") : k === "tail" ? "Tail moved" : k === "rotate" ? "Rotated" : "Resized");
   },
   cancel() {

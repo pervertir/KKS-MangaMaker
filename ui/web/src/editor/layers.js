@@ -21,8 +21,8 @@ export function layerName(l) {
   if (l.name) return l.name;
   if (l.type === "panel") return "Panel" + (l.shot ? ` · ${l.shot}` : "");
   if (l.type === "image") return l.ref.split("/").pop();
-  if (l.type === "tone") return `Screentone · ${l.pattern}${l.fade !== "none" ? " " + l.fade : ""}`;
-  if (l.type === "speed") return l.mode === "focus" ? "Focus lines" : "Speed lines";
+  if (l.type === "tone") return `Screentone · ${l.shape === "flat" ? "" : l.lpi + " L "}${l.grad ? "gradient" : l.pct + "%"}`;
+  if (l.type === "speed") return { focus: "Focus lines", parallel: "Speed lines", beta: "Beta flash", uni: "Uni flash" }[l.mode] || "Speed lines";
   if (layerType(l.type) && l.type !== "balloon") return layerType(l.type).label;
   const t = plainText(l.text || "").replace(/\s+/g, " ").trim();
   return (l.sfx ? "SFX" : l.type === "bubble" || l.type === "vbubble" || l.type === "balloon" ? "Bubble" : l.type === "caption" ? "Caption" : "Text") + (t ? ` · ${t}` : "");

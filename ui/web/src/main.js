@@ -62,6 +62,7 @@ import * as m50 from "./helpers/manga.js";
 import * as m51 from "./helpers/tips.js";
 import * as m52 from "./helpers/guide.js";
 import * as m53 from "./helpers/wiring.js";
+import "./editor/effects/index.ts";
 import "./editor/builtin-tools.js";
 import "./select/tools.ts";
 import "./lettering/index.ts";
