@@ -19,8 +19,10 @@ export interface Tool {
   key?: string;
   /** inline SVG for the toolbar */
   icon: string;
-  /** toolbar group; tools of one group sit together after the built-in tools */
+  /** toolbar group; a separator goes between groups */
   group?: string;
+  /** toolbar position; built-in tools use 0..99, the default is 100 */
+  order?: number;
   cursor?: string;
   stabilizer?: StabilizerSpec | (() => StabilizerSpec);
   activate?(): void;
@@ -30,6 +32,8 @@ export interface Tool {
   up?(e: ToolEvent): void;
   /** pointer moves with no button down */
   hover?(e: ToolEvent): void;
+  /** double-click on the canvas, in page px */
+  dblclick?(p: { x: number; y: number }, e: MouseEvent): void;
   /** Escape or a lost pointer; drop whatever is in progress */
   cancel?(): void;
   /** return true when the key was used */
@@ -48,6 +52,6 @@ export function registerTool(t: Tool): Tool {
   return t;
 }
 export const getTool = (id: string): Tool | undefined => tools.get(id);
-export const registeredTools = (): Tool[] => [...tools.values()];
+export const registeredTools = (): Tool[] => [...tools.values()].sort((a, b) => (a.order ?? 100) - (b.order ?? 100));
 /** Called whenever a tool is added, so the toolbar and shortcut table can rebuild. */
 export function onToolsChanged(f: () => void): () => void { listeners.add(f); return () => listeners.delete(f); }

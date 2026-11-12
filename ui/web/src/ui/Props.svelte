@@ -18,7 +18,8 @@
   import { S, bubbleMeta, layers, page, selL } from "../editor/state.ts";
   import { FONTS, LAZY_FONTS, loadFontCss } from "../editor/text.js";
   import { TONE_PRESETS, keyLabel, sc } from "../editor/tools.js";
-  import { panelOrder, requestDraw, isPolyPanel } from "../editor/view.js";
+  import { panelOrder, requestDraw } from "../editor/view.js";
+  import { isPolyPanel } from "../editor/polygon-panels.js";
   import { FRAME_EDGES, FRAME_SHAPES, frameShapeKey } from "../editor/frames.js";
   import { cutOut, frameIcon, refreshProps, startBreakout } from "../editor/props.js";
   import { poseForPanel } from "../pose/open.js";

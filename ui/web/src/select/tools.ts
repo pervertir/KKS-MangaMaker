@@ -43,7 +43,7 @@ export const deselect = () => { clearSelection(); requestView(); };
 const ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-dasharray="3 2.4"><rect x="4" y="5" width="16" height="13" rx="1"/></svg>';
 
 registerTool({
-  id: "select", label: "Selection", key: "q", icon: ICON, group: "select", cursor: "crosshair",
+  id: "select", label: "Selection", key: "q", icon: ICON, group: "select", order: 40, cursor: "crosshair",
   deactivate() { drag = null; lasso = null; poly = null; },
   down(e: ToolEvent) {
     const p: Pt = [e.raw.x, e.raw.y], mode = modeFromKeys(e.shift, e.alt);
