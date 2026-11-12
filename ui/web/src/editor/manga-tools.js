@@ -1,6 +1,7 @@
 import { clamp } from "./core.js";
 import { paperOf } from "./creation.js";
 import { drawLayer } from "./drawing.js";
+import { drawNombres, pageWidth } from "./book.ts";
 import { H, S, W } from "./state.ts";
 import { drawText } from "./text.js";
 
@@ -177,6 +178,8 @@ export function lum(hex) {             // 0 (black) .. 1 (white)
 }
 export function drawPage(ctx, pg, opt = {}) {
   ctx.fillStyle = paperOf(pg, opt);
-  ctx.fillRect(0, 0, W(), H());
+  ctx.fillRect(0, 0, pageWidth(S.doc, pg), H());
   for (const l of pg.layers) drawLayer(ctx, l, { ...opt, ghost: opt.ghostId === l.id });
+  const i = S.doc.pages.indexOf(pg);
+  if (i >= 0) drawNombres(ctx, S.doc, i);
 }

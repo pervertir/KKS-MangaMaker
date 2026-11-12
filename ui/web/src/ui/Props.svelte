@@ -11,7 +11,9 @@
   import { commit } from "../editor/history.js";
   import { thumb } from "../editor/images.js";
   import { renderShot } from "../editor/jobs.js";
+  import { slotLabel } from "../editor/book.ts";
   import { layoutDialog } from "../editor/layouts.js";
+  import { pageOps, renderPages } from "../editor/pages.js";
   import { VSHAPES } from "../editor/manga-tools.js";
   import { refreshPanels } from "../editor/misc.js";
   import { shotDialog } from "../editor/shots.js";
@@ -35,7 +37,7 @@
   };
   $effect(() => {
     const l = sel(), t = document.getElementById("propstitle");
-    if (t) t.textContent = l ? TITLES[l.type]?.(l) ?? "Layer" : `Page ${S.page + 1}`;
+    if (t) t.textContent = l ? TITLES[l.type]?.(l) ?? "Layer" : S.doc ? `Page ${slotLabel(S.doc, S.page)}` : "Page";
   });
 
   /* A read that is repeated whenever the document changes (snippets receive the same object each time). */
@@ -167,11 +169,14 @@
 
 {#snippet pageProps(d: Obj)}
   <div class="row"><label>Title</label><input style="flex:1" use:field={() => R(d).title} onchange={e => { R(d).title = val(e); commit(); }} /></div>
-  {@render select("Reading", [["rtl", "Right to left (manga)"], ["ltr", "Left to right"]], R(d).reading, v => put(d, "reading", v))}
+  {@render select("Reading", [["rtl", "Right to left (manga)"], ["ltr", "Left to right"]], R(d).reading, v => { R(d).format.binding = v; put(d, "reading", v); renderPages(); })}
   {@render color("Paper", (ui.rev, page()), "bg")}
   <div class="row"><label>Max text</label><input type="number" use:field={() => R(d).maxFont} onchange={e => put(d, "maxFont", +val(e))} />
     <span class="hint">px, keeps fitted text even</span></div>
-  <div class="btnrow"><button onclick={layoutDialog}>Choose layout…</button></div>
+  <div class="row"><label>Book</label><span class="hint">{(ui.rev, R(d).format.trimW)} × {R(d).format.trimH} mm, {R(d).format.bleed} mm bleed · page {(ui.rev, slotLabel(S.doc!, S.page))}</span></div>
+  <div class="btnrow"><button onclick={layoutDialog}>Choose layout…</button>
+    <button onclick={pageOps.spread}>{(ui.rev, page().span === 2) ? "Single page" : "Two-page spread"}</button>
+    <button onclick={pageOps.format}>Book format…</button></div>
   <p class="hint">Pick a layout, drag renders from the Library onto panels, then letter the page with bubbles, text and sound effects.</p>
 {/snippet}
 

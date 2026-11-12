@@ -627,7 +627,7 @@ class Handler(BaseHTTPRequestHandler):
                 d = PROJECTS / name
                 d.mkdir(parents=True, exist_ok=True)
                 im = Image.open(io.BytesIO(self.body())).convert("RGB")
-                dest = d / f"page_{n:02d}.png"
+                dest = d / f"{'spread' if q.get('spread') else 'page'}_{n:02d}.png"
                 im.save(dest)
                 return self.json({"ok": True, "path": str(dest)})
             if u.path == "/api/export/pdf":
@@ -639,7 +639,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self.json({"error": f"missing {', '.join(missing)}"}, 400)
                 ims = [Image.open(f).convert("RGB") for f in files]
                 dest = d / f"{name}.pdf"
-                ims[0].save(dest, save_all=True, append_images=ims[1:], resolution=300)
+                ims[0].save(dest, save_all=True, append_images=ims[1:], resolution=float(q.get("dpi", 300)))
                 return self.json({"ok": True, "path": str(dest)})
             if u.path == "/api/import":
                 name = q.get("script", "")
@@ -711,7 +711,7 @@ class Handler(BaseHTTPRequestHandler):
                 d = PROJECTS / name
                 d.mkdir(parents=True, exist_ok=True)
                 im = Image.open(io.BytesIO(self.body())).convert("RGB")
-                dest = d / f"page_{n:02d}.png"
+                dest = d / f"{'spread' if q.get('spread') else 'page'}_{n:02d}.png"
                 im.save(dest)
                 return self.json({"ok": True, "path": str(dest)})
             if u.path == "/api/export/pdf":
@@ -723,7 +723,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self.json({"error": f"missing {', '.join(missing)}"}, 400)
                 ims = [Image.open(f).convert("RGB") for f in files]
                 dest = d / f"{name}.pdf"
-                ims[0].save(dest, save_all=True, append_images=ims[1:], resolution=300)
+                ims[0].save(dest, save_all=True, append_images=ims[1:], resolution=float(q.get("dpi", 300)))
                 return self.json({"ok": True, "path": str(dest)})
             if u.path == "/api/import":
                 name = q.get("script", "")

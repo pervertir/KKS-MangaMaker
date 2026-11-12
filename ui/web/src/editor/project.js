@@ -6,7 +6,8 @@ import { drawPage } from "./manga-tools.js";
 import { refreshPanels, status, toast } from "./misc.js";
 import { closeModal, modal } from "./modal.js";
 import { renderPages } from "./pages.js";
-import { H, S, W, newDoc, normalize } from "./state.ts";
+import { bleedPx, halves, pageWidth, slotCount, slotOf } from "./book.ts";
+import { H, S, newDoc, normalize } from "./state.ts";
 import { fitView } from "./view.js";
 
 /* ================================================================ save / open / export */
@@ -50,31 +51,44 @@ export async function importDialog() {
   } }, sc)));
 }
 export async function renderFull(i) {
-  const c = document.createElement("canvas"); c.width = W(); c.height = H();
+  const c = document.createElement("canvas"); c.width = Math.round(pageWidth(S.doc, S.doc.pages[i])); c.height = H();
   const g = c.getContext("2d");
   await document.fonts.ready;
   for (let k = 0; k < 3; k++) { drawPage(g, S.doc.pages[i], { export: true, rs: 1 }); await waitImages(); }
   drawPage(g, S.doc.pages[i], { export: true, rs: 1 });
   return c;
 }
+/* a region of a rendered page, cut to the trim unless the format keeps the bleed */
+function cut(src, r) {
+  const b = S.doc.format.exportBleed ? 0 : bleedPx(S.doc);
+  const x0 = r.x + b, x1 = r.x + r.w - b, y0 = r.y + b, y1 = r.y + r.h - b;
+  const c = document.createElement("canvas"); c.width = Math.round(x1 - x0); c.height = Math.round(y1 - y0);
+  c.getContext("2d").drawImage(src, x0, y0, x1 - x0, y1 - y0, 0, 0, c.width, c.height);
+  return c;
+}
+const pngOf = c => new Promise(r => c.toBlob(r, "image/png"));
 export async function exportPages(which) {
   if (!S.name) { await save(); if (!S.name) return; }
   const idx = which === "all" ? S.doc.pages.map((_, i) => i) : [S.page];
+  const q = `name=${encodeURIComponent(S.name)}`;
   status("Exporting…");
   try {
+    let files = 0;
     for (const i of idx) {
-      const c = await renderFull(i);
-      const blob = await new Promise(r => c.toBlob(r, "image/png"));
-      await post(`/api/export/page?name=${encodeURIComponent(S.name)}&n=${i + 1}`, blob, true);
+      const c = await renderFull(i), pg = S.doc.pages[i];
+      for (const hf of halves(S.doc, i)) {
+        await post(`/api/export/page?${q}&n=${hf.slot}`, await pngOf(cut(c, hf.rect)), true); files++;
+      }
+      if (pg.span === 2) await post(`/api/export/page?${q}&n=${slotOf(S.doc, i)}&spread=1`, await pngOf(cut(c, { x: 0, y: 0, w: c.width, h: c.height })), true);
     }
-    let msg = `Exported ${idx.length} page${idx.length > 1 ? "s" : ""} to pages/${S.name}/`;
-    if (which === "all") { await post(`/api/export/pdf?name=${encodeURIComponent(S.name)}&count=${S.doc.pages.length}`); msg += ` + ${S.name}.pdf`; }
+    let msg = `Exported ${files} page${files > 1 ? "s" : ""} to pages/${S.name}/`;
+    if (which === "all") { await post(`/api/export/pdf?${q}&count=${slotCount(S.doc)}&dpi=${S.doc.format.dpi}`); msg += ` + ${S.name}.pdf`; }
     toast(msg, "ok"); status(msg);
   } catch (e) { toast(e.message, "err"); }
 }
 export async function downloadPage() {
-  const c = await renderFull(S.page);
-  const a = h("a", { href: c.toDataURL("image/png"), download: `${S.name || "page"}_${String(S.page + 1).padStart(2, "0")}.png` }); a.click();
+  const c = await renderFull(S.page), out = cut(c, { x: 0, y: 0, w: c.width, h: c.height });
+  const a = h("a", { href: out.toDataURL("image/png"), download: `${S.name || "page"}_${String(slotOf(S.doc, S.page)).padStart(2, "0")}.png` }); a.click();
 }
 
 /* runs once at start-up, in the original order (see main.js) */

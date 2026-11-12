@@ -148,6 +148,10 @@ body.pages-off #pagenav { display: none; }
 .spread { display: flex; gap: 2px; padding: var(--s2); border-radius: var(--r2); }
 .spread .pthumb canvas { width: 150px; height: 225px; border-radius: 1px; }
 .spread .ghostpage { width: 154px; }
+.pthumb.wide canvas { height: auto; }
+.spread .pthumb.wide canvas { width: 304px; height: auto; }
+.pthumb.misplaced canvas { border-color: #f5b84b; }
+.pthumb.misplaced > div::after { content: " ⚠"; color: #f5b84b; }
 
 /* ----- dock: Properties on top, one tabbed stack (Layers | Panels | Library) under it */
 #dock { position: relative; flex: none; width: clamp(280px, var(--dock-w), max(280px, 40vw)); background: var(--panel); border-left: 1px solid var(--line);
