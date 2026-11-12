@@ -6,7 +6,7 @@ Nothing is invented. A joint the detector did not see (low score, outside the pi
 picture's edge, hanging off an unseen limb) is MISSING: it is not drawn, and its bones are not drawn.
 In the pose it still has a position (the rest pose hung from the nearest seen joint, so it lands
 somewhere sane if the user adds it back) and carries a fourth value 0: body[i] = [x, y, z, 0]. A hand
-that was not seen has every point marked the same way. ui/static/pose.js and mp/poserender.py read that
+that was not seen has every point marked the same way. ui/web/src/pose and mp/poserender.py read that
 mark; a pose without marks behaves exactly as before.
 
 Detectors, best first, chosen from what the pod's ComfyUI actually has (/object_info):

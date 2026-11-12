@@ -1,0 +1,17 @@
+# Build context for docker/Dockerfile.editor: code only. Renders, pages and caches are mounted at run time.
+.git
+**/__pycache__
+**/*.pyc
+**/.DS_Store
+**/node_modules
+ui/web/dist
+cache/
+pages/
+shots/*
+!shots/_example/
+shots/_example/out/
+assets/
+cast.json
+config.local.yaml
+.env
+poses/custom.json

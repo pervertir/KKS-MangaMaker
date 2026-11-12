@@ -1,5 +1,5 @@
 """The Script Wizard without the browser: plain-text scene -> editor project (pages, panels, lettering)
-and the shot list for it. Same rules as ui/static/wizard.js, so a script gives the same pages whether
+and the shot list for it. Same rules as ui/web/src/wizard/script.js, so a script gives the same pages whether
 it is pasted into the editor or sent through the MCP server.
 
 Format (one thing per line; see docs/SCRIPT_WIZARD.md):

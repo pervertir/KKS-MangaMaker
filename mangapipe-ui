@@ -1,6 +1,23 @@
 #!/bin/zsh
-# Starts the MangaMaker page editor on http://127.0.0.1:8765 (same interpreter as mangapipe).
+# Starts the MangaMaker editor on http://127.0.0.1:8765 (same interpreter as mangapipe).
+# The editor's source is ui/web (Vite + Svelte); it is built into ui/web/dist when that is missing or older
+# than the source. For work on the UI itself use `npm run dev` in ui/web (hot reload on :5173) next to this.
 HERE="${0:A:h}"
+WEB="$HERE/ui/web"
 PY="${MANGAPIPE_PYTHON:-/Users/deepratnaawale/miniconda3/envs/comfyui/bin/python}"
 if [ ! -x "$PY" ]; then PY="python3"; fi
+
+stale() {
+  [ ! -f "$WEB/dist/index.html" ] && return 0
+  [ -n "$(find "$WEB/src" "$WEB/index.html" "$WEB/package.json" "$WEB/vite.config.js" -newer "$WEB/dist/index.html" -print -quit 2>/dev/null)" ]
+}
+if [ -z "$MANGAMAKER_NO_BUILD" ] && stale; then
+  if command -v npm >/dev/null 2>&1; then
+    echo "[ui] building the editor (ui/web -> ui/web/dist)" >&2
+    ( cd "$WEB" && { [ -d node_modules ] || npm install --no-audit --no-fund >&2; } && npm run --silent build >&2 ) \
+      || echo "[ui] build failed; serving the previous build if there is one" >&2
+  elif [ ! -f "$WEB/dist/index.html" ]; then
+    echo "[ui] the editor is not built and npm was not found. Install Node.js 20+, or use the container (docker/Dockerfile.editor)." >&2
+  fi
+fi
 exec "$PY" "$HERE/ui/server.py" "$@"

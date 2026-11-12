@@ -231,6 +231,29 @@ AnimationLoader mods add (`mods/Sideloader Modpack - Animations`; 155 in this in
 Paths to the game (captures, templates, poses) can be overridden per machine in an untracked
 `config.local.yaml` next to `config.yaml`.
 
+## Editor source and container
+
+The editor's front end is `ui/web`: ES modules built with Vite, with Svelte for interface components.
+`./mangapipe-ui` builds it into `ui/web/dist` when the source is newer (needs Node.js 20+) and the Python
+server (`ui/server.py`) serves that build.
+
+| folder | what it holds |
+|---|---|
+| `ui/web/src/editor/` | the page editor, one module per concern: `state`, `history`, `drawing`, `view`, `pointer`, `tools`, `layers`, `panels-tab`, `library`, `pages`, `menus`, `jobs`, `project`, ... |
+| `ui/web/src/pose/` | the Pose tab: `geometry`, `draw`, `ik`, `pointer`, `library`, `side`, `presets` |
+| `ui/web/src/wizard/` | the Script Wizard: `script` (parser and page builder), `editor` (highlighting), `prompt` |
+| `ui/web/src/helpers/` | page checker, starter templates, character sheet, make-it-manga, tips, guide |
+| `ui/web/src/ui/` | Svelte components (`Preferences`, `JobsDrawer`, `Toasts`) and `store.svelte.js`, the state they draw from |
+| `ui/web/src/main.js` | entry point: imports the modules, runs their start-up code in order, mounts the components |
+
+Working on the UI: `cd ui/web && npm install && npm run dev` (hot reload on http://localhost:5173, API
+calls go to the Python server on :8765, so keep `./mangapipe-ui` running). New interface pieces are
+Svelte components that read `ui` from `store.svelte.js` and call the editor modules; `dialog(Component,
+title)` in `src/ui/mount.js` shows one inside the editor's dialog.
+
+The editor also runs in a container (no GPU needed; renders still go to the pod): see
+[docker/EDITOR.md](docker/EDITOR.md) and `docker compose -f docker/compose.editor.yaml up --build`.
+
 ## MCP server (any MCP client) and script skill
 
 `./mangamaker-mcp` is an MCP server (no extra packages) over the same pipeline, for any client that

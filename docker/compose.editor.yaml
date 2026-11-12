@@ -1,0 +1,47 @@
+# The editor in a container:   docker compose -f docker/compose.editor.yaml up --build
+# then open http://127.0.0.1:8765
+name: mangamaker
+services:
+  editor:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.editor
+    image: mangamaker-editor
+    ports:
+      - "127.0.0.1:8765:8765"        # localhost only: the editor has no login
+    environment:
+      CIVITAI_API_KEY: ${CIVITAI_API_KEY:-}
+    volumes:
+      # your work stays on the host
+      - ../shots:/app/shots
+      - ../pages:/app/pages
+      - ../assets:/app/assets
+      - ../cache:/app/cache
+      - ../poses:/app/poses
+      # RunPod login and ssh key made by `runpodctl config` on the host (needed for pod start/stop/render)
+      - ${HOME}/.runpod:/root/.runpod
+      # optional: the game folders, for the Comics template pack and rebuilding pose libraries
+      # - ${KKS_DIR}/UserData:/kks/UserData:ro
+      # - ${KKS_DIR}/abdata:/kks/abdata:ro
+      # - ${KKS_DIR}/mods:/kks/mods:ro
+      # optional: your own path overrides instead of docker/editor.config.yaml
+      # - ../config.local.yaml:/app/config.local.yaml:ro
+    restart: unless-stopped
+
+  # The same image as an MCP server over HTTP for AI clients (off unless asked for):
+  #   docker compose -f docker/compose.editor.yaml --profile mcp up
+  mcp:
+    profiles: ["mcp"]
+    image: mangamaker-editor
+    command: ["./mangamaker-mcp", "--http", "--host", "0.0.0.0", "--port", "8766", "--token", "${MANGAMAKER_MCP_TOKEN:-change-me}"]
+    ports:
+      - "127.0.0.1:8766:8766"
+    environment:
+      CIVITAI_API_KEY: ${CIVITAI_API_KEY:-}
+    volumes:
+      - ../shots:/app/shots
+      - ../pages:/app/pages
+      - ../assets:/app/assets
+      - ../cache:/app/cache
+      - ../poses:/app/poses
+      - ${HOME}/.runpod:/root/.runpod

@@ -1,5 +1,5 @@
 """Draw a Pose-tab scene as the OpenPose image ControlNet gets, without the browser (same projection and
-colours as ui/static/pose.js). Used by the MCP server to pose shots."""
+colours as ui/web/src/pose). Used by the MCP server to pose shots."""
 from __future__ import annotations
 
 import colorsys
