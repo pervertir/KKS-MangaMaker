@@ -105,7 +105,7 @@ function drawRuler(g: CanvasRenderingContext2D, r: RulerLayer, opt: { rs?: numbe
   g.restore();
 }
 defineLayerType<RulerLayer>({
-  type: "ruler", label: "Ruler", printable: false,
+  type: "ruler", label: "Ruler", printable: false, transform: false,
   defaults(l) { l.kind ||= "p2"; l.vps ||= []; l.dirs ||= []; l.snap ??= true; l.locked ??= false; },
   draw: drawRuler,
   hit: () => false,

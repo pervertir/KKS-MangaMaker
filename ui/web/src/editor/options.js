@@ -6,6 +6,8 @@ import { VSHAPES } from "./manga-tools.js";
 import { S, bubbleMeta } from "./state.ts";
 import { TONE_PRESETS } from "./tools.js";
 import { getTool } from "../core/tools.ts";
+import { frameIcon } from "./props.js";
+import { requestView } from "./view.js";
 
 /* ================================================================ options bar */
 /* three zones: the tool's own controls, a hint that is the first thing to give way, and Snap, which never scrolls away */
@@ -18,7 +20,12 @@ export function renderOptions() {
   const seg = (opts, cur, pick) => h("div", { class: "seg" }, ...opts.map(([k, t, tip]) =>
     h("button", { class: cur === k ? "on" : "", title: tip, "aria-pressed": String(cur === k), onclick: () => { pick(k); renderOptions(); } }, t)));
   if (S.tool === "move") say("Drag to move · Alt-drag duplicates · ⌘-click picks the panel under a bubble · Shift locks axis · Ctrl disables snapping");
-  if (S.tool === "panel") { L.append(h("button", { onclick: layoutDialog }, "Layouts…")); say("Drag a frame on the page. Snaps to page edges and 30 px gutters."); }
+  if (S.tool === "panel") {
+    L.append(h("div", { class: "seg shapeseg" }, ...[...FRAME_SHAPES.map(([k, t]) => [k, frameIcon(k), t]), ["polygon", "✎", "Polygon: click each corner, click the first one (or Enter) to close"]].map(([k, ic, tip]) =>
+      h("button", { class: S.panelShape === k ? "on" : "", title: tip, "aria-pressed": String(S.panelShape === k), onclick: () => { S.panelShape = k; S.polyDraft = null; renderOptions(); requestView(); } }, ic))),
+      h("button", { onclick: layoutDialog }, "Layouts…"));
+    say(S.panelShape === "polygon" ? "Click each corner; click the first corner, double-click or press Enter to close. Esc cancels." : "Drag a frame on the page. Snaps to page edges and 30 px gutters.");
+  }
   if (S.tool === "bubble") {
     const m = bubbleMeta(S.bubble);
     L.append(h("img", { src: thumb(m.ref, 80) }), h("span", {}, "#" + m.key), h("button", { onclick: () => showLib("bubbles") }, "Pick bubble…"));

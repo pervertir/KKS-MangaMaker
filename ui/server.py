@@ -433,7 +433,7 @@ def dialogue_layer(d: dict, rect, bmap) -> dict | None:
 # ---------------------------------------------------------------------------- jobs
 JOBS: dict[str, dict] = {}
 MANGAPIPE = ROOT / "mangapipe"
-SHOT_CMDS = {"run", "render", "grab", "compose"}
+SHOT_CMDS = {"run", "render", "grab", "compose", "matte"}
 POD_ACTIONS = {"status", "start", "stop", "url", "restart"}
 
 
@@ -655,7 +655,7 @@ class Handler(BaseHTTPRequestHandler):
             if hashlib.sha256(data).hexdigest() != m.group(2):
                 return self.json({"error": "content does not match its hash"}, 400)
             f.parent.mkdir(parents=True, exist_ok=True)
-            tmp = f.with_suffix(".part")
+            tmp = f.with_name(f"{f.name}.{threading.get_ident()}.part")
             tmp.write_bytes(data)
             tmp.replace(f)
             return self.json({"ok": True})
@@ -681,13 +681,13 @@ class Handler(BaseHTTPRequestHandler):
                     return self.json({"error": "bad name"}, 400)
                 d = PROJECTS / name
                 d.mkdir(parents=True, exist_ok=True)
-                dest = d / f"page_{n:02d}.png"
+                dest = d / f"{'spread' if q.get('spread') else 'page'}_{n:02d}.png"
                 if "bands" in q:
                     k, count = int(q["band"]), int(q["bands"])
                     if not (0 <= k < count <= 64):
                         return self.json({"error": "bad band"}, 400)
-                    (d / f".page_{n:02d}.band{k:02d}.png").write_bytes(self.body())
-                    parts = [d / f".page_{n:02d}.band{j:02d}.png" for j in range(count)]
+                    (d / f".{dest.stem}.band{k:02d}.png").write_bytes(self.body())
+                    parts = [d / f".{dest.stem}.band{j:02d}.png" for j in range(count)]
                     if not all(p.exists() for p in parts):
                         return self.json({"ok": True, "band": k})
                     ims = [Image.open(p).convert("RGB") for p in parts]
@@ -711,7 +711,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self.json({"error": f"missing {', '.join(missing)}"}, 400)
                 ims = [Image.open(f).convert("RGB") for f in files]
                 dest = d / f"{name}.pdf"
-                ims[0].save(dest, save_all=True, append_images=ims[1:], resolution=300)
+                ims[0].save(dest, save_all=True, append_images=ims[1:], resolution=float(q.get("dpi", 300)))
                 return self.json({"ok": True, "path": str(dest)})
             if u.path == "/api/import":
                 name = q.get("script", "")
@@ -782,13 +782,13 @@ class Handler(BaseHTTPRequestHandler):
                     return self.json({"error": "bad name"}, 400)
                 d = PROJECTS / name
                 d.mkdir(parents=True, exist_ok=True)
-                dest = d / f"page_{n:02d}.png"
+                dest = d / f"{'spread' if q.get('spread') else 'page'}_{n:02d}.png"
                 if "bands" in q:
                     k, count = int(q["band"]), int(q["bands"])
                     if not (0 <= k < count <= 64):
                         return self.json({"error": "bad band"}, 400)
-                    (d / f".page_{n:02d}.band{k:02d}.png").write_bytes(self.body())
-                    parts = [d / f".page_{n:02d}.band{j:02d}.png" for j in range(count)]
+                    (d / f".{dest.stem}.band{k:02d}.png").write_bytes(self.body())
+                    parts = [d / f".{dest.stem}.band{j:02d}.png" for j in range(count)]
                     if not all(p.exists() for p in parts):
                         return self.json({"ok": True, "band": k})
                     ims = [Image.open(p).convert("RGB") for p in parts]
@@ -812,7 +812,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self.json({"error": f"missing {', '.join(missing)}"}, 400)
                 ims = [Image.open(f).convert("RGB") for f in files]
                 dest = d / f"{name}.pdf"
-                ims[0].save(dest, save_all=True, append_images=ims[1:], resolution=300)
+                ims[0].save(dest, save_all=True, append_images=ims[1:], resolution=float(q.get("dpi", 300)))
                 return self.json({"ok": True, "path": str(dest)})
             if u.path == "/api/import":
                 name = q.get("script", "")
@@ -917,6 +917,11 @@ class Handler(BaseHTTPRequestHandler):
                         args += ["--seed", str(int(body["seed"]))]
                     if cmd == "run":
                         args.append("--no-compose")  # the editor letters the page itself
+                    if cmd == "matte" and body.get("image"):
+                        img = resolve_ref(str(body["image"]))
+                        if d not in img.parents:
+                            return self.json({"error": "that render is not in this shot"}, 400)
+                        args += ["--image", str(img.relative_to(ROOT))]
                     label = f"{cmd} {d.name}"
                 elif cmd == "pod" and body.get("action") in POD_ACTIONS:
                     args, label = ["pod", body["action"]], f"pod {body['action']}"

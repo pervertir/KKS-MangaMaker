@@ -1,5 +1,5 @@
 import { $ } from "../editor/core.js";
-import { HANDLES } from "../editor/view.js";
+import { SCALE_HANDLES as HANDLES } from "../core/transform.ts";
 import { drawSkeleton } from "./draw.js";
 import { bounds, project } from "./geometry.js";
 import { JOINT_NAMES, P } from "./model.js";
