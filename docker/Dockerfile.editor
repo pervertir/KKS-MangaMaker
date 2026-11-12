@@ -1,0 +1,53 @@
+# syntax=docker/dockerfile:1
+# The MangaMaker editor (page editor, Pose tab, Script Wizard) and the pipeline CLI in one small image.
+# Not the GPU image: that is docker/Dockerfile (ComfyUI on RunPod). This one only serves the editor and
+# sends renders to the pod, so it needs no GPU.
+#
+#   docker build -f docker/Dockerfile.editor -t mangamaker-editor .
+#   docker compose -f docker/compose.editor.yaml up            (see docker/EDITOR.md)
+
+# ---- 1. build the web app (Vite + Svelte -> static files)
+FROM node:22-alpine AS web
+WORKDIR /web
+COPY ui/web/package.json ui/web/package-lock.json* ./
+RUN npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+COPY ui/web/ ./
+RUN npm run build
+
+# ---- 2. the editor: Python server + pipeline CLI + runpodctl
+FROM python:3.12-slim AS editor
+ARG RUNPODCTL_VERSION=latest
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 MANGAPIPE_PYTHON=/usr/local/bin/python MANGAMAKER_NO_BUILD=1
+# zsh: the mangapipe launchers are zsh scripts. openssh-client: `mangapipe pod setup` works over ssh.
+# fonts-comic-neue: the lettering font (the Mac default, Comic Sans, is not redistributable).
+RUN apt-get update && apt-get install -y --no-install-recommends zsh openssh-client ca-certificates curl fonts-comic-neue \
+    && rm -rf /var/lib/apt/lists/*
+RUN pip install --no-cache-dir "pillow>=10" "numpy>=1.26" "pyyaml>=6" "requests>=2.31"
+# runpodctl drives the pod (create / start / stop). Its login is mounted at run time, never baked in.
+RUN set -eux; arch="$(dpkg --print-architecture)"; \
+    if [ "$RUNPODCTL_VERSION" = latest ]; then base="https://github.com/runpod/runpodctl/releases/latest/download"; \
+    else base="https://github.com/runpod/runpodctl/releases/download/${RUNPODCTL_VERSION}"; fi; \
+    (curl -fsSL "$base/runpodctl-linux-${arch}" -o /usr/local/bin/runpodctl && chmod +x /usr/local/bin/runpodctl && runpodctl version) \
+    || { echo "runpodctl not installed: pod commands will be unavailable in this image" >&2; rm -f /usr/local/bin/runpodctl; }
+
+WORKDIR /app
+COPY mangapipe mangapipe-ui mangamaker-mcp mangapipe.py mangamaker_mcp.py config.yaml styles.yaml README.md ./
+COPY mp ./mp
+COPY remote ./remote
+COPY workflows ./workflows
+COPY scripts ./scripts
+COPY docs ./docs
+COPY poses ./poses
+COPY shots/_example ./shots/_example
+COPY ui/server.py ./ui/server.py
+COPY --from=web /web/dist ./ui/web/dist
+# container paths for the game folders (mount them under /kks, or leave them out: the editor runs without)
+COPY docker/editor.config.yaml ./config.local.yaml
+RUN chmod +x mangapipe mangapipe-ui mangamaker-mcp && mkdir -p shots pages assets/uploads cache
+
+# data that should outlive the container
+VOLUME ["/app/shots", "/app/pages", "/app/assets", "/app/cache"]
+EXPOSE 8765
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s CMD curl -fsS http://127.0.0.1:8765/api/projects >/dev/null || exit 1
+# 0.0.0.0 inside the container; publish it on localhost only (the editor has no login): -p 127.0.0.1:8765:8765
+CMD ["./mangapipe-ui", "--host", "0.0.0.0", "--port", "8765"]

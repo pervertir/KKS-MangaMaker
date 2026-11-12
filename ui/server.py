@@ -1,6 +1,6 @@
 """MangaMaker: a local page editor for MangaPipeline (http://127.0.0.1:8765).
 
-Serves the editor in ui/static, the shot renders and the Comics templates, and runs the
+Serves the built editor (ui/web/dist; source in ui/web), the shot renders and the Comics templates, and runs the
 mangapipe commands (render on the pod, grab from Studio, pod start/stop) as background jobs.
 Nothing renders on this Mac: `run`/`render` go to the pod configured in config.yaml.
 
@@ -35,7 +35,8 @@ from mp.config import Config  # noqa: E402
 from mp.page import STRIPS_SUBDIR, detect_panels, find_render, load_script, reading_order, _shot_dir, _shot_dialogue  # noqa: E402
 from mp.sidecar import SIDECAR_NAMES, write_example  # noqa: E402
 
-STATIC = Path(__file__).resolve().parent / "static"
+WEB = Path(__file__).resolve().parent / "web"          # the editor's source (Vite project)
+STATIC = WEB / "dist"                                  # what `npm run build` makes of it; this is what is served
 CFG = Config()
 TPL = CFG.templates_dir
 CACHE = CFG.cache_dir / "ui"
@@ -542,15 +543,20 @@ class Handler(BaseHTTPRequestHandler):
         u = urlparse(self.path)
         q = {k: v[0] for k, v in parse_qs(u.query).items()}
         try:
-            if u.path == "/favicon.ico":
-                return self.send(200, (STATIC / "favicon.svg").read_bytes(), "image/svg+xml", cache=True)
-            if u.path in ("/", "/index.html"):
-                return self.file(STATIC / "index.html", "text/html; charset=utf-8")
-            if u.path.startswith("/static/"):
-                p = (STATIC / unquote(u.path[len("/static/"):])).resolve()
+            if u.path in ("/", "/index.html", "/favicon.ico") or u.path.startswith(("/assets/", "/static/")) or u.path == "/favicon.svg":
+                if not (STATIC / "index.html").exists():
+                    return self.send(503, b"The editor has not been built yet. Run: cd ui/web && npm install && npm run build  (./mangapipe-ui does this for you)",
+                                     "text/plain; charset=utf-8")
+                rel = {"/": "index.html", "/index.html": "index.html", "/favicon.ico": "favicon.svg"}.get(u.path) or unquote(u.path.lstrip("/"))
+                if rel.startswith("static/"):
+                    rel = rel[len("static/"):]
+                p = (STATIC / rel).resolve()
                 if STATIC.resolve() not in p.parents or not p.is_file():
                     return self.json({"error": "not found"}, 404)
-                ctype = {".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml"}.get(p.suffix, "application/octet-stream")
+                ctype = {".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".html": "text/html", ".map": "application/json",
+                         ".woff2": "font/woff2", ".png": "image/png"}.get(p.suffix, "application/octet-stream")
+                if u.path.startswith("/assets/"):      # file names carry a content hash: cache for good
+                    return self.send(200, p.read_bytes(), ctype + "; charset=utf-8", cache=True)
                 return self.file(p, ctype + "; charset=utf-8")
             if u.path == "/font":
                 comp = CFG.compose
@@ -907,10 +913,11 @@ def warm():
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8765)
+    ap.add_argument("--host", default="127.0.0.1", help="address to listen on (0.0.0.0 inside a container; the editor has no login)")
     a = ap.parse_args()
     threading.Thread(target=warm, daemon=True).start()
-    srv = ThreadingHTTPServer(("127.0.0.1", a.port), Handler)
-    print(f"MangaMaker on http://127.0.0.1:{a.port}", flush=True)
+    srv = ThreadingHTTPServer((a.host, a.port), Handler)
+    print(f"MangaMaker on http://{a.host}:{a.port}", flush=True)
     srv.serve_forever()
 
 

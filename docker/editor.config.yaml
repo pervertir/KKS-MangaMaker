@@ -1,0 +1,24 @@
+# Overrides for the editor container (copied to /app/config.local.yaml; mount your own file there to
+# change them). Keys here replace the same keys of config.yaml as a whole.
+
+# The game folders are optional. Mount <KKS>/UserData on /kks/UserData, <KKS>/abdata on /kks/abdata and
+# <KKS>/mods on /kks/mods to get the Comics template pack and to rebuild the pose libraries.
+cap_dir: /kks/UserData/cap
+templates_dir: /kks/UserData/cap/Comics/Templates
+studio_pose_dir: /kks/UserData/studio/pose
+h_anim_dir: /kks/abdata/h/anim
+h_mods_dir: "/kks/mods/Sideloader Modpack - Animations"
+python: /usr/local/bin/python
+
+# what `mangapipe pod setup` installs on a fresh pod
+checkpoint: waiIllustriousSDXL_v160.safetensors
+
+compose:
+  font: /usr/share/fonts/opentype/comic-neue/ComicNeue-Regular.otf
+  font_bold: /usr/share/fonts/opentype/comic-neue/ComicNeue-Bold.otf
+  min_font_px: 14
+  max_font_px: 96
+  line_spacing: 1.15
+  bubble_default: "001"
+  bubble_size: 0.38
+  page_max_font_px: 56
