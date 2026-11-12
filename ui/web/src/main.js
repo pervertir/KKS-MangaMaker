@@ -64,6 +64,7 @@ import * as m52 from "./helpers/guide.js";
 import * as m53 from "./helpers/wiring.js";
 import "./editor/builtin-tools.js";
 import "./select/tools.ts";
+import "./lettering/index.ts";
 import * as m55 from "./editor/rulers.ts";
 import * as m56 from "./pose/scene3d.ts";
 

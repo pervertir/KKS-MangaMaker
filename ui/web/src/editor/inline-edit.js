@@ -5,6 +5,7 @@ import { VTEXT, lum } from "./manga-tools.js";
 import { refreshPanels } from "./misc.js";
 import { S, bubbleMeta } from "./state.ts";
 import { fit, fontStr } from "./text.js";
+import { balloonText } from "../lettering/index.ts";
 import { requestDraw, toScreen } from "./view.js";
 
 /* ================================================================ inline text editing */
@@ -24,6 +25,10 @@ export function textSpec(l) {
     return { dx: -l.w / 2 + (bx0 + bx1) / 2 * l.w, dy: -l.h / 2 + (by0 + by1) / 2 * l.h, w: (bx1 - bx0) * l.w * 0.92, h: (by1 - by0) * l.h * 0.88, maxPx: maxFont,
       color: l.color === "auto" ? (m.dark ? "#ffffff" : "#111111") : l.color, stroke: 0 };
   }
+  if (l.type === "balloon") {
+    const { sh, color } = balloonText(l);
+    return { dx: sh.cx, dy: sh.cy, w: sh.w, h: sh.h, maxPx: maxFont, color, stroke: 0, shape: sh };
+  }
   if (l.type === "vbubble") {
     const [fw, fh] = VTEXT[l.shape] || VTEXT.oval;
     return { dx: 0, dy: 0, w: l.w * fw, h: l.h * fh, maxPx: maxFont, color: l.color === "auto" ? (lum(l.fill) > 0.43 ? "#111111" : "#ffffff") : l.color, stroke: 0 };
@@ -41,7 +46,7 @@ export function placeInline() {
   if (!ieLayer) return;
   const l = ieLayer, v = S.view.s, t = textSpec(l);
   const shown = ie.value || "Type…";
-  const f = fit(shown, l, t.w, t.h, t.maxPx);
+  const f = fit(shown, l, t.w, t.h, t.maxPx, t.shape);
   const c = toScreen(l.x + l.w / 2, l.y + l.h / 2);
   const rot = (l.rotate || 0) * Math.PI / 180, ox = t.dx * Math.cos(rot) - t.dy * Math.sin(rot), oy = t.dx * Math.sin(rot) + t.dy * Math.cos(rot);
   const w = t.w * v, hh = t.h * v, lines = l.vertical ? 1 : f.lines.length;

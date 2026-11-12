@@ -2,7 +2,7 @@ import { $, h } from "./core.js";
 import { showLib } from "./dock-tabs.js";
 import { thumb } from "./images.js";
 import { layoutDialog } from "./layouts.js";
-import { VSHAPES } from "./manga-tools.js";
+import { PRESETS } from "../lettering/geom.ts";
 import { S, bubbleMeta } from "./state.ts";
 import { TONE_PRESETS } from "./tools.js";
 import { getTool } from "../core/tools.ts";
@@ -34,7 +34,7 @@ export function renderOptions() {
   if (S.tool === "text" || S.tool === "sfx" || S.tool === "caption") say("Click to place, or drag a box. Type straight away; Esc when done.");
   if (S.tool === "hand") say("Drag to pan. Ctrl/⌘ + scroll zooms.");
   if (S.tool === "vbubble") {
-    L.append(seg(VSHAPES.map(([k, t]) => [k, k[0].toUpperCase() + k.slice(1), t]), S.vshape, k => { S.vshape = k; }));
+    L.append(seg(PRESETS.map(([k, t]) => [k, k[0].toUpperCase() + k.slice(1), t]), S.vshape, k => { S.vshape = k; }));
     say("Click or drag to place; drag the pink dot to aim the tail");
   }
   if (S.tool === "tone") {

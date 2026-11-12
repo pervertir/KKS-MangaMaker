@@ -3,7 +3,8 @@ import { deep, uid } from "./core.js";
 import { createAt } from "./creation.js";
 import { showLib } from "./dock-tabs.js";
 import { commit } from "./history.js";
-import { hitLayer } from "./hit.js";
+import { hitLayer, local } from "./hit.js";
+import { dblOutline, dragHandle, hitExtra, onOutline, pressHandle } from "../lettering/handles.ts";
 import { showInline } from "./inline-edit.js";
 import { refreshPanels, status } from "./misc.js";
 import { startPan } from "./pointer.js";
@@ -36,10 +37,15 @@ registerTool({
   id: "move", label: "Move / select", key: "v", icon: ICON.move, group: "nav", order: 0, cursor: "default",
   hover(e) {
     const p = pt(e), l = selL(), h = boxHit(l, p);
+    if (l && !l.locked && hitExtra(l, local(l, p), 10 / S.view.s)) { cv.style.cursor = "move"; return; }
     cv.style.cursor = h ? (h.kind === "tail" || h.kind === "vert" || h.kind === "mid" ? "move" : cursorFor(h, l.rotate || 0)) : hitLayer(p) ? "move" : "default";
   },
   down(e) {
     const p = pt(e), cur = selL(), h = boxHit(cur, p);
+    const x = cur && !cur.locked ? hitExtra(cur, local(cur, p), 10 / S.view.s) : null;      // a balloon's own points and tails
+    if (x && pressHandle(cur, x, e.alt)) { commit("Point removed"); refreshPanels(); requestDraw(); return; }
+    if (x) { S.drag = { layer: cur, l0: deep(cur), p0: p, q0: local(cur, p), extra: x }; refreshPanels(); requestDraw(); return; }
+    if (cur && !h && onOutline(cur, local(cur, p), 12 / S.view.s)) return;
     if (h?.kind === "vert" && e.alt) { removeVertex(cur, h.i); return; }
     if (h?.kind === "vert" || h?.kind === "mid") {
       const V = panelBase(cur), i = h.kind === "mid" ? h.i + 1 : h.i, l0 = deep(cur);
@@ -64,6 +70,8 @@ registerTool({
       S.guides = S.showGuides && !ev.ctrlKey ? snapBox(box, l.id, 7 / S.view.s) : [];
       l.x = box.x; l.y = box.y;
       followPanel(d, l);
+    } else if (d.extra) {
+      dragHandle(l, d.extra, local(l, p), d.l0, d.q0, ev.altKey);
     } else if (d.vert != null) {
       moveVertex(l, d, p, ev);
       followPanel(d, l);
@@ -77,7 +85,7 @@ registerTool({
     const d = S.drag; finish();
     if (!d?.layer) return;
     const l = d.layer, k = d.handle?.kind;
-    if (JSON.stringify(l) !== JSON.stringify(d.l0) || d.duped || d.added) commit(d.duped ? "Duplicated" : d.move ? "Moved" : d.vert != null ? (d.added ? "Corner added" : "Corner moved") : k === "tail" ? "Tail moved" : k === "rotate" ? "Rotated" : "Resized");
+    if (JSON.stringify(l) !== JSON.stringify(d.l0) || d.duped || d.added) commit(d.duped ? "Duplicated" : d.move ? "Moved" : d.vert != null ? (d.added ? "Corner added" : "Corner moved") : d.extra ? (d.extra.startsWith("tip") ? "Tail moved" : "Shape edited") : k === "tail" ? "Tail moved" : k === "rotate" ? "Rotated" : "Resized");
   },
   cancel() {
     const d = S.drag;
@@ -85,11 +93,13 @@ registerTool({
     finish();
   },
   dblclick(p) {
+    const cur = selL();
+    if (cur && !cur.locked && dblOutline(cur, local(cur, p), 12 / S.view.s)) { commit("Point added"); refreshPanels(); requestDraw(); return; }
     const l = hitLayer(p);
     if (!l) return;
     S.sel = l.id;
     if (l.type === "panel") { if (l.image) enterAdjust(l); else { showLib("shots"); status("Drag a render from Shots onto the panel"); } }
-    else if (["bubble", "caption", "text", "vbubble"].includes(l.type)) showInline(l);
+    else if (["bubble", "caption", "text", "vbubble", "balloon"].includes(l.type)) showInline(l);
     refreshPanels();
   },
 });
@@ -123,7 +133,7 @@ function creator(id, label, key, group, order) {
     },
     cancel() { if (S.polyDraft) { S.polyDraft = null; S.polyHover = null; } finish(); },
     dblclick(p) {
-      if (polygon(id) && S.polyDraft) { finishPoly(); return; } const l = hitLayer(p); if (l && ["bubble", "caption", "text", "vbubble"].includes(l.type)) { S.sel = l.id; showInline(l); refreshPanels(); } },
+      if (polygon(id) && S.polyDraft) { finishPoly(); return; } const l = hitLayer(p); if (l && ["bubble", "caption", "text", "vbubble", "balloon"].includes(l.type)) { S.sel = l.id; showInline(l); refreshPanels(); } },
   });
 }
 creator("panel", "Panel: drag a frame", "p", "frame", 10);

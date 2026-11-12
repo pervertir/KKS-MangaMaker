@@ -4,6 +4,7 @@ import { layerType } from "../core/registry.ts";
 import { frame, handles, hitHandle, rotateTo, scaleBox } from "../core/transform.ts";
 import { isPlainRect, tracePanel } from "./frames.js";
 import { boxPad, drawVertices, hitVertex } from "./polygon-panels.js";
+import { drawHandles, scaleShapes } from "../lettering/handles.ts";
 
 /* ================================================================ transform box */
 /* One move / scale / rotate box for every layer type. Built-in types set their rules here; registered types
@@ -40,6 +41,7 @@ export function applyScale(l, d, p, e) {
   const k = d.pad || 0, b = scaleBox(padded(d.l0, k), h, [p.x, p.y], { keepAspect: !!R.aspect !== !!e.shiftKey, fromCentre: e.altKey, min: R.min });
   l.x = b.x + k; l.y = b.y + k; l.w = Math.max(1, b.w - 2 * k); l.h = Math.max(1, b.h - 2 * k);
   R.onScale?.(l, d.l0);
+  scaleShapes(l, d.l0, l.w / d.l0.w, l.h / d.l0.h);
   if (l.type === "panel" && S.showGuides && !l.rotate && !e.altKey) snapPanelEdges(l, h);
 }
 export function applyRotate(l, d, p, shift) { l.rotate = rotateTo(d.l0, [p.x, p.y], shift ? 15 : 0); }
@@ -64,6 +66,8 @@ export function drawTransformBox(ctx, l, px) {
   ctx.setLineDash([]);
   if (!l.locked && R) {
     drawVertices(ctx, l, px);
+    const lf = frame(l);
+    drawHandles(ctx, l, (x, y) => { const q = lf.P(x, y); return { x: q[0], y: q[1] }; }, px);
     for (const { handle, pt } of handles(b, px, R)) {
       if (handle.kind === "rotate") {
         const t = f.P(0, -hh);
