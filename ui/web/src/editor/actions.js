@@ -7,11 +7,11 @@ import { renderShot, toggleJobs } from "./jobs.js";
 import { layerName } from "./layers.js";
 import { refreshPanels, status, toast } from "./misc.js";
 import { toggleOverview } from "./pages.js";
-import { S, layers, selL } from "./state.js";
+import { S, layers, selL } from "./state.ts";
 import { deleteSelected, setTool } from "./tools.js";
 import { requestDraw, requestView } from "./view.js";
 
-import { ui } from "../ui/store.svelte.js";
+import { ui } from "../ui/store.svelte.ts";
 
 /* ================================================================ actions */
 export const act = {
@@ -78,7 +78,6 @@ export const act = {
 
 /* runs once at start-up, in the original order (see main.js) */
 export function init_editor_actions() {
-  $("#laydel").onclick = () => deleteSelected();
 
   document.addEventListener("click", e => { const b = e.target.closest("[data-act]"); if (b && act[b.dataset.act]) act[b.dataset.act](); });
 }

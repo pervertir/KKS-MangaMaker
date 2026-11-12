@@ -6,10 +6,10 @@ import { toast } from "./misc.js";
 import { renderPageThumbs } from "./pages.js";
 import { renderPanelsTab } from "./panels-tab.js";
 import { loadShots } from "./shots.js";
-import { S } from "./state.js";
+import { S } from "./state.ts";
 import { requestDraw } from "./view.js";
 
-import { ui } from "../ui/store.svelte.js";
+import { ui } from "../ui/store.svelte.ts";
 
 /* ================================================================ jobs & pod */
 export async function startJob(body) {

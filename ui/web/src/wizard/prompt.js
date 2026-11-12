@@ -3,7 +3,7 @@ import { presetThumb } from "../editor/layouts.js";
 import { toast } from "../editor/misc.js";
 import { closeModal, modal } from "../editor/modal.js";
 import { rowOf } from "../editor/props.js";
-import { S } from "../editor/state.js";
+import { S } from "../editor/state.ts";
 import { CAST, loadCast } from "../helpers/cast.js";
 import { wizardGuide } from "../helpers/guide.js";
 import { STARTERS } from "../helpers/starters.js";

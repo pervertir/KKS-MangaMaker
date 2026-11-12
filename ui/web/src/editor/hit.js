@@ -1,4 +1,4 @@
-import { S, layers } from "./state.js";
+import { S, layers } from "./state.ts";
 import { HANDLES, corners } from "./view.js";
 
 /* ================================================================ hit testing */

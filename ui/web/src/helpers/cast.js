@@ -4,7 +4,7 @@ import { renderShot } from "../editor/jobs.js";
 import { toast } from "../editor/misc.js";
 import { closeModal, modal } from "../editor/modal.js";
 import { loadShots } from "../editor/shots.js";
-import { S } from "../editor/state.js";
+import { S } from "../editor/state.ts";
 import { renderPosePNG } from "../pose/draw.js";
 import { loadPoseLib } from "../pose/library.js";
 import { P } from "../pose/model.js";

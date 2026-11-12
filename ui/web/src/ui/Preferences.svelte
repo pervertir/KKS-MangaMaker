@@ -1,11 +1,11 @@
-<script>
+<script lang="ts">
   import { PREF, applyThemeChrome, displayTheme, exportPaper } from "../editor/creation.js";
   import { THUMBS } from "../editor/layers.js";
   import { renderLibrary } from "../editor/library.js";
   import { refreshPanels } from "../editor/misc.js";
   import { closeModal } from "../editor/modal.js";
   import { renderPages } from "../editor/pages.js";
-  import { S } from "../editor/state.js";
+  import { S } from "../editor/state.ts";
   import { requestDraw } from "../editor/view.js";
   import { TIPS_ON, toggleTips } from "../helpers/tips.js";
 

@@ -6,7 +6,7 @@ import { drawPage } from "./manga-tools.js";
 import { refreshPanels, status, toast } from "./misc.js";
 import { closeModal, modal } from "./modal.js";
 import { renderPages } from "./pages.js";
-import { H, S, W, newDoc, normalize } from "./state.js";
+import { H, S, W, newDoc, normalize } from "./state.ts";
 import { fitView } from "./view.js";
 
 /* ================================================================ save / open / export */

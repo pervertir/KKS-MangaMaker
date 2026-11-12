@@ -5,15 +5,15 @@ import { setPanelImage } from "./creation.js";
 import { showLib } from "./dock-tabs.js";
 import { commit } from "./history.js";
 import { renderShot, toggleJobs } from "./jobs.js";
-import { layerThumb, rebuildList, svgIcon } from "./layers.js";
 import { layoutDialog } from "./layouts.js";
 import { popMenu } from "./menus.js";
 import { refreshPanels, status } from "./misc.js";
 import { shotDialog } from "./shots.js";
-import { S, layers, selL } from "./state.js";
+import { S, layers, selL } from "./state.ts";
 import { deleteSelected, sc, setTool } from "./tools.js";
 import { panelOrder, requestDraw, requestView } from "./view.js";
 import { poseForPanel } from "../pose/open.js";
+import { ui } from "../ui/store.svelte.ts";
 
 /* ================================================================ panels tab */
 /* The page's frames in reading order (panelOrder, the rule the pipeline uses), each with its shot, how far
@@ -45,39 +45,6 @@ export function panelMenu(l) {
     ["Duplicate", act.duplicate, sc("Duplicate layer")], [l.visible ? "Hide" : "Show", act.toggleHide, sc("Hide / show")],
     [l.locked ? "Unlock" : "Lock", act.toggleLock, sc("Lock / unlock")], null, ["Delete", deleteSelected, "Del"]];
 }
-export function panelRow(l, n, kidOf) {
-  const st = panelState(l), on = l.id === S.sel, [label, fn, tip, main] = st.act;
-  const pick = () => { S.sel = l.id; refreshPanels(); requestDraw(); };
-  const menu = (x, y) => { if (S.sel !== l.id) pick(); popMenu(x, y, panelMenu(l)); };
-  const badge = h("span", { class: "pnum" + (n ? "" : " none"), title: n ? `Panel ${n} in reading order` : "Hidden: not part of the reading order" });
-  if (n) badge.textContent = n; else badge.innerHTML = svgIcon("eyeOff");
-  const quiet = fn2 => ({ onclick: e => { e.stopPropagation(); fn2(e); }, ondblclick: e => e.stopPropagation() });
-  return h("div", { class: "prow" + (on ? " on" : "") + (kidOf === l.id ? " kid" : "") + (l.visible ? "" : " off"), onclick: pick,
-    ondblclick: () => { if (l.image) enterAdjust(l); else { showLib("shots"); status("Drag a render from Shots onto the panel"); } },
-    oncontextmenu: e => { e.preventDefault(); menu(e.clientX, e.clientY); } },
-    badge, layerThumb(l, 44),
-    h("div", { class: "ptxt" },
-      h("span", { class: "nm" + (l.name || l.shot ? "" : " none"), title: l.shot ? `Shot ${l.shot}` : "No shot yet: Pose… makes one" }, l.name || l.shot || "no shot"),
-      h("span", { class: "st", title: st.tip || st.text }, h("span", { class: "g " + st.cls }, st.g), st.text + (l.locked ? " · locked" : ""))),
-    h("button", { class: "pact" + (main && on ? " primary" : ""), title: tip, ...quiet(() => { if (S.sel !== l.id) pick(); fn(); }) }, label),
-    h("button", { class: "ib", title: "More: pose, render, split, hide, lock, delete", ...quiet(e => { const r = e.currentTarget.getBoundingClientRect(); menu(r.left, r.bottom + 2); }) }, "⋯"));
-}
-export function renderPanelsTab() {
-  const tools = $("#paneltools"), box = $("#panels");
-  if (!tools.firstChild) tools.append(
-    h("button", { title: "Replace this page's panels with a layout (renders carry over in reading order)", onclick: layoutDialog }, "Layout…"),
-    h("button", { id: "ordbtn", class: "toggle", title: "Show the reading-order numbers on the page (M)", onclick: toggleOrder }, "Order"),
-    h("span", { class: "spacer" }),
-    h("button", { title: "Draw a panel frame on the page (P)", onclick: () => setTool("panel") }, "＋ Panel"));
-  $("#ordbtn").classList.toggle("on", S.showOrder); $("#ordbtn").setAttribute("aria-pressed", String(S.showOrder));
-  const ls = layers(), order = panelOrder(ls), hidden = ls.filter(l => l.type === "panel" && !l.visible);
-  const sel = selL(), kidOf = sel && sel.type !== "panel" ? sel.clip : null;
-  rebuildList(box, () => {
-    order.forEach((l, i) => box.append(panelRow(l, i + 1, kidOf)));
-    for (const l of hidden) box.append(panelRow(l, 0, kidOf));
-    if (!order.length && !hidden.length) box.append(h("div", { class: "empty" }, "No panels on this page.",
-      h("div", { class: "btnrow" }, h("button", { onclick: layoutDialog }, "Choose layout…"), h("button", { onclick: () => setTool("panel") }, "Draw a panel (P)"))));
-  });
-  $("#cnt-panels").textContent = order.length + hidden.length || "";
-}
+/* The list itself is src/ui/PanelsPane.svelte. */
+export function renderPanelsTab() { ui.rev++; }
 export function toggleOrder() { S.showOrder = !S.showOrder; requestView(); renderPanelsTab(); }

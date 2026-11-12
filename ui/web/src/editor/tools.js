@@ -16,7 +16,7 @@ import { preferencesDialog } from "./preferences.js";
 import { exportPages, importDialog, newProject, openDialog, save } from "./project.js";
 import { refreshProps } from "./props.js";
 import { shotDialog } from "./shots.js";
-import { S, layers, selL } from "./state.js";
+import { S, layers, selL } from "./state.ts";
 import { fitView, requestDraw, requestView, stage, zoomAt } from "./view.js";
 import { poseKey, setMode } from "../pose/open.js";
 import { scriptWizard } from "../wizard/prompt.js";

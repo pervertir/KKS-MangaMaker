@@ -1,6 +1,6 @@
 import { refreshPanels, status } from "./misc.js";
 import { renderPages } from "./pages.js";
-import { S, selL } from "./state.js";
+import { S, selL } from "./state.ts";
 import { requestDraw } from "./view.js";
 
 /* ================================================================ history */

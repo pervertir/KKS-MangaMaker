@@ -2,7 +2,7 @@ import { clamp } from "./core.js";
 import { THEMES, themeOf, themed } from "./creation.js";
 import { imgFor } from "./images.js";
 import { drawFlipped, drawVBubble, lum, speedCanvas, toneCanvas } from "./manga-tools.js";
-import { S, bubbleMeta } from "./state.js";
+import { S, bubbleMeta } from "./state.ts";
 import { drawText } from "./text.js";
 
 /* ================================================================ drawing */

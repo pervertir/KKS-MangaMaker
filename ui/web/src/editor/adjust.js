@@ -1,5 +1,5 @@
 import { status } from "./misc.js";
-import { S } from "./state.js";
+import { S } from "./state.ts";
 import { requestDraw } from "./view.js";
 
 /* ================================================================ image adjust (panel crop) */

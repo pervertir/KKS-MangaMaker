@@ -6,9 +6,10 @@ import { commit } from "./history.js";
 import { IMG, LEVELS } from "./images.js";
 import { popMenu } from "./menus.js";
 import { refreshPanels } from "./misc.js";
-import { S, bubbleMeta, layers, selL } from "./state.js";
+import { S, bubbleMeta, layers, selL } from "./state.ts";
 import { deleteSelected, sc } from "./tools.js";
 import { requestDraw } from "./view.js";
+import { ui } from "../ui/store.svelte.ts";
 
 /* ================================================================ layers list */
 export const TYPE_IC = { panel: "▭", bubble: "💬", vbubble: "🗨", caption: "▤", text: "T", image: "🖼", tone: "▦", speed: "✺" };
@@ -61,57 +62,5 @@ export function layerMenu() {
     ["Bring to front", act.toFront, sc("Bring to front")], ["Send to back", act.toBack, sc("Send to back")], null,
     ["Lock / unlock", act.toggleLock, sc("Lock / unlock")], ["Hide / show", act.toggleHide, sc("Hide / show")]];
 }
-/* a list is rebuilt on every change: keep where it was scrolled, and bring the picked row into view only when the pick changes */
-export const LISTSEL = {};
-export function rebuildList(box, build) {
-  const y = box.scrollTop; box.innerHTML = ""; build(); box.scrollTop = y;
-  if (LISTSEL[box.id] !== S.sel) { LISTSEL[box.id] = S.sel; box.querySelector(".on")?.scrollIntoView({ block: "nearest" }); }
-}
-/* Layers tab: everything except the frames, front to back. A run of panels is one marker row, so the
-   stack stays truthful (a tone can sit over or under the frames) while the frames live in the Panels tab. */
-export function renderLayers() {
-  const box = $("#layers"), ls = layers(), rev = [...ls].reverse();
-  let n = 0;
-  rebuildList(box, () => {
-    for (let i = 0; i < rev.length; i++) {
-      if (rev[i].type !== "panel") { n++; box.append(layerRow(rev[i], ls)); continue; }
-      let j = i; while (j + 1 < rev.length && rev[j + 1].type === "panel") j++;
-      box.append(panelRunRow(rev.slice(i, j + 1), ls)); i = j;
-    }
-    if (!n) box.prepend(h("div", { class: "empty" }, "No lettering on this page yet. B bubble · O drawn bubble · T text · S sound effect · C caption."));
-  });
-  $("#cnt-layers").textContent = n || "";
-}
-export function layerRow(l, ls) {
-  const row = h("div", { class: "layer" + (l.id === S.sel ? " on" : ""), draggable: true,
-    onclick: () => { S.sel = l.id; refreshPanels(); requestDraw(); },
-    ondblclick: () => { const n = prompt("Layer name", layerName(l)); if (n != null) { l.name = n; commit(); } },
-    ondragstart: e => e.dataTransfer.setData("text/layer", l.id),
-    ondragover: e => { e.preventDefault(); row.classList.add("dragover"); },
-    ondragleave: () => row.classList.remove("dragover"),
-    ondrop: e => {
-      e.preventDefault(); row.classList.remove("dragover");
-      const id = e.dataTransfer.getData("text/layer"), src = ls.find(q => q.id === id); if (!src || src === l) return;
-      ls.splice(ls.indexOf(src), 1); ls.splice(ls.indexOf(l) + 1, 0, src); commit("Reordered"); requestDraw();
-    } },
-    svgBtn(l.visible ? "eye" : "eyeOff", l.visible ? "" : "offv", "Show / hide", () => { l.visible = !l.visible; commit(); requestDraw(); }),
-    layerThumb(l),
-    h("span", { class: "nm", title: layerName(l) }, layerName(l)),
-    svgBtn(l.locked ? "lock" : "unlock", l.locked ? "" : "offv", l.locked ? "Unlock" : "Lock", () => { l.locked = !l.locked; commit(); requestDraw(); }),
-    svgBtn("trash", "del", "Delete layer (Delete)", () => { S.sel = l.id; deleteSelected(); }));
-  row.addEventListener("contextmenu", e => { e.preventDefault(); S.sel = l.id; refreshPanels(); requestDraw(); popMenu(e.clientX, e.clientY, layerMenu()); });
-  return row;
-}
-export function panelRunRow(run, ls) {          // run[0] is the frontmost frame of the run
-  const row = h("div", { class: "layer run" + (run.some(q => q.id === S.sel) ? " on" : ""), title: "The panel frames sit here in the stack. Click to work on them in the Panels tab; drop a layer here to put it just above them.",
-    onclick: () => setDockTab("panels", true),
-    ondragover: e => { e.preventDefault(); row.classList.add("dragover"); },
-    ondragleave: () => row.classList.remove("dragover"),
-    ondrop: e => {
-      e.preventDefault(); row.classList.remove("dragover");
-      const id = e.dataTransfer.getData("text/layer"), src = ls.find(q => q.id === id); if (!src) return;
-      ls.splice(ls.indexOf(src), 1); ls.splice(ls.indexOf(run[0]) + 1, 0, src); commit("Reordered"); requestDraw();
-    } },
-    h("span", {}, "▭"), `${run.length} panel${run.length === 1 ? "" : "s"}`, h("span", { class: "go" }, "›"));
-  return row;
-}
+/* The Layers list is src/ui/LayersPane.svelte; this tells it (and the Panels tab) to read the document again. */
+export function renderLayers() { ui.rev++; }

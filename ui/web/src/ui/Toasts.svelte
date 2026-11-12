@@ -1,5 +1,5 @@
-<script>
-  import { ui } from "./store.svelte.js";
+<script lang="ts">
+  import { ui } from "./store.svelte.ts";
 </script>
 
 <div id="toasts" aria-live="polite">

@@ -1,11 +1,13 @@
 /* Entry point. Modules declare; the init functions below run their start-up code in a fixed order. */
 import "./styles/app.css";
 import "./styles/wizard.css";
-import { attach } from "./ui/mount.js";
+import { attach } from "./ui/mount.ts";
+import Dock from "./ui/Dock.svelte";
+import Props from "./ui/Props.svelte";
 import JobsDrawer from "./ui/JobsDrawer.svelte";
 import Toasts from "./ui/Toasts.svelte";
 import * as m0 from "./editor/core.js";
-import * as m1 from "./editor/state.js";
+import * as m1 from "./editor/state.ts";
 import * as m2 from "./editor/history.js";
 import * as m3 from "./editor/images.js";
 import * as m4 from "./editor/text.js";
@@ -58,6 +60,10 @@ import * as m50 from "./helpers/manga.js";
 import * as m51 from "./helpers/tips.js";
 import * as m52 from "./helpers/guide.js";
 import * as m53 from "./helpers/wiring.js";
+
+/* the dock is markup the start-up code below looks up by id, so it goes in first */
+attach(Dock, document.getElementById("stackpanel"));
+attach(Props, document.getElementById("props"));
 
 m0.init_editor_core();
 m10.init_editor_pointer();
