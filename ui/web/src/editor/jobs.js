@@ -45,6 +45,7 @@ export async function pollJobs() {
         toast(`${j.label}: ${r.code === 0 ? "done" : "failed"}`, r.code === 0 ? "ok" : "err");
         if (["run", "render", "grab"].includes(j.body.cmd)) await afterRender(j.body.shot, j.body.cmd !== "grab");
         if (j.body.cmd === "pod") refreshPod(true);
+        j.after?.(r.code);
         if (j.body.cmd === "matte" && r.code === 0) mattesReady(j.body.image);
       }
     } catch (e) { j.done = true; j.lines.push("error: " + e.message); }

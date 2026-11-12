@@ -21,5 +21,7 @@ config.local.yaml
 cast.json
 poses/custom.json
 
+# The asset library lives on the machine running the editor
+assets/library/
 # 3D models imported in the Pose studio (may hold third-party or game assets)
 assets/scenes3d/

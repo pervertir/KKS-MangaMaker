@@ -10,6 +10,7 @@ import { S, bubbleMeta, layers, selL } from "./state.ts";
 import { deleteSelected, sc } from "./tools.js";
 import { requestDraw } from "./view.js";
 import { ui } from "../ui/store.svelte.ts";
+import { expressionDialog, saveRenderDialog, saveSelectionDialog } from "../assets/dialogs.ts";
 import { layerType } from "../core/registry.ts";
 import { blobGen } from "../draw/blobs.ts";
 
@@ -63,7 +64,14 @@ export function layerMenu() {
   return [["Delete", deleteSelected, "Del", !selL()], ["Duplicate", act.duplicate, sc("Duplicate layer")], null,
     ["Bring forward", act.layerUp, sc("Bring forward")], ["Send backward", act.layerDown, sc("Send backward")],
     ["Bring to front", act.toFront, sc("Bring to front")], ["Send to back", act.toBack, sc("Send to back")], null,
-    ["Lock / unlock", act.toggleLock, sc("Lock / unlock")], ["Hide / show", act.toggleHide, sc("Hide / show")]];
+    ["Lock / unlock", act.toggleLock, sc("Lock / unlock")], ["Hide / show", act.toggleHide, sc("Hide / show")], null,
+    ["Save to asset library…", saveSelectionDialog, "", !selL()], ...libraryItems()];
+}
+/* a panel's render can be saved on its own, or get a new face expression */
+function libraryItems() {
+  const l = selL();
+  if (l?.type !== "panel" || !l.image) return [];
+  return [["Save render as background…", () => saveRenderDialog(l.image.ref, l.shot || "")], ["New expression…", () => expressionDialog(l.shot || "", l.image.ref), "", !l.shot]];
 }
 /* The Layers list is src/ui/LayersPane.svelte; this tells it (and the Panels tab) to read the document again. */
 export function renderLayers() { ui.rev++; }
