@@ -1,5 +1,5 @@
 import { clamp, deep } from "../editor/core.js";
-import { HANDLES } from "../editor/view.js";
+import { SCALE_HANDLES as HANDLES } from "../core/transform.ts";
 import { bounds, project } from "./geometry.js";
 import { ikDrag } from "./ik.js";
 import { FIG_H, P } from "./model.js";

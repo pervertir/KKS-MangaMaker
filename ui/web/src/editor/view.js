@@ -6,6 +6,7 @@ import { placeInline } from "./inline-edit.js";
 import { drawFlipped, drawPage } from "./manga-tools.js";
 import { H, S, W, layers, page, selL } from "./state.ts";
 import { boxes } from "../core/format.ts";
+import { drawTransformBox } from "./transform-box.js";
 import { getTool } from "../core/tools.ts";
 import { drawAnts, hasSelection, selectionPage } from "../core/selection.ts";
 
@@ -127,7 +128,7 @@ export function draw() {
     ctx.stroke();
   }
   const s = selL();
-  if (s && !ad) drawSelection(s, px);
+  if (s && !ad) drawTransformBox(ctx, s, px);
   getTool(S.tool)?.overlay?.(ctx, px);
   if (hasSelection() && selectionPage() === page().id) { drawAnts(ctx, px); antsTick(); }
 }
@@ -170,29 +171,4 @@ export function corners(l) {
   const P = (dx, dy) => ({ x: cx + dx * c - dy * s, y: cy + dx * s + dy * c });
   return { P, cx, cy, a };
 }
-export const HANDLES = [[-1, -1], [0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0]];
-export function drawSelection(l, px) {
-  const { P } = corners(l), hw = l.w / 2, hh = l.h / 2;
-  const pts = [P(-hw, -hh), P(hw, -hh), P(hw, hh), P(-hw, hh)];
-  ctx.save();
-  ctx.strokeStyle = l.locked ? "#f5b84b" : "#4c8dff"; ctx.lineWidth = 1.5 * px;
-  ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.closePath(); ctx.stroke();
-  if (!l.locked) {
-    for (const [hx, hy] of HANDLES) {
-      const p = P(hx * hw, hy * hh), r = 5 * px;
-      ctx.fillStyle = "#fff"; ctx.fillRect(p.x - r, p.y - r, r * 2, r * 2); ctx.strokeRect(p.x - r, p.y - r, r * 2, r * 2);
-    }
-    if (l.type === "vbubble" && l.tail) {
-      const t = P(l.tail.x, l.tail.y);
-      ctx.fillStyle = "#ff4f7b"; ctx.beginPath(); ctx.arc(t.x, t.y, 7 * px, 0, 7); ctx.fill(); ctx.strokeStyle = "#fff"; ctx.stroke(); ctx.strokeStyle = "#4c8dff";
-    }
-    if (l.type !== "panel") {
-      const t = P(0, -hh), rp = P(0, -hh - 34 * px);
-      ctx.beginPath(); ctx.moveTo(t.x, t.y); ctx.lineTo(rp.x, rp.y); ctx.stroke();
-      ctx.fillStyle = "#4c8dff"; ctx.beginPath(); ctx.arc(rp.x, rp.y, 6 * px, 0, 7); ctx.fill();
-    }
-  }
-  ctx.restore();
-}
-
 export function set_DC(v) { DC = v; }
