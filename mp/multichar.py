@@ -1,9 +1,9 @@
 """Multi-character shots: find each head in the base render with SAM 3 (core ComfyUI SAM3_Detect),
 sort the heads left to right so characters[i] is the i-th figure from the left, then re-inpaint each
-head (face + hair) with only that character's LoRA at full weight.
+head (face + hair) with only that character's LoRA, at the LoRA's recommended strength kept within 0.7-0.9.
 
-The base render runs with every character's LoRA at a reduced weight (multi_lora_base_scale), so the
-bodies and outfits come out roughly right and the faces don't blend; this pass fixes the identities.
+The base render runs with no LoRAs at all, so the faces can't blend and the LoRAs can't pull outfits
+or bodies toward each other; this pass puts each identity back on its own head.
 Only core ComfyUI nodes are used.
 """
 from __future__ import annotations
@@ -15,6 +15,8 @@ from pathlib import Path
 import numpy as np
 import requests
 from PIL import Image
+
+from mp.civitai import face_weight
 
 
 def detect_heads(comfy, image_name: str, cfg, out_dir: Path, prompt: str = "head", threshold: float = 0.4) -> list[dict]:
@@ -132,7 +134,8 @@ def character_heads(comfy, shot: dict, cfg, base_name: str, n: int) -> list[dict
 
 def _head_job(comfy, shot: dict, render: Path, i: int, c: dict, lora: dict, prompt: str, head: dict, size) -> dict:
     mask_name = comfy.upload(head["mask"], "manga", f"{shot['shot']}_{render.stem}_head{i}.png")
-    return {"lora": lora["lora"], "weight": float(c.get("lora_weight", lora["weight"])), "prompt": prompt,
+    weight = lora.get("face_weight") or face_weight(None, float(c.get("lora_weight", lora["weight"])))
+    return {"lora": lora["lora"], "weight": weight, "prompt": prompt,
             "who": "1boy" if str(c.get("gender", "girl")).lower() in ("boy", "male", "man") else "1girl",
             "mask_name": mask_name, "crop": _crop_box(head["box"], *size, float(shot.get("head_crop_pad", 1.8)))}
 

@@ -133,6 +133,11 @@ adult Temari, Tsunade, Kurenai, Konan, Mei Terumi, Anko (Shippuden, adult), Shiz
 Delta, adult Naruto (Hokage), adult Sasuke. `lora: auto` with these names (series Naruto or
 Boruto) uses the bundled adult file.
 
+A character the checkpoint already draws well (`base_knows_min_posts` Danbooru posts, 1500 by
+default) gets no LoRA: the shot is prompted with its Danbooru tag instead. Items marked
+`keep: true` (the adult Boruto-era versions, which the base model would draw at their best-known,
+younger age) always keep their LoRA; add more names to `lora_keep` in config.yaml.
+
 Left out on purpose:
 - all Boruto-generation kids (Boruto, Sarada, Himawari, Mitsuki, Kawaki, Chocho, Inojin, Shikadai)
   and every Part 1 / genin version;

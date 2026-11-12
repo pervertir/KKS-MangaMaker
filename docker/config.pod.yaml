@@ -24,6 +24,11 @@ lora_subdir: civitai_characters
 base_model_preference: [Illustrious, NoobAI, SDXL 1.0, Pony]
 civitai_api_key_env: [CIVITAI_API_KEY, CAI_API_KEY, CIVIT_AI_KEY]
 civitai_nsfw: true
+# lora: auto skips the LoRA when the checkpoint already knows the character (at least this many
+# Danbooru posts) and prompts with its Danbooru tag instead. 0 = always use a LoRA.
+base_knows_min_posts: 1500
+# Characters that keep their LoRA anyway (name, or name|series), e.g. an older version of a well-known one.
+lora_keep: []
 
 defaults:
   style: flat_anime

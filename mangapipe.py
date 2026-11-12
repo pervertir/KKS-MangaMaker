@@ -49,9 +49,9 @@ def resolve_loras(shot: dict, cfg: Config, refresh: bool = False) -> list[dict]:
         r = civ.resolve(c, refresh=refresh)
         tag = f"{c['name']}" + (f" ({c['series']})" if c.get("series") else "")
         if r["lora"]:
-            log(f"[lora] {tag}: {r['lora']}  triggers={r['triggers']}  via {r['source']}")
+            log(f"[lora] {tag}: {r['lora']}  triggers={r['triggers']}  face weight {r['face_weight']}  via {r['source']}")
         else:
-            log(f"[lora] {tag}: none ({r['source']})")
+            log(f"[lora] {tag}: none ({r['source']})" + (f"  prompt {r['triggers'][0]}" if r["triggers"] else ""))
         out.append(r)
     return out
 
@@ -111,20 +111,20 @@ def render(shot: dict, cfg: Config, seed: int | None, dry_run: bool, refresh: bo
 
     multi = len(shot["characters"]) > 1 and shot.get("head_inpaint", True) and any(l["lora"] for l in loras)
     base_loras = loras
-    if multi:  # every LoRA at once would blend the faces; the head pass restores each identity
-        scale = float(shot.get("multi_lora_base_scale", 0.6))
-        base_loras = [{**l, "weight": float(l["weight"]) * scale} for l in loras]
+    if multi:  # first pass without LoRAs (their trigger words mean nothing then); the head pass adds each one
+        base_loras = [{**l, "lora": None, "triggers": [] if l["lora"] else l["triggers"]} for l in loras]
+        log("[lora] base render without LoRAs; each is applied on its own head afterwards")
     regions = None
     if multi:
         cols = pose_columns(pose_cn, len(shot["characters"]))
         if cols:
-            regions = [(x0, x1, part) for (x0, x1), part in zip(cols, character_parts(shot, loras))]
+            regions = [(x0, x1, part) for (x0, x1), part in zip(cols, character_parts(shot, base_loras))]
             log("[regions] " + ", ".join(f"{c['name']} x={x0}-{x1}" for c, (x0, x1, _) in zip(shot["characters"], regions)))
         else:
             log("[regions] could not split the pose into one column per character; prompting globally")
     graph = build_graph(shot, cfg, base_loras, identity, pose_name, ref_name, (w, h), the_seed, regions, depth_name, lines_name)
     style = cfg.style(shot.get("style", "flat_anime"))
-    pos, neg = build_prompt(shot, style, loras)
+    pos, neg = build_prompt(shot, style, base_loras)
     (shot["_out"] / "workflow_api.json").write_text(json.dumps(graph, indent=2))
     (shot["_out"] / "prompt.txt").write_text(f"seed: {the_seed}\nidentity: {identity}\nsize: {w}x{h}\n\nPOSITIVE:\n{pos}\n\nNEGATIVE:\n{neg}\n")
     log(f"[prompt] {pos[:160]}{'...' if len(pos) > 160 else ''}")

@@ -49,6 +49,11 @@ base:
 # Boruto's kids by name). Whole words, checked against model name, tags, version name, trigger words.
 blocklist: []
 
+# Characters with at least this many Danbooru posts are drawn by the checkpoint from their tag alone,
+# so their LoRA is not downloaded (0 = always download). `keep: true` on an item keeps its LoRA anyway:
+# the base model draws a character's best-known look, so later or adult versions still need theirs.
+base_knows_min_posts: 1500
+
 # Civitai LoRAs. `sets` picks which groups to fetch (MANGA_LORA_SETS=all, or e.g. "characters").
 # `character`/`series` are what you write in shot.yaml; the downloader registers each file under
 # that name, so `lora: auto` finds the bundled file instead of searching Civitai again.
@@ -56,11 +61,11 @@ lora_sets:
   characters:
     subdir: civitai_characters
     items:
-      - {model: 396328, version: 2413714, character: Hinata Hyuga, series: Boruto, note: "adult Hinata, Boruto anime"}
-      - {model: 2422733, version: 2723953, character: Hinata Hyuga, series: Naruto 700, note: "adult Hinata, manga ch. 700", register: false}
-      - {model: 1099794, version: 1451178, character: Sakura Haruno, series: Boruto, note: "adult Sakura, Boruto"}
-      - {model: 1048140, version: 1176037, character: Ino Yamanaka, series: Boruto, note: "adult Ino, Boruto"}
-      - {model: 1585521, version: 1794208, character: Temari, series: Boruto, note: "adult Temari, Boruto"}
+      - {model: 396328, version: 2413714, character: Hinata Hyuga, series: Boruto, keep: true, note: "adult Hinata, Boruto anime"}
+      - {model: 2422733, version: 2723953, character: Hinata Hyuga, series: Naruto 700, keep: true, note: "adult Hinata, manga ch. 700", register: false}
+      - {model: 1099794, version: 1451178, character: Sakura Haruno, series: Boruto, keep: true, note: "adult Sakura, Boruto"}
+      - {model: 1048140, version: 1176037, character: Ino Yamanaka, series: Boruto, keep: true, note: "adult Ino, Boruto"}
+      - {model: 1585521, version: 1794208, character: Temari, series: Boruto, keep: true, note: "adult Temari, Boruto"}
       - {model: 1404502, version: 2964681, character: Tsunade, series: Naruto}
       - {model: 1457683, version: 1648286, character: Kurenai Yuhi, series: Naruto}
       - {model: 1133030, version: 1273800, character: Konan, series: Naruto}
@@ -69,8 +74,8 @@ lora_sets:
       - {model: 1183302, version: 1331771, character: Shizune, series: Naruto}
       - {model: 1229455, version: 1385377, character: Samui, series: Naruto}
       - {model: 1099537, version: 1235104, character: Delta, series: Boruto}
-      - {model: 2596350, version: 2916550, character: Naruto Uzumaki, series: Boruto, note: "adult Naruto (Hokage)"}
-      - {model: 1259425, version: 1420092, character: Sasuke Uchiha, series: Boruto, note: "adult Sasuke"}
+      - {model: 2596350, version: 2916550, character: Naruto Uzumaki, series: Boruto, keep: true, note: "adult Naruto (Hokage)"}
+      - {model: 1259425, version: 1420092, character: Sasuke Uchiha, series: Boruto, keep: true, note: "adult Sasuke"}
 
   # Consensual position/act concepts for Illustrious. Use only with adult characters.
   # WAI Illustrious already knows most of these booru tags; a concept LoRA at 0.5-0.8 mainly

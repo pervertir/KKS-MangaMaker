@@ -48,6 +48,78 @@ def blocked(texts, extra=()) -> str | None:
     return None
 
 
+DANBOORU = "https://danbooru.donmai.us"
+
+
+def _romaji(t: str) -> str:
+    """hyuuga -> hyuga, ou -> o: Danbooru and Civitai spell long vowels differently."""
+    return re.sub(r"([aeiou])\1", r"\1", t).replace("ou", "o")
+
+
+def base_model_tag(name: str, series: str = "", min_posts: int = 1500, sess=None) -> tuple[str, int] | None:
+    """Danbooru character tag for name if it has at least min_posts posts, else None.
+
+    Illustrious-family checkpoints are trained on Danbooru, so a character with that many tagged
+    posts draws well from the tag alone and a LoRA only adds download time and style drift.
+    Raises requests.RequestException when Danbooru can't be reached."""
+    want = {_romaji(t) for t in _tokens(name)}
+    if not want or min_posts <= 0:
+        return None
+    sess = sess or requests.Session()
+    best = None
+    for tok in sorted(_tokens(name), key=len, reverse=True)[:2]:
+        r = sess.get(f"{DANBOORU}/tags.json", timeout=15, headers={"User-Agent": UA}, params={
+            "search[name_matches]": f"*{tok}*", "search[category]": 4, "search[order]": "count",
+            "limit": 50, "only": "name,post_count"})
+        r.raise_for_status()
+        tags = r.json()
+        for t in tags:
+            base, _, qual = t["name"].partition("_(")
+            if {_romaji(x) for x in _tokens(base)} != want or blocked([t["name"]]):
+                continue
+            score = (bool(series and set(_tokens(series)) & set(_tokens(qual))), t["post_count"])
+            if best is None or score > best[1]:
+                best = (t["name"], score)
+    if best and best[1][1] >= min_posts:
+        return best[0], best[1][1]
+    return None
+
+
+def prompt_tag(danbooru_tag: str) -> str:
+    """hyuuga_hinata -> hyuuga hinata; tsunade_(naruto) -> tsunade \\(naruto\\)"""
+    return danbooru_tag.replace("_", " ").replace("(", "\\(").replace(")", "\\)")
+
+
+# A LoRA on a face inpaint below 0.7 doesn't hold the identity; above 0.9 it fries the face.
+FACE_WEIGHT_RANGE = (0.7, 0.9)
+_STRENGTH = re.compile(r"(?:weight|strength)s?\s*(?:of|:|=|at|around|between)?\s*([0-2](?:\.\d+)?)"
+                       r"(?:\s*(?:-|~|–|to|and)\s*([0-2](?:\.\d+)?))?", re.I)
+_LORA_TAG = re.compile(r"<lora:[^:>]+:([0-2](?:\.\d+)?)>", re.I)
+
+
+def recommended_strength(model: dict, version: dict) -> float | None:
+    """The author's recommended LoRA weight: Civitai's settings field, else the first weight or
+    <lora:name:w> in the version or model description (a range gives its middle)."""
+    st = (version.get("settings") or {}).get("strength")
+    if isinstance(st, (int, float)) and 0.1 <= st <= 2:
+        return float(st)
+    text = re.sub(r"<(?!lora:)[^>]+>", " ", " ".join(d or "" for d in (version.get("description"), model.get("description"))))
+    m = _LORA_TAG.search(text)
+    if m:
+        v = float(m.group(1))
+    else:
+        m = _STRENGTH.search(text)
+        if not m:
+            return None
+        v = float(m.group(1)) if not m.group(2) else (float(m.group(1)) + float(m.group(2))) / 2
+    return v if 0.1 <= v <= 2 else None
+
+
+def face_weight(recommended: float | None, fallback: float) -> float:
+    lo, hi = FACE_WEIGHT_RANGE
+    return round(min(hi, max(lo, recommended if recommended else fallback)), 2)
+
+
 class CivitaiError(Exception):
     pass
 
@@ -61,6 +133,8 @@ class Civitai:
         self.pref = [b.lower() for b in cfg.get("base_model_preference", ["Illustrious"])]
         self.subdir = cfg.get("lora_subdir", "civitai_characters")
         self.extra_block = cfg.get("lora_blocklist", []) or []
+        self.base_min_posts = int(cfg.get("base_knows_min_posts", 1500) or 0)
+        self.lora_keep = {n.strip().lower() for n in cfg.get("lora_keep", []) or []}
         self.index_path = cfg.cache_dir / "lora_index.json"
         self.index = json.loads(self.index_path.read_text()) if self.index_path.exists() else {}
         self.meta_dir = cfg.cache_dir / "loras"
@@ -183,6 +257,7 @@ class Civitai:
             "versionId": cand["version"]["id"], "versionName": cand["version"].get("name"),
             "baseModel": cand["version"].get("baseModel"),
             "trainedWords": cand["version"].get("trainedWords", []),
+            "strength": recommended_strength(cand["model"], cand["version"]),
             "url": f"https://civitai.com/models/{cand['model']['id']}?modelVersionId={cand['version']['id']}",
         }, indent=2))
 
@@ -252,17 +327,25 @@ class Civitai:
             return json.loads(meta.read_text()).get("trainedWords", [])
         return []
 
+    def strength_for(self, comfy_name: str) -> float | None:
+        meta = self.meta_dir / f"{Path(comfy_name).name}.json"
+        if meta.exists():
+            return json.loads(meta.read_text()).get("strength")
+        return None
+
     # ----------------------------------------------------------------- resolve
     def resolve(self, character: dict, refresh: bool = False) -> dict:
-        """Return {"lora": LoraLoader name or None, "triggers": [...], "source": str, "weight": float}."""
+        """Return {"lora": LoraLoader name or None, "triggers": [...], "source": str, "weight": float,
+        "face_weight": the head pass's weight, the LoRA's recommended strength kept within FACE_WEIGHT_RANGE}."""
         name, series, ref = character["name"], character.get("series", ""), str(character.get("lora", "auto"))
         weight = float(character.get("lora_weight", 0.8))
         manual_trigger = character.get("trigger") or ""
-        result = {"lora": None, "triggers": [], "source": "none", "weight": weight}
+        result = {"lora": None, "triggers": [], "source": "none", "weight": weight, "face_weight": face_weight(None, weight)}
 
         def finish(comfy_name: str, source: str):
             trig = [manual_trigger] if manual_trigger else self.triggers_for(comfy_name)
-            result.update(lora=comfy_name, triggers=self._clean_triggers(trig, name), source=source)
+            result.update(lora=comfy_name, triggers=self._clean_triggers(trig, name), source=source,
+                          face_weight=face_weight(self.strength_for(comfy_name), weight))
             return result
 
         if ref.lower() in ("none", "no", "off", "false"):
@@ -278,7 +361,11 @@ class Civitai:
             return finish(self.download(cand), f"civitai:{cand['model']['id']}")
 
         key = f"{name.strip().lower()}|{series.strip().lower()}"
-        if not refresh and key in self.index:
+        base = self._base_known(key, name, series, refresh)
+        if base:
+            result.update(triggers=[prompt_tag(base)], source=f"base-model:{base}")
+            return result
+        if not refresh and "lora" in self.index.get(key, {}):
             entry = self.index[key]
             if entry.get("lora") is None:
                 result["source"] = "cached-miss"
@@ -292,7 +379,7 @@ class Civitai:
             return result
         if cand is None:
             self.log(f"[civitai] no LoRA found for {name} ({series}) on {self.cfg.get('base_model_preference')}")
-            self.index[key] = {"lora": None, "checked": time.time()}
+            self.index[key] = {**self.index.get(key, {}), "lora": None, "checked": time.time()}
             self._save_index()
             return result
         self.log(f"[civitai] match: {cand['model']['name']} / {cand['version']['name']} [{cand['version']['baseModel']}] score={cand['score']:.1f}")
@@ -303,9 +390,32 @@ class Civitai:
             self.log("[civitai] continuing without a LoRA (identity falls back to the reference image if present)")
             result["source"] = "download-failed"
             return result
-        self.index[key] = {"lora": comfy_name, "modelId": cand["model"]["id"], "checked": time.time()}
+        self.index[key] = {**self.index.get(key, {}), "lora": comfy_name, "modelId": cand["model"]["id"], "checked": time.time()}
         self._save_index()
         return finish(comfy_name, f"civitai:{cand['model']['id']}")
+
+    def _base_known(self, key: str, name: str, series: str, refresh: bool) -> str | None:
+        """Danbooru tag when the checkpoint already draws this character, so no LoRA is fetched.
+        lora_keep in config.yaml, or keep: true on a bundled LoRA, opts a character out (an older or
+        alternate version the base model doesn't know, such as the adult Boruto-era cast)."""
+        entry = self.index.get(key, {})
+        if entry.get("keep") or name.strip().lower() in self.lora_keep or key in self.lora_keep:
+            return None
+        if not refresh and "base" in entry:
+            return entry["base"] or None
+        if self.base_min_posts <= 0:
+            return None
+        try:
+            hit = base_model_tag(name, series, self.base_min_posts, self.sess)
+        except (requests.RequestException, ValueError) as e:
+            self.log(f"[base] Danbooru lookup failed ({e}); using a LoRA if one exists")
+            return None
+        tag = hit[0] if hit else ""
+        if hit:
+            self.log(f"[base] {name}: the checkpoint knows {tag} ({hit[1]} Danbooru posts), skipping the LoRA")
+        self.index[key] = {**entry, "base": tag}
+        self._save_index()
+        return tag or None
 
     def _save_index(self):
         self.index_path.write_text(json.dumps(self.index, indent=2))
