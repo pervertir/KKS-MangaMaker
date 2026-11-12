@@ -1,13 +1,15 @@
 import { $, clamp } from "./core.js";
 import { paperOf } from "./creation.js";
-import { drawLayer, imageRect } from "./drawing.js";
+import { drawLayer, drawLayers, imageRect } from "./drawing.js";
 import { imgFor } from "./images.js";
 import { placeInline } from "./inline-edit.js";
 import { drawFlipped, drawPage } from "./manga-tools.js";
 import { H, S, W, layers, page, selL } from "./state.ts";
 import { boxes } from "../core/format.ts";
+import { drawTransformBox } from "./transform-box.js";
 import { getTool } from "../core/tools.ts";
 import { drawAnts, hasSelection, selectionPage } from "../core/selection.ts";
+import { isPlainRect, panelBase, tracePanel } from "./frames.js";
 
 /* ================================================================ canvas view */
 export const cv = $("#canvas"), ctx = cv.getContext("2d"), stage = $("#stage");
@@ -54,7 +56,8 @@ export function paintCache(target, cs, from, to) {           // layers [from, to
   g.setTransform(cs, 0, 0, cs, 0, 0);
   if (from === 0) { g.fillStyle = paperOf(page()); g.fillRect(0, 0, W(), H()); }
   const ls = layers();
-  for (let i = from; i < to; i++) drawLayer(g, ls[i], { rs: cs });
+  const paper = paperOf(page());
+  drawLayers(g, ls, from, to, { rs: cs, paper });
   return target;
 }
 export function liveRange() {                                  // contiguous layer range that moves with the drag
@@ -88,7 +91,7 @@ export function draw() {
     }
     const ls = layers();
     ctx.drawImage(DC.below, 0, 0, W(), H());
-    for (let i = DC.from; i < DC.to; i++) drawLayer(ctx, ls[i], { rs: v.s * d });
+    drawLayers(ctx, ls, DC.from, DC.to, { rs: v.s * d, paper: paperOf(page()) });
     ctx.drawImage(DC.above, 0, 0, W(), H());
   } else if (!S.busy && v.s * d > cs * 1.01) {
     drawPage(ctx, page(), { rs: v.s * d });            // zoomed past the cache: paint directly once settled
@@ -104,16 +107,24 @@ export function draw() {
   if (ad) { // image outside the panel, faded, so you can see what you are cropping
     const rr = ad.image && imageRect(ad), im = rr && imgFor(ad.image.ref, rr.w * v.s * d);
     if (im) {
-      ctx.save(); ctx.beginPath(); ctx.rect(-1e5, -1e5, 2e5, 2e5); ctx.rect(ad.x, ad.y, ad.w, ad.h); ctx.clip("evenodd");
+      ctx.save(); ctx.beginPath(); ctx.rect(-1e5, -1e5, 2e5, 2e5); tracePanel(ctx, ad); ctx.clip("evenodd");
       ctx.globalAlpha = 0.35; drawFlipped(ctx, im, rr, ad.image.flip); ctx.restore();
     }
     ctx.save(); ctx.setLineDash([12 / v.s, 8 / v.s]); ctx.strokeStyle = "#ff4f7b"; ctx.lineWidth = 2 / v.s;
-    ctx.strokeRect(ad.x, ad.y, ad.w, ad.h); ctx.restore();
+    ctx.beginPath(); tracePanel(ctx, ad); ctx.stroke(); ctx.restore();
   }
   // overlays
   const px = 1 / v.s;
   if (S.showOrder) drawPanelOrder(px);
   if (S.showPrint) drawPrintGuides(px);
+  if (S.polyDraft?.length) {
+    const D = S.polyDraft, m = S.polyHover;
+    ctx.save(); ctx.setLineDash([6 * px, 4 * px]); ctx.strokeStyle = "#4c8dff"; ctx.lineWidth = 1.5 * px;
+    ctx.beginPath(); D.forEach((q, i) => i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)); if (m) ctx.lineTo(m.x, m.y); ctx.stroke();
+    ctx.setLineDash([]);
+    D.forEach((q, i) => { ctx.fillStyle = i ? "#fff" : "#4c8dff"; ctx.beginPath(); ctx.arc(q.x, q.y, (i ? 5 : 7) * px, 0, 7); ctx.fill(); ctx.stroke(); });
+    ctx.restore();
+  }
   if (S.drag?.creating) {
     const c = S.drag.creating;
     ctx.save(); ctx.setLineDash([6 * px, 4 * px]); ctx.strokeStyle = "#4c8dff"; ctx.lineWidth = 1.5 * px;
@@ -121,11 +132,14 @@ export function draw() {
   }
   for (const g of S.guides) {
     ctx.strokeStyle = "#ff3df2"; ctx.lineWidth = px; ctx.beginPath();
-    if (g.x != null) { ctx.moveTo(g.x, -2000); ctx.lineTo(g.x, H() + 2000); } else { ctx.moveTo(-2000, g.y); ctx.lineTo(W() + 2000, g.y); }
+    if (g.x != null) { ctx.moveTo(g.x, -2000); ctx.lineTo(g.x, H() + 2000); }
+    else if (g.y != null) { ctx.moveTo(-2000, g.y); ctx.lineTo(W() + 2000, g.y); }
+    else if (g.line) { ctx.moveTo(g.line[0][0], g.line[0][1]); ctx.lineTo(g.line[1][0], g.line[1][1]); }
+    else if (g.point) { ctx.moveTo(g.point[0] - 12 * px, g.point[1]); ctx.lineTo(g.point[0] + 12 * px, g.point[1]); ctx.moveTo(g.point[0], g.point[1] - 12 * px); ctx.lineTo(g.point[0], g.point[1] + 12 * px); }
     ctx.stroke();
   }
   const s = selL();
-  if (s && !ad) drawSelection(s, px);
+  if (s && !ad) drawTransformBox(ctx, s, px);
   getTool(S.tool)?.overlay?.(ctx, px);
   if (hasSelection() && selectionPage() === page().id) { drawAnts(ctx, px); antsTick(); }
 }
@@ -168,29 +182,4 @@ export function corners(l) {
   const P = (dx, dy) => ({ x: cx + dx * c - dy * s, y: cy + dx * s + dy * c });
   return { P, cx, cy, a };
 }
-export const HANDLES = [[-1, -1], [0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0]];
-export function drawSelection(l, px) {
-  const { P } = corners(l), hw = l.w / 2, hh = l.h / 2;
-  const pts = [P(-hw, -hh), P(hw, -hh), P(hw, hh), P(-hw, hh)];
-  ctx.save();
-  ctx.strokeStyle = l.locked ? "#f5b84b" : "#4c8dff"; ctx.lineWidth = 1.5 * px;
-  ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.closePath(); ctx.stroke();
-  if (!l.locked) {
-    for (const [hx, hy] of HANDLES) {
-      const p = P(hx * hw, hy * hh), r = 5 * px;
-      ctx.fillStyle = "#fff"; ctx.fillRect(p.x - r, p.y - r, r * 2, r * 2); ctx.strokeRect(p.x - r, p.y - r, r * 2, r * 2);
-    }
-    if (l.type === "vbubble" && l.tail) {
-      const t = P(l.tail.x, l.tail.y);
-      ctx.fillStyle = "#ff4f7b"; ctx.beginPath(); ctx.arc(t.x, t.y, 7 * px, 0, 7); ctx.fill(); ctx.strokeStyle = "#fff"; ctx.stroke(); ctx.strokeStyle = "#4c8dff";
-    }
-    if (l.type !== "panel") {
-      const t = P(0, -hh), rp = P(0, -hh - 34 * px);
-      ctx.beginPath(); ctx.moveTo(t.x, t.y); ctx.lineTo(rp.x, rp.y); ctx.stroke();
-      ctx.fillStyle = "#4c8dff"; ctx.beginPath(); ctx.arc(rp.x, rp.y, 6 * px, 0, 7); ctx.fill();
-    }
-  }
-  ctx.restore();
-}
-
 export function set_DC(v) { DC = v; }

@@ -420,7 +420,7 @@ def dialogue_layer(d: dict, rect, bmap) -> dict | None:
 # ---------------------------------------------------------------------------- jobs
 JOBS: dict[str, dict] = {}
 MANGAPIPE = ROOT / "mangapipe"
-SHOT_CMDS = {"run", "render", "grab", "compose"}
+SHOT_CMDS = {"run", "render", "grab", "compose", "matte"}
 POD_ACTIONS = {"status", "start", "stop", "url", "restart"}
 
 
@@ -635,7 +635,7 @@ class Handler(BaseHTTPRequestHandler):
             if hashlib.sha256(data).hexdigest() != m.group(2):
                 return self.json({"error": "content does not match its hash"}, 400)
             f.parent.mkdir(parents=True, exist_ok=True)
-            tmp = f.with_suffix(".part")
+            tmp = f.with_name(f"{f.name}.{threading.get_ident()}.part")
             tmp.write_bytes(data)
             tmp.replace(f)
             return self.json({"ok": True})
@@ -881,6 +881,11 @@ class Handler(BaseHTTPRequestHandler):
                         args += ["--seed", str(int(body["seed"]))]
                     if cmd == "run":
                         args.append("--no-compose")  # the editor letters the page itself
+                    if cmd == "matte" and body.get("image"):
+                        img = resolve_ref(str(body["image"]))
+                        if d not in img.parents:
+                            return self.json({"error": "that render is not in this shot"}, 400)
+                        args += ["--image", str(img.relative_to(ROOT))]
                     label = f"{cmd} {d.name}"
                 elif cmd == "pod" and body.get("action") in POD_ACTIONS:
                     args, label = ["pod", body["action"]], f"pod {body['action']}"

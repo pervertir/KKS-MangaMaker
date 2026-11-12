@@ -447,3 +447,10 @@ body.pages-dark .ghostpage { background: #0b0b0d; }
 #optionsbar .sw.on { outline: 2px solid var(--accent, #4c8dff); outline-offset: 1px; }
 #optionsbar .ob-l:has(.dopt) { flex: 0 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; }
 #optionsbar .ob-l:has(.dopt) > * { flex: none; }
+/* panel frame shapes */
+.shapes { display: flex; flex-wrap: wrap; gap: 4px; margin: 2px 0 6px; }
+.shapebtn { padding: 2px; min-height: 0; line-height: 0; background: var(--panel2); }
+.shapebtn canvas { width: 26px; height: 26px; }
+.shapebtn.on { box-shadow: 0 0 0 2px var(--accent); }
+.shapeseg button { padding: 0 4px; line-height: 0; }
+.shapeseg canvas { width: 20px; height: 20px; }
