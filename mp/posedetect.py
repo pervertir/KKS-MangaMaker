@@ -74,8 +74,8 @@ def _overlap(p, q, W, H) -> float:
     return iw * ih / small
 
 
-def _shift(p, dx, sx, W, cw, CH, H):
-    """Move a person found in a strip (cw x CH) back into the full picture (W x H), in pixels."""
+def _shift(p, dx, tw, th, cw, ch):
+    """Keypoints read on a cw x ch canvas (pixels or 0..1) -> pixels of the tw x th input, moved right by dx."""
     q = dict(p)
     for key in ("pose_keypoints_2d", "hand_left_keypoints_2d", "hand_right_keypoints_2d"):
         k = list(p.get(key) or [])
@@ -83,7 +83,9 @@ def _shift(p, dx, sx, W, cw, CH, H):
             if (k[i + 2] or 0) > 0:
                 x, y = k[i], k[i + 1]
                 if x <= 1 and y <= 1:
-                    x, y = x * cw, y * CH
+                    x, y = x * tw, y * th
+                else:
+                    x, y = x * tw / (cw or tw), y * th / (ch or th)
                 k[i], k[i + 1] = x + dx, y
         q[key] = k
     return q
@@ -108,12 +110,12 @@ def detect(comfy, image: Path, log=print) -> list[dict]:
     for node, extra, res in DETECTORS:
         for fr in _run(comfy, name, node, extra, res):
             cw, ch = int(fr.get("canvas_width") or W), int(fr.get("canvas_height") or H)
-            found += [_shift(p, 0, 1, W, cw, ch, H) for p in fr.get("people", [])]
+            found += [_shift(p, 0, W, H, cw, ch) for p in fr.get("people", [])]
     for x0, sw, crop in strips:
         cname = comfy.upload(crop, "manga", crop.name.lstrip("."))
         for fr in _run(comfy, cname, "DWPreprocessor", {"bbox_detector": "None", "pose_estimator": DW}, 768):
             cw, ch = int(fr.get("canvas_width") or sw), int(fr.get("canvas_height") or H)
-            found += [_shift(p, x0, 1, W, cw, ch, H) for p in fr.get("people", [])]
+            found += [_shift(p, x0, sw, H, cw, ch) for p in fr.get("people", [])]
         crop.unlink(missing_ok=True)
     # merge: one person per place, keeping the most complete reading. Two readings are the same person when
     # their necks are close or their outlines mostly overlap. Close-ups show few joints, so the bar drops
@@ -127,8 +129,45 @@ def detect(comfy, image: Path, log=print) -> list[dict]:
                    for q in people for bx, by in [_anchor(q, W, H)])
         if not same:
             people.append(p)
+    if not people:
+        people = _closeup(comfy, image, W, H, log)
     log(f"[pose] {len(people)} people (from {len(found)} readings)")
     return [{"people": people, "canvas_width": W, "canvas_height": H}]
+
+
+def _closeup(comfy, image: Path, W: int, H: int, log) -> list[dict]:
+    """Close-ups fill the frame with a face or chest, and person detectors want a whole person in view.
+    Shrink the picture onto a large plain canvas (as if the camera stepped back) and look again, keeping
+    readings with as few as three joints; the body below the frame is filled in by person_to_pose."""
+    from PIL import Image
+    pad = image.parent / f".pad_{image.stem}.png"
+    CW, CH = W * 3, H * 3
+    ox, oy = W, int(H * 0.6)
+    with Image.open(image) as im:
+        bg = Image.new("RGB", (CW, CH), (128, 128, 128))
+        bg.paste(im.convert("RGB"), (ox, oy))
+        bg.save(pad)
+    name = comfy.upload(pad, "manga", pad.name.lstrip("."))
+    pad.unlink(missing_ok=True)
+    found = []
+    for node, extra, res in DETECTORS:
+        for fr in _run(comfy, name, node, extra, res):
+            cw, ch = int(fr.get("canvas_width") or CW), int(fr.get("canvas_height") or CH)
+            for p in fr.get("people", []):
+                q = _shift(p, -ox, CW, CH, cw, ch)
+                for key in ("pose_keypoints_2d", "hand_left_keypoints_2d", "hand_right_keypoints_2d"):
+                    k = q.get(key) or []
+                    for i in range(1, len(k) - 1, 3):
+                        if (k[i + 1] or 0) > 0:
+                            k[i] -= oy
+                found.append(q)
+    found = sorted((p for p in found if _confident(p) >= 3), key=_confident, reverse=True)
+    people = []
+    for p in found:
+        if all(_overlap(p, q, W, H) <= 0.45 for q in people):
+            people.append(p)
+    log(f"[pose] close-up pass: {len(people)} people")
+    return people
 
 
 def _fetch(comfy, prefix: str, hist: dict) -> list[dict]:
@@ -160,8 +199,22 @@ def _pts(flat, n, W, H):
 
 def person_to_pose(person: dict, W: int, H: int) -> dict | None:
     body = _pts(person.get("pose_keypoints_2d"), 18, W, H)
-    if sum(p is not None for p in body) < 5:
+    if sum(p is not None for p in body) < 3:
         return None
+    # a face with no shoulders (tight close-up): rebuild neck and shoulders from the head's size
+    if body[1] is None and not (body[2] and body[5]):
+        face = [p for p in (body[0], body[14], body[15], body[16], body[17]) if p]
+        if len(face) < 2:
+            return None
+        xs = [p[0] for p in face]
+        head_w = max(xs) - min(xs)
+        if body[16] and body[17]:
+            k = abs(body[16][0] - body[17][0]) / 0.17       # ear to ear
+        else:
+            k = max(head_w, 1.0) / 0.09                     # eye to eye, roughly
+        cx, cy = sum(xs) / len(xs), sum(p[1] for p in face) / len(face)
+        body[1] = [cx, cy + 0.17 * k]
+        body[2], body[5] = [cx - 0.11 * k, cy + 0.19 * k], [cx + 0.11 * k, cy + 0.19 * k]
     if body[1] is None and body[2] and body[5]:
         body[1] = [(body[2][0] + body[5][0]) / 2, (body[2][1] + body[5][1]) / 2]
     if body[1] is None:
