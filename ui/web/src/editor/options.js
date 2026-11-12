@@ -5,6 +5,7 @@ import { layoutDialog } from "./layouts.js";
 import { VSHAPES } from "./manga-tools.js";
 import { S, bubbleMeta } from "./state.ts";
 import { TONE_PRESETS } from "./tools.js";
+import { getTool } from "../core/tools.ts";
 import { frameIcon } from "./props.js";
 import { requestView } from "./view.js";
 
@@ -13,7 +14,7 @@ import { requestView } from "./view.js";
 export function renderOptions() {
   const o = $("#optionsbar"); o.innerHTML = "";
   const name = { move: "Move", hand: "Hand", panel: "Panel", bubble: "Bubble", vbubble: "Drawn bubble", text: "Text", sfx: "Sound effect", caption: "Caption",
-    tone: "Screentone", speed: "Speed lines" }[S.tool];
+    tone: "Screentone", speed: "Speed lines" }[S.tool] || getTool(S.tool)?.label;
   const L = h("div", { class: "ob-l" }, h("span", { class: "tname" }, name)), hint = h("div", { class: "ob-hint" });
   const say = t => { hint.textContent = t; hint.title = t; };
   const seg = (opts, cur, pick) => h("div", { class: "seg" }, ...opts.map(([k, t, tip]) =>
@@ -45,6 +46,7 @@ export function renderOptions() {
     L.append(seg([["focus", "Focus", "Focus lines 集中線: wedges toward an empty centre"], ["parallel", "Speed", "Speed lines 流線: parallel streaks"]], S.speedMode, k => { S.speedMode = k; }));
     say("Click a panel to fill it, or drag an area. Tweak count, thickness and the empty centre in Properties.");
   }
+  getTool(S.tool)?.options?.(L);
   o.append(L, hint, h("div", { class: "ob-r" },
     h("button", { class: "ghost", title: "Snapping guides (;)", "aria-pressed": String(S.showGuides), onclick: () => { S.showGuides = !S.showGuides; renderOptions(); } }, S.showGuides ? "Snap: on" : "Snap: off")));
 }
