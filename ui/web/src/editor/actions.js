@@ -13,7 +13,7 @@ import { requestDraw, requestView } from "./view.js";
 
 import { ui } from "../ui/store.svelte.ts";
 import { applyFrameShape, bleedPanel, isPlainRect, panelBase, setPanelPoly, splitOutline } from "./frames.js";
-import { finishPoly } from "./pointer.js";
+import { finishPoly } from "./polygon-panels.js";
 import { refreshProps } from "./props.js";
 
 /* ================================================================ actions */
