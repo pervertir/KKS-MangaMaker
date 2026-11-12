@@ -78,6 +78,9 @@ export interface Page {
   /** title of the chapter this page opens */
   chapter?: string;
   noNumber?: boolean;
+  /** knife cuts: lines across panels, each with an optional own gutter */
+  cuts?: { id: string; a: [number, number]; b: [number, number]; gutter: number | null }[];
+  gutters?: { h: number; v: number; margin: number };
 }
 
 export interface Doc {

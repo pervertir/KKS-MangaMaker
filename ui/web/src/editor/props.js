@@ -7,6 +7,7 @@ import { S } from "./state.ts";
 import { requestDraw } from "./view.js";
 import { FRAME_SHAPES, tracePanel } from "./frames.js";
 import { matteRef } from "./drawing.js";
+import { gutterControls } from "./knife.js";
 
 /* ================================================================ properties
    The panel is src/ui/Props.svelte. rowOf is the label + controls row the dialogs still build by hand. */

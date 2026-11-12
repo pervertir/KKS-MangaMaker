@@ -3,20 +3,23 @@ import { showLib } from "./dock-tabs.js";
 import { thumb } from "./images.js";
 import { layoutDialog } from "./layouts.js";
 import { PRESETS } from "../lettering/geom.ts";
-import { S, bubbleMeta } from "./state.ts";
+import { S, bubbleMeta, page } from "./state.ts";
 import { addEffect, currentToneFields, pageSelection, speedFields } from "./effects/apply.ts";
 import { MODES } from "./effects/speed.ts";
 import { allTones } from "./effects/tones.ts";
 import { setTool } from "./tools.js";
 import { getTool } from "../core/tools.ts";
+import { cutGutter, gutterControls, isLevel, mergeCut } from "./knife.js";
+import { commit } from "./history.js";
 import { frameIcon } from "./props.js";
-import { requestView } from "./view.js";
+import { FRAME_SHAPES } from "./frames.js";
+import { requestDraw, requestView } from "./view.js";
 
 /* ================================================================ options bar */
 /* three zones: the tool's own controls, a hint that is the first thing to give way, and Snap, which never scrolls away */
 export function renderOptions() {
   const o = $("#optionsbar"); o.innerHTML = "";
-  const name = { move: "Move", hand: "Hand", panel: "Panel", bubble: "Bubble", vbubble: "Drawn bubble", text: "Text", sfx: "Sound effect", caption: "Caption",
+  const name = { move: "Move", hand: "Hand", panel: "Panel", knife: "Knife", bubble: "Bubble", vbubble: "Drawn bubble", text: "Text", sfx: "Sound effect", caption: "Caption",
     tone: "Screentone", speed: "Speed lines" }[S.tool] || getTool(S.tool)?.label;
   const L = h("div", { class: "ob-l" }, h("span", { class: "tname" }, name)), hint = h("div", { class: "ob-hint" });
   const say = t => { hint.textContent = t; hint.title = t; };
@@ -27,7 +30,20 @@ export function renderOptions() {
     L.append(h("div", { class: "seg shapeseg" }, ...[...FRAME_SHAPES.map(([k, t]) => [k, frameIcon(k), t]), ["polygon", "✎", "Polygon: click each corner, click the first one (or Enter) to close"]].map(([k, ic, tip]) =>
       h("button", { class: S.panelShape === k ? "on" : "", title: tip, "aria-pressed": String(S.panelShape === k), onclick: () => { S.panelShape = k; S.polyDraft = null; renderOptions(); requestView(); } }, ic))),
       h("button", { onclick: layoutDialog }, "Layouts…"));
-    say(S.panelShape === "polygon" ? "Click each corner; click the first corner, double-click or press Enter to close. Esc cancels." : "Drag a frame on the page. Snaps to page edges and 30 px gutters.");
+    say(S.panelShape === "polygon" ? "Click each corner; click the first corner, double-click or press Enter to close. Esc cancels." : "Drag a frame on the page. Snaps to page edges and the page's gutters.");
+  }
+  if (S.tool === "knife") {
+    const done = msg => { commit(msg || "Gutters"); requestDraw(); renderOptions(); };
+    const c = S.cut && page().cuts?.find(q => q.id === S.cut);
+    if (c) {
+      const inp = h("input", { type: "number", min: 0, max: 400, step: 1, placeholder: String(cutGutter({ ...c, gutter: null })), value: c.gutter ?? "", style: "width:58px",
+        onchange: e => { c.gutter = e.target.value === "" ? null : Math.max(0, +e.target.value); done("Cut gutter"); } });
+      L.append(h("label", { class: "gutin", title: "This cut's gutter, px. Empty follows the page's " + (isLevel(c) ? "tier" : "column") + " gutter" }, "This cut", inp),
+        h("button", { title: "Remove this cut: the panels on both sides become one again (Delete)", onclick: () => { mergeCut(c.id); S.cut = null; done("Cut removed: panels merged"); } }, "Merge"),
+        h("span", { class: "tsep" }));
+    }
+    L.append(...gutterControls(done));
+    say(c ? "Drag the cut to move it, drag an end to turn it (Shift snaps 15°). Both neighbours follow." : "Drag a line across panels to cut them at any angle. Shift snaps 15°. Click a cut line to move it or set its gutter.");
   }
   if (S.tool === "bubble") {
     const m = bubbleMeta(S.bubble);

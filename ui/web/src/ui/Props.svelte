@@ -25,6 +25,7 @@
   import { isPolyPanel } from "../editor/polygon-panels.js";
   import { FRAME_EDGES, FRAME_SHAPES, frameShapeKey } from "../editor/frames.js";
   import { cutOut, frameIcon, refreshProps, startBreakout } from "../editor/props.js";
+  import { gutterControls } from "../editor/knife.js";
   import { poseForPanel } from "../pose/open.js";
   import LetterProps from "./LetterProps.svelte";
   import type { Layer } from "../types.ts";
@@ -84,6 +85,7 @@
     B.sides = [..."trbl"].filter(c => s.has(c)).join(""); done();
   }
   function icon(el: HTMLElement, k: string) { el.replaceChildren(frameIcon(k)); }
+  function gutterRow(el: HTMLElement) { el.replaceChildren(...gutterControls((msg?: string) => { commit(msg || "Gutters"); requestDraw(); refreshProps(); }, { all: true })); }
   function pickShot(l: Obj, name: string) {
     l.shot = name;
     const s = S.shots.find((q: Obj) => q.name === name);
@@ -182,6 +184,7 @@
       <p class="hint">The characters are drawn over this panel's border and up to Reach px past the ticked sides; the background stays inside the frame. Lettering stays on top.</p>
     {/if}
   {/if}
+  {#if R(l).knife}<p class="hint">Cut with the knife: its edges follow the cut lines and gutters (Knife tool, {keyLabel("x")}). Moving it or editing its corners makes it a free shape.</p>{/if}
   <div class="section">Frame</div>
   <div class="shapes">
     {#each FRAME_SHAPES as [k, t] (k)}
@@ -215,6 +218,9 @@
   <div class="row"><label>Max text</label><input type="number" use:field={() => R(d).maxFont} onchange={e => put(d, "maxFont", +val(e))} />
     <span class="hint">px, keeps fitted text even</span></div>
   <div class="row"><label>Book</label><span class="hint">{(ui.rev, R(d).format.trimW)} × {R(d).format.trimH} mm, {R(d).format.bleed} mm bleed · page {(ui.rev, slotLabel(S.doc!, S.page))}</span></div>
+  <div class="section">Gutters</div>
+  {#key ui.rev}<div class="btnrow gutrow" use:gutterRow></div>{/key}
+  <p class="hint">Gutters follow the cut lines of layouts and the Knife ({keyLabel("x")}); hand-drawn frames keep their own spacing. Margin moves the outer panel edges.</p>
   <div class="btnrow"><button onclick={layoutDialog}>Choose layout…</button>
     <button onclick={pageOps.spread}>{(ui.rev, page().span === 2) ? "Single page" : "Two-page spread"}</button>
     <button onclick={pageOps.format}>Book format…</button></div>

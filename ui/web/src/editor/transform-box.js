@@ -5,6 +5,7 @@ import { frame, handles, hitHandle, rotateTo, scaleBox } from "../core/transform
 import { isPlainRect, tracePanel } from "./frames.js";
 import { boxPad, drawVertices, hitVertex } from "./polygon-panels.js";
 import { drawHandles, scaleShapes } from "../lettering/handles.ts";
+import { gutters } from "./knife.js";
 
 /* ================================================================ transform box */
 /* One move / scale / rotate box for every layer type. Built-in types set their rules here; registered types
@@ -49,8 +50,9 @@ function snapPanelEdges(l, h) {
   S.guides = [];
   const thr = 7 / S.view.s, snapV = (v, ts) => { for (const t of ts) if (Math.abs(t - v) < thr) return t; return null; };
   const others = layers().filter(o => o.id !== l.id && o.type === "panel");
-  const xs = [0, W(), ...others.flatMap(o => [o.x, o.x + o.w, o.x - 30 - o.border, o.x + o.w + 30 + o.border])];
-  const ys = [0, H(), ...others.flatMap(o => [o.y, o.y + o.h, o.y - 30 - o.border, o.y + o.h + 30 + o.border])];
+  const G = gutters();
+  const xs = [0, W(), ...others.flatMap(o => [o.x, o.x + o.w, o.x - G.v - o.border - l.border, o.x + o.w + G.v + o.border + l.border])];
+  const ys = [0, H(), ...others.flatMap(o => [o.y, o.y + o.h, o.y - G.h - o.border - l.border, o.y + o.h + G.h + o.border + l.border])];
   if (h.hx === 1) { const t = snapV(l.x + l.w, xs); if (t != null) { l.w = t - l.x; S.guides.push({ x: t }); } }
   if (h.hx === -1) { const t = snapV(l.x, xs); if (t != null) { l.w += l.x - t; l.x = t; S.guides.push({ x: t }); } }
   if (h.hy === 1) { const t = snapV(l.y + l.h, ys); if (t != null) { l.h = t - l.y; S.guides.push({ y: t }); } }

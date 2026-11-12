@@ -1,4 +1,4 @@
-import { $, h } from "./core.js";
+import { $, deep, h } from "./core.js";
 import { commit } from "./history.js";
 import { thumb } from "./images.js";
 import { closeModal, modal } from "./modal.js";
@@ -6,6 +6,7 @@ import { renderPages } from "./pages.js";
 import { H, S, W, layers, normalize, page } from "./state.ts";
 import { panelOrder, requestDraw } from "./view.js";
 import { SHAPED_LAYOUTS, layoutEntry, layoutThumb, shapedLayout } from "./frames.js";
+import { gridTree, gutters, knifeLayout } from "./knife.js";
 
 /* ================================================================ layouts */
 export function gridRects(rows, heights, margin = 60, gutter = 30, line = 4) {
@@ -23,14 +24,14 @@ export function gridRects(rows, heights, margin = 60, gutter = 30, line = 4) {
 export function applyLayout(rects, label) {
   const ls = layers(), old = panelOrder(ls);
   const keep = ls.filter(l => l.type !== "panel");
-  const sx = W() / 1800, sy = H() / 2700;
+  const sx = rects.cuts ? 1 : W() / 1800, sy = rects.cuts ? 1 : H() / 2700;
   const fresh = rects.map(layoutEntry).map(e => normalize({ pages: [{ layers: [{ ...deep(e), type: "panel", x: e.x * sx, y: e.y * sy, w: e.w * sx, h: e.h * sy, shot: "", image: null }] }] }).pages[0].layers[0]);
   const order = panelOrder(fresh);
   order.forEach((p, i) => {
     const o = old[i], e = layoutEntry(rects[fresh.indexOf(p)]);
     if (o) { p.image = o.image; p.shot = o.shot; if (e.border == null) p.border = o.border; p.borderColor = o.borderColor; }
   });
-  page().layers = [...fresh, ...keep];
+  page().layers = [...fresh, ...keep]; page().cuts = rects.cuts || [];
   S.sel = null; commit("Layout " + label); requestDraw(); renderPages();
 }
 /* classic manga page grids, built in so a page can be laid out with no template pack installed:
@@ -53,16 +54,19 @@ export function presetTiles(onPick) {
   const t = h("div", { class: "tiles" });
   for (const [name, rows, hs] of PRESET_LAYOUTS) {
     const ord = S.doc.reading === "rtl" ? rows.map(r => [...r].reverse()) : rows;
-    t.append(h("div", { class: "tile page", title: name, onclick: () => onPick(gridRects(ord, hs), name) }, presetThumb(ord, hs), h("div", { class: "cap" }, name)));
+    t.append(h("div", { class: "tile page", title: name, onclick: () => onPick(knifeGrid(ord, hs), name) }, presetThumb(ord, hs), h("div", { class: "cap" }, name)));
   }
   return t;
 }
+/* layouts made of knife cuts, so the page's gutters and margin keep applying to them afterwards */
+export const knifeGrid = (rows, hs) => { const m = gutters().margin; return knifeLayout(gridTree(rows, hs, W(), H(), m), W(), H(), m); };
+export const knifeShaped = i => { const [, tree, extra] = SHAPED_LAYOUTS[i]; return knifeLayout(tree, W(), H(), gutters().margin, extra || []); };
 /* slanted gutters, insets, circles, wavy and jagged frames, bleeds (frames.js SHAPED_LAYOUTS) */
 export function shapedTiles(onPick) {
   const t = h("div", { class: "tiles" });
   SHAPED_LAYOUTS.forEach(([name], i) => {
     const ps = shapedLayout(i, W(), H());
-    t.append(h("div", { class: "tile page", title: name, onclick: () => onPick(shapedLayout(i, W(), H()), name) }, layoutThumb(ps, W(), H()), h("div", { class: "cap" }, name)));
+    t.append(h("div", { class: "tile page", title: name, onclick: () => onPick(knifeShaped(i), name) }, layoutThumb(ps, W(), H()), h("div", { class: "cap" }, name)));
   });
   return t;
 }
@@ -75,15 +79,17 @@ export function layoutDialog() {
   }
   const rowsIn = h("input", { value: "1 | 1 1 | 2 1", style: "flex:1", title: "rows separated by |, relative widths inside a row" });
   const hIn = h("input", { value: "1 1 1", style: "width:120px", title: "relative row heights" });
-  const mIn = h("input", { type: "number", value: 60, style: "width:64px" }), gIn = h("input", { type: "number", value: 30, style: "width:64px" });
+  const g = gutters(), mIn = h("input", { type: "number", value: g.margin, style: "width:64px" });
+  const tIn = h("input", { type: "number", value: g.h, style: "width:64px", title: "gutter between tiers" }), cIn = h("input", { type: "number", value: g.v, style: "width:64px", title: "gutter between panels side by side" });
   $(".mbody", box).append(
     h("div", { class: "row" }, h("label", {}, "Custom grid"), rowsIn, h("span", { class: "hint" }, "heights"), hIn,
-      h("span", { class: "hint" }, "margin"), mIn, h("span", { class: "hint" }, "gutter"), gIn,
+      h("span", { class: "hint" }, "margin"), mIn, h("span", { class: "hint" }, "tiers"), tIn, h("span", { class: "hint" }, "columns"), cIn,
       h("button", { class: "primary", onclick: () => {
         const rows = rowsIn.value.split("|").map(r => r.trim().split(/\s+/).map(Number).filter(n => n > 0)).filter(r => r.length);
         let hs = hIn.value.trim().split(/\s+/).map(Number).filter(n => n > 0);
         if (hs.length !== rows.length) hs = rows.map(() => 1);
-        applyLayout(gridRects(rows, hs, +mIn.value, +gIn.value), "grid"); closeModal();
+        Object.assign(g, { margin: Math.max(0, +mIn.value), h: Math.max(0, +tIn.value), v: Math.max(0, +cIn.value) });
+        applyLayout(knifeGrid(rows, hs), "grid"); closeModal();
       } }, "Apply grid")),
     h("p", { class: "hint" }, "Applying a layout replaces this page's panels. Renders already placed move into the new panels in reading order; bubbles and text stay."),
     h("div", { class: "section" }, "Built-in"), presetTiles((r, n) => { applyLayout(r, n); closeModal(); }),

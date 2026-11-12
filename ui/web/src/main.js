@@ -64,6 +64,7 @@ import * as m52 from "./helpers/guide.js";
 import * as m53 from "./helpers/wiring.js";
 import "./editor/effects/index.ts";
 import "./editor/builtin-tools.js";
+import "./editor/knife-tool.js";
 import "./select/tools.ts";
 import "./lettering/index.ts";
 import * as m55 from "./editor/rulers.ts";

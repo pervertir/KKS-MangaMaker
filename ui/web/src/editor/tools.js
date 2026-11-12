@@ -23,11 +23,13 @@ import { poseKey, setMode } from "../pose/open.js";
 import { scriptWizard } from "../wizard/prompt.js";
 import { getTool, onToolsChanged, registeredTools } from "../core/tools.ts";
 import { deselect, invertSelection, selectAll } from "../select/tools.ts";
+import { mergeCut } from "./knife.js";
 
 /* ================================================================ tools & keys */
 export const ICON = {
   move: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 3l13 7-6 1.5L9 18z" fill="currentColor"/></svg>',
   hand: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M8 12V5.5a1.5 1.5 0 013 0V11m0-6.5a1.5 1.5 0 013 0V11m0-4.5a1.5 1.5 0 013 0V14a7 7 0 01-7 7h-.5A6.5 6.5 0 015 17.6L3.4 14a1.6 1.6 0 012.7-1.6L8 15"/></svg>',
+  knife: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 21L21 3"/><path d="M14.5 4.5l5 5-3 1-3-3z" fill="currentColor"/><path d="M4 9h5M15 20v-5" stroke-dasharray="2 2"/></svg>',
   panel: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="8" height="10"/><rect x="13" y="3" width="8" height="6"/><rect x="13" y="11" width="8" height="10"/><rect x="3" y="15" width="8" height="6"/></svg>',
   bubble: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 4c5 0 9 3 9 6.8s-4 6.7-9 6.7c-.9 0-1.8-.1-2.6-.3L5 20l1.1-4C4.2 14.8 3 12.9 3 10.8 3 7 7 4 12 4z"/></svg>',
   text: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 5h14M12 5v15M9 20h6"/></svg>',
@@ -52,10 +54,10 @@ export function setTool(t) {
   if (t === "bubble" && !S.cat?.bubbles?.length) { t = "vbubble"; status("No bubble templates installed: using drawn bubbles"); }
   if (S.tool !== t) { const old = getTool(S.tool); old?.cancel?.(); old?.deactivate?.(); }
   const changed = S.tool !== t;
-  S.tool = t; S.polyDraft = null; if (S.adjust) exitAdjust();
+  S.tool = t; S.polyDraft = null; S.cut = null; if (S.adjust) exitAdjust();
   if (changed) getTool(t)?.activate?.();
   $$("#toolbar button").forEach(b => b.classList.toggle("on", b.dataset.tool === t));
-  renderOptions();
+  renderOptions(); requestView();
 }
 /* typing fields keep their keys; sliders, checkboxes, colour wells and dropdowns don't swallow Delete */
 export const NONTEXT = ["range", "checkbox", "radio", "color", "button", "submit", "file"];
@@ -70,6 +72,7 @@ export const inField = e => {
    the book overview, otherwise the selected layer */
 export let deleteScope = "layers";
 export function deleteSelected() {
+  if (S.tool === "knife" && S.cut) { mergeCut(S.cut); S.cut = null; commit("Cut removed: panels merged"); renderOptions(); return requestDraw(); }
   const l = selL();                         // a selected layer always wins; a page only when no layer is selected
   if (!l && (deleteScope === "pages" || !$("#overview").hidden)) return pageOps.del(true);
   if (!l) return status("Nothing selected to delete");

@@ -68,7 +68,7 @@ export function normalize(doc: Doc): Doc {
   doc.format = { ...DEFAULT_FORMAT, ...inferFormat(doc), ...doc.format };
   normalizeBook(doc);
   for (const p of doc.pages) {
-    p.id ||= uid(); p.bg ||= "#ffffff"; p.layers ||= [];
+    p.id ||= uid(); p.bg ||= "#ffffff"; p.layers ||= []; p.cuts ||= [];
     for (const l of p.layers) {
       // panels are the page's skeleton: locked unless unlocked on purpose, so lettering work cannot nudge a frame
       l.id ||= uid(); l.rev ??= 0; l.visible ??= true; l.locked ??= l.type === "panel"; l.opacity ??= 1; l.blend ||= "source-over"; l.rotate ||= 0;

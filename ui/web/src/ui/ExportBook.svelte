@@ -3,7 +3,7 @@
   import { closeModal } from "../editor/modal.js";
   import { exportBook } from "../editor/project.js";
   import { toast } from "../editor/misc.js";
-  import { S } from "../editor/state.js";
+  import { S } from "../editor/state.ts";
 
   type Format = "webtoon" | "cbz" | "epub" | "print";
   const PRESETS: Record<string, { width: number; slice: number }> = {

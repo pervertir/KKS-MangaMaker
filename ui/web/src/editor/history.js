@@ -1,6 +1,7 @@
 import { refreshPanels, status } from "./misc.js";
 import { renderPages } from "./pages.js";
-import { S, selL } from "./state.ts";
+import { S, page, selL } from "./state.ts";
+import { derivePage } from "./knife.js";
 import { requestDraw } from "./view.js";
 import * as H from "../core/history.ts";
 
@@ -23,6 +24,7 @@ function bumpRevs(paths) {
 }
 
 export function commit(msg) {
+  if (S.doc) derivePage(page());
   sync();
   H.commit(hist, S.doc, S.page, msg || "", undefined, bumpRevs);
   S.dirty = true; refreshPanels(); if (msg) status(msg);
