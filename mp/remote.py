@@ -102,20 +102,57 @@ class Pod:
         self.ssh(script, timeout=3600)
 
     # ------------------------------------------------------------- lifecycle
-    def create(self) -> dict:
+    # GPUs of the same class as the default (24 GB or more, fast enough for SDXL), best value first. Used in
+    # order when the configured one has no stock; `runpod.gpu_fallbacks` in config.yaml replaces the list.
+    GPU_FALLBACKS = ["NVIDIA GeForce RTX 4090", "NVIDIA GeForce RTX 5090", "NVIDIA RTX PRO 4500 Blackwell", "NVIDIA L40S",
+                     "NVIDIA RTX 6000 Ada Generation", "NVIDIA RTX A6000", "NVIDIA A40", "NVIDIA GeForce RTX 3090", "NVIDIA RTX A5000", "NVIDIA L4"]
+    _NO_STOCK = ("no instances", "not enough free gpus", "no longer any instances", "unavailable", "out of stock", "no gpu", "could not find any")
+
+    def gpu_order(self) -> list[str]:
+        """The configured GPU first, then the fallbacks, those RunPod reports as in stock before the rest."""
+        r = self.r
+        want = [r.get("gpu", self.GPU_FALLBACKS[0])] + [g for g in (r.get("gpu_fallbacks") or self.GPU_FALLBACKS)]
+        want = list(dict.fromkeys(want))
+        try:
+            stock = {g["gpuId"] for g in json.loads(_run(["runpodctl", "gpu", "list"], timeout=60)) if g.get("available")}
+        except Exception:  # noqa: BLE001  (the listing is a hint; creation is the real test)
+            return want
+        rest = want[1:]      # the configured GPU is always tried first: the listing can lag behind real stock
+        return want[:1] + [g for g in rest if g in stock] + [g for g in rest if g not in stock]
+
+    def create(self, log=print) -> dict:
         r = self.r
         # The official template (150 GB container disk) is refused as "no instances available" even when the
         # GPU is in stock; the same image with a 60 GB container disk is accepted.
-        cmd = ["runpodctl", "pod", "create", "--name", self.name, "--image", r.get("image", "runpod/comfyui:1.3.3-comfyuiv0.30.0-cuda12.8"),
-               "--gpu-id", r.get("gpu", "NVIDIA GeForce RTX 4090"), "--ports", "8188/http,8080/http,8888/http,22/tcp",
-               "--container-disk-in-gb", str(r.get("container_disk_gb", 60)), "--volume-mount-path", "/workspace"]
-        if r.get("data_center"):
-            cmd += ["--data-center-ids", r["data_center"]]
-        if r.get("network_volume_id"):
-            cmd += ["--network-volume-id", r["network_volume_id"]]
-        out = _run(cmd, timeout=800)
-        self._info = None
-        return json.loads(out)
+        base = ["runpodctl", "pod", "create", "--name", self.name, "--image", r.get("image", "runpod/comfyui:1.3.3-comfyuiv0.30.0-cuda12.8"),
+                "--ports", "8188/http,8080/http,8888/http,22/tcp",
+                "--container-disk-in-gb", str(r.get("container_disk_gb", 60)), "--volume-mount-path", "/workspace"]
+        vol = r.get("network_volume_id")
+        if vol:
+            base += ["--network-volume-id", vol]
+        # a network volume pins the data centre; without one, any data centre will do once the preferred one is full
+        places = [r["data_center"]] if r.get("data_center") else [None]
+        if not vol and places != [None]:
+            places.append(None)
+        last = None
+        for gpu in self.gpu_order():
+            for dc in places:
+                cmd = base + ["--gpu-id", gpu] + (["--data-center-ids", dc] if dc else [])
+                try:
+                    out = _run(cmd, timeout=800)
+                except RemoteError as e:
+                    last = e
+                    if not any(t in str(e).lower() for t in self._NO_STOCK):
+                        raise
+                    log(f"[pod] no {gpu}" + (f" in {dc}" if dc else " anywhere") + "; trying the next option")
+                    continue
+                self._info = None
+                d = json.loads(out)
+                d["gpu"] = gpu
+                if gpu != r.get("gpu", self.GPU_FALLBACKS[0]):
+                    log(f"[pod] {r.get('gpu', self.GPU_FALLBACKS[0])} had no stock: using {gpu} instead")
+                return d
+        raise RemoteError(f"no GPU of this class is available right now (tried {', '.join(self.gpu_order())}): {last}")
 
     def start(self) -> None:
         _run(["runpodctl", "pod", "start", self.id], timeout=120)

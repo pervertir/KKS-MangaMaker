@@ -20,6 +20,10 @@ cd "/Volumes/980Pro/Crossover/bottles/Steam Bottle/drive_c/Program Files (x86)/K
 
 `pod start` brings a stopped pod back with everything still installed. `pod remove` deletes the
 pod (the volume stays until you delete it in the console or with `runpodctl network-volume delete`).
+When the configured GPU has no stock, `pod create` tries other cards of the same class in order (RTX 5090,
+RTX PRO 4500, L40S, RTX 6000 Ada, A6000, A40, 3090, A5000, L4; set `runpod.gpu_fallbacks` to change the
+list) and, when no network volume pins the data centre, any data centre. `pod start` does the same when a
+stopped pod's host has no free GPU: it replaces the pod, and `pod setup` reinstalls the models.
 Auth comes from `~/.runpod/config.toml` (runpodctl). GPU stock moves around: if `pod create` says
 no instances, change `runpod.gpu` / `runpod.data_center` in `config.yaml`; a network volume is
 pinned to one data centre, so a different centre needs a new volume (`runpodctl network-volume create`).
