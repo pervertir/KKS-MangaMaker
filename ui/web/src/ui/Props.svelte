@@ -17,7 +17,7 @@
   import { VSHAPES } from "../editor/manga-tools.js";
   import { refreshPanels } from "../editor/misc.js";
   import { shotDialog } from "../editor/shots.js";
-  import { S, bubbleMeta, page, selL } from "../editor/state.ts";
+  import { S, bubbleMeta, layers, page, selL } from "../editor/state.ts";
   import { FONTS, LAZY_FONTS, loadFontCss } from "../editor/text.js";
   import EffectProps from "./EffectProps.svelte";
   import { keyLabel, sc } from "../editor/tools.js";
@@ -75,6 +75,7 @@
   const lazyFonts = () => Object.keys(LAZY_FONTS).forEach(loadFontCss);        // fetch the faces when the list opens
 
   const BLENDS: Opt[] = [["source-over", "Normal"], ["multiply", "Multiply"], ["screen", "Screen"], ["overlay", "Overlay"], ["darken", "Darken"], ["lighten", "Lighten"], ["difference", "Difference"]];
+  const clipOpts = (): Opt[] => [["", "— none —"], ...panelOrder(layers()).map((q: Obj, i: number): Opt => [q.id, `Panel ${i + 1}${q.shot ? " · " + q.shot : ""}`])];
   const reseed = (l: Obj) => put(l, "seed", Math.floor(Math.random() * 1e6), "Reshuffled");
 
   function side(l: Obj, k: string, v: boolean) {
@@ -134,6 +135,10 @@
     {@render check("Bold", l, "bold")}{@render check("Italic", l, "italic")}<span class="hint">0 = fit</span></div>
 {/snippet}
 
+
+{#snippet clip(l: Obj)}
+  {@render select("Clip to", clipOpts(), R(l).clip || "", v => put(l, "clip", v || null))}
+{/snippet}
 
 {#snippet panel(l: Obj)}
   {@const shot = shots().find(s => s.name === R(l).shot)}
