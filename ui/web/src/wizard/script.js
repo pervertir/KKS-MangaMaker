@@ -5,7 +5,7 @@ import { refreshPanels, toast } from "../editor/misc.js";
 import { renderPages } from "../editor/pages.js";
 import { loadDoc } from "../editor/project.js";
 import { loadShots } from "../editor/shots.js";
-import { H, S, W, newDoc, normalize } from "../editor/state.js";
+import { H, S, W, newDoc, normalize } from "../editor/state.ts";
 import { fitView, panelOrder, requestDraw } from "../editor/view.js";
 import { enrichChars } from "../helpers/cast.js";
 

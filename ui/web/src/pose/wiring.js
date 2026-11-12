@@ -1,7 +1,7 @@
 import { $, $$, h } from "../editor/core.js";
 import { closeModal, modal } from "../editor/modal.js";
 import { loadShots } from "../editor/shots.js";
-import { S } from "../editor/state.js";
+import { S } from "../editor/state.ts";
 import { renderPoseLib, usePose } from "./library.js";
 import { P } from "./model.js";
 import { openPoseStudio, setMode } from "./open.js";

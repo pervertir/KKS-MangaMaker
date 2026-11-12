@@ -1,7 +1,7 @@
 import { $, $$, api, deep, uid } from "../editor/core.js";
 import { toggleJobs } from "../editor/jobs.js";
 import { status, toast } from "../editor/misc.js";
-import { S } from "../editor/state.js";
+import { S } from "../editor/state.ts";
 import { inField } from "../editor/tools.js";
 import { requestDraw, resize } from "../editor/view.js";
 import { loadPoseLib, renderPoseLib } from "./library.js";

@@ -8,9 +8,10 @@ import { buildMenus, popMenu } from "./menus.js";
 import { status, toast } from "./misc.js";
 import { renderPages } from "./pages.js";
 import { loadDoc, openProject, setName } from "./project.js";
-import { S, newDoc, normalize } from "./state.js";
+import { S, newDoc, normalize } from "./state.ts";
 import { buildToolbar, center, sc, setTool } from "./tools.js";
 import { fitView, zoomAt } from "./view.js";
+import { clearAutosave, readAutosave } from "../core/autosave.ts";
 
 
 /* runs once at start-up, in the original order (see main.js) */
@@ -24,7 +25,8 @@ export function init_editor_boot() {
     status("");
     setTool("move"); renderLibrary();
     const last = localStorage.getItem("mm.last");
-    let auto = null; try { auto = JSON.parse(localStorage.getItem("mm.autosave") || "null"); } catch { }
+    let auto = await readAutosave().catch(() => null);
+    if (!auto?.doc) try { auto = JSON.parse(localStorage.getItem("mm.autosave") || "null"); } catch { }
     if (auto?.doc && confirm("Restore the unsaved work from your last session?")) { loadDoc(normalize(auto.doc), auto.name); S.dirty = true; setName(auto.name); }
     else if (last && (await api("/api/projects").catch(() => [])).includes(last)) await openProject(last);
     else {
@@ -34,7 +36,7 @@ export function init_editor_boot() {
       if (L) applyLayout(L.rects, "#" + L.n); else applyLayout(gridRects(...PRESET_LAYOUTS[6].slice(1)), PRESET_LAYOUTS[6][0]);
       S.undo = []; S.dirty = false; setName("");
     }
-    localStorage.removeItem("mm.autosave");
+    localStorage.removeItem("mm.autosave"); clearAutosave();
     refreshPod(); setInterval(refreshPod, 30000);
   })().catch(e => { toast("Startup failed: " + e.message, "err"); console.error(e); });
 
@@ -50,7 +52,6 @@ export function init_editor_boot() {
   }
 
   /* dock tabs: the first run opens on Panels (the pipeline starts there), later runs on the tab last picked by hand */
-  $$("#docktabs button").forEach(b => b.addEventListener("click", () => setDockTab(b.dataset.tab, true)));
 
   { let t = null; try { t = localStorage.getItem("mm.dock.tab"); } catch { } setDockTab(t || "panels"); }
 

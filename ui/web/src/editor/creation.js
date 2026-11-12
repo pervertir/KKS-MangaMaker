@@ -4,9 +4,10 @@ import { hitLayer } from "./hit.js";
 import { IMG } from "./images.js";
 import { showInline } from "./inline-edit.js";
 import { refreshProps } from "./props.js";
-import { H, S, W, bubbleMeta, layers, normalize } from "./state.js";
+import { H, S, W, bubbleMeta, layers, normalize } from "./state.ts";
 import { TONE_PRESETS, setTool } from "./tools.js";
 import { requestDraw } from "./view.js";
+import { applyFrameShape } from "./frames.js";
 
 /* ================================================================ creation */
 /* Page theme: ONE switch for the whole editor (Edit > Preferences), applied when drawing, never stored
@@ -56,6 +57,7 @@ export function createAt(tool, c, small) {
   if (tool === "panel") {
     if (small) return;
     l = addLayer({ type: "panel", x: c.x, y: c.y, w: c.w, h: c.h, shot: "", image: null }, insertIndexForPanel());
+    if (S.panelShape !== "rect" && S.panelShape !== "polygon") applyFrameShape(l, S.panelShape);
   } else if (tool === "bubble") {
     const m = bubbleMeta(S.bubble), w = small ? 460 : Math.max(c.w, 120), hh = w * m.h / m.w;
     const cx = small ? c.x : c.x + c.w / 2, cy = small ? c.y : c.y + c.h / 2;

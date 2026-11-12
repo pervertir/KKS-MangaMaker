@@ -3,7 +3,7 @@ import { displayTheme, themed } from "./creation.js";
 import { commit } from "./history.js";
 import { VTEXT, lum } from "./manga-tools.js";
 import { refreshPanels } from "./misc.js";
-import { S, bubbleMeta } from "./state.js";
+import { S, bubbleMeta } from "./state.ts";
 import { fit, fontStr } from "./text.js";
 import { requestDraw, toScreen } from "./view.js";
 

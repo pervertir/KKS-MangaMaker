@@ -1,6 +1,7 @@
 import { $, $$ } from "./core.js";
 import { renderLibrary } from "./library.js";
-import { S, selL } from "./state.js";
+import { S, selL } from "./state.ts";
+import { ui } from "../ui/store.svelte.ts";
 
 /* ================================================================ dock tabs */
 export const DOCKTABS = ["layers", "panels", "library"];
@@ -8,9 +9,8 @@ export function setDockTab(t, byHand) {
   if (!DOCKTABS.includes(t)) t = "panels";
   S.dockTab = t;
   if (byHand) try { localStorage.setItem("mm.dock.tab", t); } catch { }      // only a choice made by hand is remembered
-  $$("#docktabs button").forEach(b => { const on = b.dataset.tab === t; b.classList.toggle("on", on); b.setAttribute("aria-selected", String(on)); });
-  for (const k of DOCKTABS) $("#pane-" + k).hidden = k !== t;
-  if (t !== "library") $(`#${t} .on`)?.scrollIntoView({ block: "nearest" });
+  ui.dockTab = t;                                  // src/ui/Dock.svelte shows the tab
+  if (t !== "library") requestAnimationFrame(() => $("#" + t + " .on")?.scrollIntoView({ block: "nearest" }));
 }
 /* open a Library category, wherever the dock is: "Pick bubble…" must not look like it did nothing */
 export function showLib(tab) { S.libTab = tab; setDockTab("library"); renderLibrary(); }

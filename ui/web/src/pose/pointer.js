@@ -1,11 +1,12 @@
 import { clamp, deep } from "../editor/core.js";
-import { HANDLES } from "../editor/view.js";
+import { SCALE_HANDLES as HANDLES } from "../core/transform.ts";
 import { bounds, project } from "./geometry.js";
 import { ikDrag } from "./ik.js";
 import { FIG_H, P } from "./model.js";
 import { pcommit, pcur } from "./scene.js";
 import { renderPoseSide } from "./side.js";
 import { pToScene, pcv, pdraw } from "./view.js";
+import { bg } from "./scene3d.ts";
 
 /* ---------------------------------------------------------------- pointer */
 export function phit(pt) {
@@ -38,7 +39,12 @@ export function psDown(e) {
   if (e.button !== 0) return;
   const r = pcv().getBoundingClientRect(), pt = pToScene(e.clientX - r.left, e.clientY - r.top);
   const hit = phit(pt);
-  if (!hit) { P.sel = null; renderPoseSide(); pdraw(); return; }
+  if (!hit) {
+    P.sel = null; renderPoseSide(); pdraw();
+    const b = bg();     // empty space over a 3D background: drag looks around, Shift-drag walks, Alt-drag rises
+    if (b) { P.drag = { kind: "cam", start: { x: e.clientX, y: e.clientY }, orig: deep(b.cam), moved: false }; pcv().setPointerCapture(e.pointerId); }
+    return;
+  }
   if (P.sel !== hit.c.id) { P.sel = hit.c.id; renderPoseSide(); }
   const c = hit.c;
   P.drag = { ...hit, start: pt, orig: deep(c), moved: false };
@@ -48,6 +54,17 @@ export function psDown(e) {
 export function psMove(e) {
   const r = pcv().getBoundingClientRect(), pt = pToScene(e.clientX - r.left, e.clientY - r.top);
   const d = P.drag;
+  if (d?.kind === "cam") {
+    const b = bg(); if (!b) return;
+    const dx = e.clientX - d.start.x, dy = e.clientY - d.start.y, o = d.orig, cam = b.cam;
+    if (e.shiftKey) {
+      const y = o.yaw * Math.PI / 180, k = 0.01;
+      cam.x = +(o.x - (Math.cos(y) * dx + Math.sin(y) * dy) * k).toFixed(3);
+      cam.z = +(o.z - (-Math.sin(y) * dx + Math.cos(y) * dy) * k).toFixed(3);
+    } else if (e.altKey) cam.y = +clamp(o.y - dy * 0.01, 0.05, 60).toFixed(3);
+    else { cam.yaw = +(((o.yaw + dx * 0.15) + 540) % 360 - 180).toFixed(2); cam.pitch = +clamp(o.pitch + dy * 0.15, -85, 85).toFixed(2); }
+    d.moved = true; pdraw(); renderPoseSide(true); return;
+  }
   if (!d) {
     const hit = phit(pt);
     pcv().style.cursor = !hit ? "default" : hit.kind === "joint" ? "crosshair" : hit.kind === "rotate" ? "grab" : hit.kind === "move" ? "move"
@@ -80,10 +97,18 @@ export function psMove(e) {
 }
 export function psUp() {
   const d = P.drag; P.drag = null; if (!d) return;
-  if (d.moved) pcommit({ move: "Moved", scale: "Scaled", rotate: "Rotated", joint: "Joint moved" }[d.kind]);
+  if (d.moved) pcommit({ cam: "Camera moved", move: "Moved", scale: "Scaled", rotate: "Rotated", joint: "Joint moved" }[d.kind]);
 }
 export function psWheel(e) {
-  const c = pcur(); if (!c) return;
+  const c = pcur(), b = bg();
+  if (!c && b) {          // no figure selected: the wheel walks the camera forward and back
+    e.preventDefault();
+    const y = b.cam.yaw * Math.PI / 180, step = (e.deltaY > 0 ? 1 : -1) * 0.25;
+    b.cam.x = +(b.cam.x + Math.sin(y) * step).toFixed(3); b.cam.z = +(b.cam.z + Math.cos(y) * step).toFixed(3);
+    clearTimeout(P.wheelT); P.wheelT = setTimeout(() => pcommit("Camera moved"), 250);
+    pdraw(); renderPoseSide(true); return;
+  }
+  if (!c) return;
   e.preventDefault();
   if (e.shiftKey) c.yaw = ((c.yaw + (e.deltaY > 0 ? 10 : -10) + 540) % 360) - 180;
   else c.scale = clamp(c.scale * (e.deltaY > 0 ? 0.95 : 1.05), 0.05, 4);

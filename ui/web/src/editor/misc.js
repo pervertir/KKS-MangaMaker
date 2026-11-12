@@ -5,9 +5,9 @@ import { schedThumbs } from "./pages.js";
 import { renderPanelsTab } from "./panels-tab.js";
 import { setName } from "./project.js";
 import { refreshProps } from "./props.js";
-import { S } from "./state.js";
+import { S } from "./state.ts";
 import { resize, stage } from "./view.js";
-import { ui } from "../ui/store.svelte.js";
+import { ui } from "../ui/store.svelte.ts";
 
 /* ================================================================ misc */
 export function refreshPanels() { refreshProps(); renderLayers(); renderPanelsTab(); followSel(); setName(S.name); schedThumbs(); }
