@@ -196,6 +196,7 @@ function ensureFont(l) {
 function drawText(ctx, l, cx, cy, maxW, maxH, maxPx, color) {
   const text = l.text || "";
   ensureFont(l);
+  if (ieLayer && l.id === ieLayer.id) return;      // being typed: the in-place editor shows this text itself
   if (!text.trim()) return;
   const f = fit(text, l, maxW, maxH, maxPx);
   ctx.font = fontStr(l, f.px);
@@ -1012,13 +1013,48 @@ const ie = $("#inlineedit");
 let ieLayer = null, ieShownAt = 0, ieOrig = "";
 function showInline(l) {
   if (ieLayer && ieLayer !== l) hideInline(true);
-  ieLayer = l; ieShownAt = performance.now(); ieOrig = l.text || ""; ie.value = l.text || ""; ie.style.display = "block"; placeInline(); ie.focus(); ie.select();
+  ieLayer = l; ieShownAt = performance.now(); ieOrig = l.text || ""; ie.value = l.text || ""; ie.placeholder = "Type…"; ie.style.display = "block"; placeInline(); requestDraw(); ie.focus(); ie.select();
 }
+/* Where a layer's text goes and how it is drawn, in page units relative to the layer's centre: the same
+   boxes drawLayer uses, so the in-place editor can sit exactly on the text. */
+function textSpec(l) {
+  const maxFont = S.doc.maxFont || 56, dark = pageTheme(page()) === "dark";
+  if (l.type === "bubble") {
+    const m = bubbleMeta(l.bubble); let [bx0, by0, bx1, by1] = m.box;
+    if (l.flip) [bx0, bx1] = [1 - bx1, 1 - bx0];
+    return { dx: -l.w / 2 + (bx0 + bx1) / 2 * l.w, dy: -l.h / 2 + (by0 + by1) / 2 * l.h, w: (bx1 - bx0) * l.w * 0.92, h: (by1 - by0) * l.h * 0.88, maxPx: maxFont,
+      color: l.color === "auto" ? (m.dark ? "#ffffff" : "#111111") : l.color, stroke: 0 };
+  }
+  if (l.type === "vbubble") {
+    const [fw, fh] = VTEXT[l.shape] || VTEXT.oval;
+    return { dx: 0, dy: 0, w: l.w * fw, h: l.h * fh, maxPx: maxFont, color: l.color === "auto" ? (lum(l.fill) > 0.43 ? "#111111" : "#ffffff") : l.color, stroke: 0 };
+  }
+  if (l.type === "caption") {
+    const pad = Math.min(l.w, l.h) * 0.12 + 6;
+    return { dx: 0, dy: 0, w: l.w - pad * 2, h: l.h - pad * 2, maxPx: maxFont, color: l.color === "auto" ? (lum(l.fill || "#fff") < 0.45 ? "#ffffff" : "#111") : l.color, stroke: 0 };
+  }
+  return { dx: 0, dy: 0, w: l.w, h: l.h, maxPx: l.fontSize > 0 ? l.fontSize : Math.max(maxFont, 400),
+    color: l.color === "auto" ? (dark ? "#ffffff" : "#111") : l.color, stroke: l.strokeWidth || 0 };
+}
+/* The editor is the text: transparent, the layer's own font, size, colour, outline, alignment and
+   rotation, wrapped in the same box. Only a thin dashed outline marks where the text may go. */
 function placeInline() {
   if (!ieLayer) return;
-  const l = ieLayer, a = toScreen(l.x, l.y), w = Math.max(160, l.w * S.view.s), hh = Math.max(64, Math.min(l.h * S.view.s, 220));
-  Object.assign(ie.style, { left: a.x + (l.w * S.view.s - w) / 2 + "px", top: a.y + (l.h * S.view.s - hh) / 2 + "px", width: w + "px", height: hh + "px",
-    fontSize: clamp(28 * S.view.s * 1.6, 13, 26) + "px" });
+  const l = ieLayer, v = S.view.s, t = textSpec(l);
+  const shown = ie.value || "Type…";
+  const f = fit(shown, l, t.w, t.h, t.maxPx);
+  const c = toScreen(l.x + l.w / 2, l.y + l.h / 2);
+  const rot = (l.rotate || 0) * Math.PI / 180, ox = t.dx * Math.cos(rot) - t.dy * Math.sin(rot), oy = t.dx * Math.sin(rot) + t.dy * Math.cos(rot);
+  const w = t.w * v, hh = t.h * v, lines = l.vertical ? 1 : f.lines.length;
+  const sw = t.stroke * 2 * v;
+  Object.assign(ie.style, {
+    left: c.x + ox * v - w / 2 + "px", top: c.y + oy * v - hh / 2 + "px", width: w + "px", height: hh + "px",
+    transform: l.rotate ? `rotate(${l.rotate}deg)` : "none",
+    font: fontStr(l, f.px * v), lineHeight: f.lh * v + "px", color: t.color, caretColor: t.color === "#ffffff" || lum(t.color) > 0.6 ? "#4c8dff" : t.color,
+    textAlign: l.vertical ? "start" : (l.align || "center"), writingMode: l.vertical ? "vertical-rl" : "horizontal-tb",
+    paddingTop: l.vertical ? "0px" : Math.max(0, (hh - lines * f.lh * v) / 2) + "px",
+    webkitTextStroke: sw > 0.2 ? `${sw}px ${l.stroke || "#000"}` : "0", paintOrder: "stroke fill",
+  });
 }
 function hideInline(save) {
   if (!ieLayer) return;
@@ -1028,7 +1064,7 @@ function hideInline(save) {
   if (l.text !== ieOrig) commit("Text edited"); else refreshPanels();
   requestDraw();
 }
-ie.addEventListener("input", () => { if (ieLayer) { ieLayer.text = ie.value; requestDraw(); } });
+ie.addEventListener("input", () => { if (ieLayer) { ieLayer.text = ie.value; placeInline(); requestDraw(); } });
 ie.addEventListener("keydown", e => {
   e.stopPropagation();
   if (e.key === "Escape" || (e.key === "Enter" && (e.metaKey || e.ctrlKey))) { e.preventDefault(); hideInline(true); }

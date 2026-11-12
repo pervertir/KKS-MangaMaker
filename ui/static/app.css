@@ -118,8 +118,11 @@ button.toggle.on { background: var(--panel2); color: var(--text); box-shadow: in
 #canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 #stage.hand, #stage.hand canvas { cursor: grab; }
 #stage.grabbing canvas { cursor: grabbing; }
-#inlineedit { position: absolute; display: none; z-index: 5; resize: none; background: #fffffff2; color: #111;
-  border: 2px solid var(--accent); border-radius: var(--r1); font-family: MMComic, "Comic Sans MS", sans-serif; text-align: center; padding: var(--s1); }
+#inlineedit { position: absolute; display: none; z-index: 5; resize: none; background: transparent; border: none; border-radius: 0;
+  outline: 1px dashed #4c8dffaa; outline-offset: 2px; padding: 0; margin: 0; overflow: hidden; white-space: pre-wrap; overflow-wrap: break-word;
+  transform-origin: 50% 50%; box-shadow: none; }
+#inlineedit:focus { border: none; outline: 1px dashed #4c8dff; }
+#inlineedit::selection { background: #4c8dff66; }
 #dropmark { position: absolute; pointer-events: none; border: 2px dashed var(--accent2); display: none; border-radius: var(--r1); background: #ff4f7b18; }
 
 /* page strip: navigation sits on the left of the canvas, the inspector on the right */
@@ -427,3 +430,4 @@ kbd { font: 11px ui-monospace, Menlo, monospace; background: #1b1b1e; border: 1p
 .jobchip .jl { padding: 0 8px; } .jobchip.bad .jl { color: var(--warn); } .jobchip.ok .jl { color: var(--ok); }
 .jobchip .jx { padding: 0 8px; color: var(--muted); border-left: 1px solid var(--line); min-width: 26px; }
 .jobchip .jx:hover { color: #fff; background: var(--danger); }
+#inlineedit::placeholder { color: #8a8a93; -webkit-text-stroke: 0; opacity: .9; }
