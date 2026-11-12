@@ -6,6 +6,7 @@
   mangapipe lora NAME [--series SERIES] [--refresh]              test the Civitai lookup only
   mangapipe render <shot_dir> [--seed N] [--dry-run]             ComfyUI render only
   mangapipe compose <shot_dir> [--image FILE]                    dialogue overlay only
+  mangapipe expression <shot_dir> --image FILE --tags TAGS [--character N]   new face expression on a render
   mangapipe run <shot_dir> [--seed N] [--no-compose] [--dry-run] everything, end to end
   mangapipe page <script.yaml> [--page N] [--pdf]                lay renders into manga pages with dialogue
   mangapipe layouts                                              contact sheet of the 100 page templates
@@ -29,7 +30,7 @@ from mp.page import PageError, build_script, layout_sheet  # noqa: E402
 from mp.remote import RemoteError  # noqa: E402
 from mp.sidecar import ShotError, load_shot, write_example  # noqa: E402
 from mp.studio import grab, prepare_pose, prepare_reference  # noqa: E402
-from mp.multichar import pose_columns, refine_heads  # noqa: E402
+from mp.multichar import expression_variant, pose_columns, refine_heads  # noqa: E402
 from mp.workflow import build_graph, build_prompt, character_parts, decide_identity, new_seed  # noqa: E402
 
 
@@ -49,6 +50,21 @@ def resolve_loras(shot: dict, cfg: Config, refresh: bool = False) -> list[dict]:
         else:
             log(f"[lora] {tag}: none ({r['source']})")
         out.append(r)
+    return out
+
+
+def expression(shot: dict, cfg: Config, image: Path, tags: str, who: int, seed: int | None) -> Path:
+    if not shot["characters"]:
+        raise ShotError("the shot names no characters")
+    loras = resolve_loras(shot, cfg)
+    comfy = Comfy(cfg.comfy_url, log)
+    if not comfy.alive():
+        raise ComfyError(f"ComfyUI is not reachable at {cfg.comfy_url}; run `mangapipe pod start` and retry.")
+    src = image if image.is_absolute() else Path.cwd() / image
+    if not src.is_file():
+        raise FileNotFoundError(image)
+    out = expression_variant(comfy, shot, cfg, loras, character_parts(shot, loras), src, who, tags, new_seed(-1 if seed is None else seed), log)
+    log(f"wrote {out}")
     return out
 
 
@@ -271,6 +287,8 @@ def main(argv=None):
     p = sub.add_parser("layouts"); p.add_argument("--ltr", action="store_true"); p.add_argument("--out", type=Path)
     p = sub.add_parser("pod");     p.add_argument("action", choices=["create", "setup", "restart", "status", "url", "start", "stop", "remove", "ssh"]); p.add_argument("cmdline", nargs="?", default="")
     p = sub.add_parser("poses");   p.add_argument("action", choices=["build", "build-h", "build-h-mods"]); p.add_argument("--src", type=Path); p.add_argument("--out", type=Path)
+    p = sub.add_parser("expression"); p.add_argument("shot_dir", type=Path); p.add_argument("--image", type=Path, required=True); p.add_argument("--tags", required=True)
+    p.add_argument("--character", type=int, default=1, help="which character, counted from the left (1 = leftmost)"); p.add_argument("--seed", type=int)
     p = sub.add_parser("run");     p.add_argument("shot_dir", type=Path); p.add_argument("--seed", type=int); p.add_argument("--dry-run", action="store_true"); p.add_argument("--no-compose", action="store_true"); p.add_argument("--refresh-lora", action="store_true")
     a = ap.parse_args(argv)
     cfg = Config(a.config)
@@ -318,6 +336,9 @@ def main(argv=None):
         shot = load_shot(a.shot_dir, cfg)
         if a.cmd == "render":
             render(shot, cfg, a.seed, a.dry_run, a.refresh_lora)
+            return 0
+        if a.cmd == "expression":
+            expression(shot, cfg, a.image, a.tags, a.character - 1, a.seed)
             return 0
         if a.cmd == "compose":
             imgs = a.image or sorted(shot["_out"].glob("render_*.png"))

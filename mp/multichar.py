@@ -8,6 +8,7 @@ Only core ComfyUI nodes are used.
 """
 from __future__ import annotations
 
+import re
 import time
 from pathlib import Path
 
@@ -78,7 +79,8 @@ def _crop_box(box, img_w: int, img_h: int, pad: float) -> tuple[int, int, int, i
     return x, y, side, side
 
 
-def build_refine_graph(shot: dict, cfg, base_name: str, size: tuple[int, int], jobs: list[dict], seed: int) -> dict:
+def build_refine_graph(shot: dict, cfg, base_name: str, size: tuple[int, int], jobs: list[dict], seed: int,
+                       prefix: str = "refined") -> dict:
     """jobs: [{"lora", "weight", "prompt", "mask_name", "crop": (x, y, w, h)}] applied in order."""
     g = {}
     nid = [0]
@@ -112,13 +114,27 @@ def build_refine_graph(shot: dict, cfg, base_name: str, size: tuple[int, int], j
         noised = add("SetLatentNoiseMask", samples=[lat, 0], mask=[grow, 0])
         ks = add("KSampler", model=model, positive=[pos, 0], negative=[neg, 0], latent_image=[noised, 0], seed=seed + j,
                  steps=int(shot["steps"]), cfg=float(shot["cfg"]), sampler_name=shot["sampler"], scheduler=shot["scheduler"],
-                 denoise=float(shot.get("head_denoise", 0.5)))
+                 denoise=float(job.get("denoise", shot.get("head_denoise", 0.5))))
         dec = add("VAEDecode", samples=[ks, 0], vae=[ckpt, 2])
         down = add("ImageScale", image=[dec, 0], upscale_method="lanczos", width=w, height=h, crop="disabled")
         comp = add("ImageCompositeMasked", destination=img, source=[down, 0], x=x, y=y, resize_source=False, mask=[feather, 0])
         img = [comp, 0]
-    add("SaveImage", images=img, filename_prefix=f"MangaPipeline/{shot['shot']}/refined")
+    add("SaveImage", images=img, filename_prefix=f"MangaPipeline/{shot['shot']}/{prefix}")
     return g
+
+
+def character_heads(comfy, shot: dict, cfg, base_name: str, n: int) -> list[dict]:
+    """The n biggest heads, left to right. SAM 3 returns one object per prompt unless told how many ("head:N")."""
+    heads = detect_heads(comfy, base_name, cfg, shot["_out"], f'{shot.get("head_prompt_detect", "head")}:{n + 3}')
+    return sorted(sorted(heads, key=lambda h: -(h["box"][2] - h["box"][0]) * (h["box"][3] - h["box"][1]))[:n],
+                  key=lambda h: (h["box"][0] + h["box"][2]) / 2)
+
+
+def _head_job(comfy, shot: dict, render: Path, i: int, c: dict, lora: dict, prompt: str, head: dict, size) -> dict:
+    mask_name = comfy.upload(head["mask"], "manga", f"{shot['shot']}_{render.stem}_head{i}.png")
+    return {"lora": lora["lora"], "weight": float(c.get("lora_weight", lora["weight"])), "prompt": prompt,
+            "who": "1boy" if str(c.get("gender", "girl")).lower() in ("boy", "male", "man") else "1girl",
+            "mask_name": mask_name, "crop": _crop_box(head["box"], *size, float(shot.get("head_crop_pad", 1.8)))}
 
 
 def refine_heads(comfy, shot: dict, cfg, loras: list[dict], prompt_parts: list[str], render: Path, seed: int, log=print) -> Path | None:
@@ -126,10 +142,7 @@ def refine_heads(comfy, shot: dict, cfg, loras: list[dict], prompt_parts: list[s
     out = shot["_out"]
     base_name = comfy.upload(render, "manga", f"{shot['shot']}_{render.stem}_base.png")
     chars = shot["characters"]
-    # SAM 3 returns one object per prompt unless told how many ("head:N"); keep the N biggest heads.
-    heads = detect_heads(comfy, base_name, cfg, out, f'{shot.get("head_prompt_detect", "head")}:{len(chars) + 3}')
-    heads = sorted(sorted(heads, key=lambda h: -(h["box"][2] - h["box"][0]) * (h["box"][3] - h["box"][1]))[:len(chars)],
-                   key=lambda h: (h["box"][0] + h["box"][2]) / 2)
+    heads = character_heads(comfy, shot, cfg, base_name, len(chars))
     log(f"[heads] found {len(heads)} for {len(chars)} character(s), left to right: " + ", ".join(str(h["box"]) for h in heads))
     if not heads:
         log("[heads] none found; keeping the base render")
@@ -137,12 +150,7 @@ def refine_heads(comfy, shot: dict, cfg, loras: list[dict], prompt_parts: list[s
     if len(heads) != len(chars):
         log(f"[heads] count differs from characters[]; matching the {min(len(heads), len(chars))} leftmost")
     W, H = Image.open(render).size
-    jobs = []
-    for i, (c, l, h) in enumerate(zip(chars, loras, heads)):
-        mask_name = comfy.upload(h["mask"], "manga", f"{shot['shot']}_{render.stem}_head{i}.png")
-        jobs.append({"lora": l["lora"], "weight": float(c.get("lora_weight", l["weight"])), "prompt": prompt_parts[i],
-                     "who": "1boy" if str(c.get("gender", "girl")).lower() in ("boy", "male", "man") else "1girl",
-                     "mask_name": mask_name, "crop": _crop_box(h["box"], W, H, float(shot.get("head_crop_pad", 1.8)))})
+    jobs = [_head_job(comfy, shot, render, i, c, l, prompt_parts[i], h, (W, H)) for i, (c, l, h) in enumerate(zip(chars, loras, heads))]
     g = build_refine_graph(shot, cfg, base_name, (W, H), jobs, seed)
     problems = comfy.validate(g)
     if problems:
@@ -152,3 +160,30 @@ def refine_heads(comfy, shot: dict, cfg, loras: list[dict], prompt_parts: list[s
     files = comfy.download_outputs(hist, out, f"{render.stem}_heads")
     log(f"[heads] inpainted {len(jobs)} head(s) in {time.time() - t0:.0f}s -> {files[0].name if files else 'nothing'}")
     return files[0] if files else None
+
+
+def expression_variant(comfy, shot: dict, cfg, loras: list[dict], prompt_parts: list[str], render: Path, who: int,
+                       tags: str, seed: int, log=print) -> Path:
+    """The render with one character's face inpainted to a new expression (that character's LoRA, the
+    expression tags added to its prompt); everything outside the head mask stays as it was."""
+    chars = shot["characters"]
+    if not 0 <= who < len(chars):
+        raise ValueError(f"character {who + 1} of {len(chars)}: no such character in this shot")
+    base_name = comfy.upload(render, "manga", f"{shot['shot']}_{render.stem}_expr_base.png")
+    heads = character_heads(comfy, shot, cfg, base_name, len(chars))
+    if len(heads) <= who:
+        raise ValueError(f"found {len(heads)} head(s) in {render.name}; cannot pick character {who + 1}")
+    W, H = Image.open(render).size
+    job = _head_job(comfy, shot, render, who, chars[who], loras[who], ", ".join(p for p in [prompt_parts[who], tags] if p), heads[who], (W, H))
+    job["denoise"] = float(shot.get("expression_denoise", 0.62))
+    g = build_refine_graph(shot, cfg, base_name, (W, H), [job], seed, "expression")
+    problems = comfy.validate(g)
+    if problems:
+        raise RuntimeError("expression graph invalid: " + "; ".join(problems))
+    hist = comfy.wait(comfy.queue(g))
+    slug = re.sub(r"[^a-z0-9]+", "-", tags.lower()).strip("-")[:40] or "expression"
+    files = comfy.download_outputs(hist, shot["_out"], f"expr_{slug}_{seed}")
+    if not files:
+        raise RuntimeError("the pod returned no image")
+    log(f"[expression] {chars[who].get('name') or 'character ' + str(who + 1)}: {tags} -> {files[0].name}")
+    return files[0]

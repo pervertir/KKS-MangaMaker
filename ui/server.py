@@ -9,6 +9,7 @@ Nothing renders on this Mac: `run`/`render` go to the pod configured in config.y
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import io
 import json
@@ -32,6 +33,7 @@ from PIL import Image, ImageOps  # noqa: E402
 
 from mp.compose import _interior_rect  # noqa: E402
 from mp.config import Config  # noqa: E402
+from mp.library import KINDS, Library, words  # noqa: E402
 from mp.page import STRIPS_SUBDIR, detect_panels, find_render, load_script, reading_order, _shot_dir, _shot_dialogue  # noqa: E402
 from mp.sidecar import SIDECAR_NAMES, write_example  # noqa: E402
 
@@ -55,9 +57,11 @@ NAME_RE = re.compile(r"^[A-Za-z0-9_\-. ]{1,80}$")
 
 # ------------------------------------------------------------------------------ images
 def resolve_ref(ref: str) -> Path:
-    """`tpl:<rel>` (Comics templates), `mp:<rel>` (MangaPipeline/) or `cap:<rel>` (Studio captures).
-    Refuses anything that escapes its root."""
+    """`tpl:<rel>` (Comics templates), `mp:<rel>` (MangaPipeline/), `cap:<rel>` (Studio captures) or
+    `lib:<sha>.<ext>` (the asset library). Refuses anything that escapes its root."""
     kind, _, rel = ref.partition(":")
+    if kind == "lib":
+        return LIBRARY.blob_path(rel)
     base = {"tpl": TPL, "mp": ROOT, "cap": CFG.cap_dir}.get(kind)
     if base is None or not rel:
         raise ValueError(f"bad image ref {ref!r}")
@@ -74,7 +78,9 @@ def mp_ref(p: Path) -> str:
 
 
 def sized(p: Path, w: int | None) -> tuple[bytes, str]:
-    """The file itself, or a PNG/JPEG no wider than `w`, cached by path+mtime+w."""
+    """The file itself, or a PNG/JPEG no wider than `w`, cached by path+mtime+w. SVG is sent as it is."""
+    if p.suffix.lower() == ".svg":
+        return p.read_bytes(), "image/svg+xml"
     if not w:
         ctype = "image/png" if p.suffix.lower() == ".png" else "image/jpeg"
         return p.read_bytes(), ctype
@@ -153,6 +159,123 @@ def assets() -> dict:
     out["uploads"] = [{"ref": mp_ref(p), "name": p.stem, "multiply": False}
                       for p in sorted(UPLOADS.glob("*")) if p.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp")]
     return out
+
+
+# ------------------------------------------------------------------------ asset library
+LIBRARY = Library(ROOT / "assets" / "library", resolve_ref)
+MANPU = Path(__file__).resolve().parent / "library" / "manpu"
+SEED_KINDS = {"decor": ("effect", "decor"), "particles": ("effect", "particles"), "speedlines": ("effect", "speed lines")}
+_seeded = threading.Event()
+
+
+def svg_size(p: Path) -> tuple[int, int]:
+    m = re.search(rb'<svg[^>]*\bwidth="(\d+)"[^>]*\bheight="(\d+)"', p.read_bytes()[:2000])
+    return (int(m.group(1)), int(m.group(2))) if m else (512, 512)
+
+
+def image_size(p: Path) -> tuple[int, int]:
+    if p.suffix.lower() == ".svg":
+        return svg_size(p)
+    with Image.open(p) as im:
+        return im.size
+
+
+def upload_entry(p: Path) -> dict:
+    w, h = image_size(p)
+    return {"id": mp_ref(p), "kind": "prop", "name": p.stem, "tags": ["upload", *words(p.stem)],
+            "payload": {"type": "image", "ref": mp_ref(p), "w": w, "h": h, "multiply": False}}
+
+
+def library_seed() -> list[dict]:
+    """What the library starts with: manpu symbols, the template pack's bubbles and effect images, uploads.
+    Template images stay where they are; the library only points at them."""
+    out = []
+    for p in sorted(MANPU.glob("*.svg")):
+        w, h = svg_size(p)
+        out.append({"id": "manpu:" + p.stem, "kind": "expression", "name": p.stem.replace("-", " "), "tags": ["manpu", *words(p.stem)],
+                    "payload": {"type": "image", "ref": mp_ref(p), "w": w, "h": h, "multiply": False}})
+    for b in bubbles():
+        out.append({"id": b["ref"], "kind": "balloon", "name": "Bubble " + b["key"], "tags": ["bubble", "template"],
+                    "thumb": b["ref"], "payload": {"type": "bubble", "key": b["key"]}})
+    for cat, items in assets().items():
+        if cat == "uploads":
+            for a in items:
+                out.append(upload_entry(resolve_ref(a["ref"])))
+            continue
+        kind, tag = SEED_KINDS[cat]
+        for a in items:
+            out.append({"id": a["ref"], "kind": kind, "name": a["name"], "tags": [tag, *words(a["name"])],
+                        "payload": {"type": "image", "ref": a["ref"], "w": 0, "h": 0, "multiply": a["multiply"]}})
+    for e in out:
+        pay = e["payload"]
+        if pay["type"] == "image" and not pay["w"]:
+            try:
+                pay["w"], pay["h"] = image_size(resolve_ref(pay["ref"]))
+            except (OSError, ValueError):
+                pass
+    return out
+
+
+def library() -> dict:
+    if not _seeded.is_set():
+        LIBRARY.seed(library_seed())
+        _seeded.set()
+    cast = [c.get("name", "") for c in (json.loads(CAST.read_text(encoding="utf-8")) if CAST.exists() else [])]
+    chars = sorted({*filter(None, cast), *LIBRARY.characters()}, key=str.lower)
+    return {"kinds": list(KINDS), "characters": chars, "assets": LIBRARY.all()}
+
+
+def library_save(body: dict) -> dict:
+    """A placed image (render, panel image, image layer) or a group of layers, saved as a library asset."""
+    meta = {k: body.get(k) for k in ("kind", "name", "tags", "character")}
+    meta["kind"] = meta["kind"] or "prop"
+    if body.get("layers"):
+        thumb = body.get("thumb") or ""
+        png = base64.b64decode(thumb.split(",", 1)[1]) if thumb.startswith("data:image/png;base64,") else None
+        return LIBRARY.add_layers(layers=body["layers"], thumb_png=png, source=body.get("source"), **meta)
+    ref = str(body.get("ref") or "")
+    w, h = image_size(resolve_ref(ref))
+    return LIBRARY.add_image(ref=ref, w=w, h=h, multiply=bool(body.get("multiply")), source=body.get("source"), **meta)
+
+
+def library_upload(fname: str, kind: str, data: bytes) -> dict:
+    ext = Path(fname).suffix.lower()
+    ref = LIBRARY.put_blob(data, ext)
+    w, h = image_size(resolve_ref(ref))
+    return LIBRARY.add_image(kind or "prop", Path(fname).stem[:80], ref, w, h, tags=words(Path(fname).stem))
+
+
+def shot_characters(d: Path) -> list[dict]:
+    side = next((d / n for n in SIDECAR_NAMES if (d / n).exists()), None)
+    data = (json.loads(side.read_text()) if side.suffix == ".json" else yaml.safe_load(side.read_text(encoding="utf-8"))) if side else {}
+    return [c for c in (data or {}).get("characters") or [] if isinstance(c, dict)]
+
+
+def expression_job(body: dict) -> str:
+    """A new face for one character of a render, made on the pod; when it is done, it is saved to the
+    library as an expression of that character."""
+    d = shot_dir(body["shot"])
+    src = resolve_ref(str(body["ref"]))
+    tags = re.sub(r"\s+", " ", str(body.get("tags") or "")).strip()[:200]
+    if not tags:
+        raise ValueError("describe the expression, e.g. smile, closed eyes")
+    who = int(body.get("character") or 1)
+    chars = shot_characters(d)
+    if not 1 <= who <= max(len(chars), 1):
+        raise ValueError(f"the shot has {len(chars)} character(s)")
+    name = str((chars[who - 1] if chars else {}).get("name") or "").strip()
+
+    def done(job: dict):
+        made = next((l[6:].strip() for l in reversed(job["lines"]) if l.startswith("wrote ")), None)
+        if job["code"] != 0 or not made:
+            return
+        p = Path(made)
+        w, h = image_size(p)
+        a = LIBRARY.add_image("expression", f"{name or d.name}: {tags}", mp_ref(p), w, h, tags=["face", *tags.split(",")],
+                              character=name, source={"shot": d.name, "from": body["ref"]})
+        job["lines"].append(f"saved to the asset library as \"{a['name']}\"")
+    args = ["expression", str(d.relative_to(ROOT)), "--image", str(src), "--tags", tags, "--character", str(who)]
+    return start_job(args, f"expression {d.name}: {tags}", done)
 
 
 def shots() -> list[dict]:
@@ -424,7 +547,7 @@ SHOT_CMDS = {"run", "render", "grab", "compose"}
 POD_ACTIONS = {"status", "start", "stop", "url", "restart"}
 
 
-def start_job(args: list[str], label: str) -> str:
+def start_job(args: list[str], label: str, on_done=None) -> str:
     jid = uuid.uuid4().hex[:8]
     job = {"id": jid, "label": label, "args": args, "lines": [], "done": False, "code": None, "started": time.time()}
     JOBS[jid] = job
@@ -440,6 +563,11 @@ def start_job(args: list[str], label: str) -> str:
         except Exception as e:  # noqa: BLE001
             job["lines"].append(f"error: {e}")
             job["code"] = -1
+        if on_done:
+            try:
+                on_done(job)
+            except Exception as e:  # noqa: BLE001
+                job["lines"].append(f"error: {e}")
         job["done"] = True
 
     threading.Thread(target=run, daemon=True).start()
@@ -574,6 +702,8 @@ class Handler(BaseHTTPRequestHandler):
                     deps=[ROOT / "scripts", UPLOADS, CFG.path, TPL])
             if u.path == "/api/shots":
                 return self.json(shots())
+            if u.path == "/api/library":
+                return self.json(library())
             if u.path == "/api/projects":
                 return self.json(projects())
             if u.path == "/api/project":
@@ -746,6 +876,7 @@ class Handler(BaseHTTPRequestHandler):
                 dest.write_bytes(self.body())
                 with Image.open(dest) as im:
                     w, h = im.size
+                LIBRARY.seed([upload_entry(dest)])
                 return self.json({"ref": mp_ref(dest), "name": dest.stem, "w": w, "h": h})
             if u.path == "/api/shot/yaml":
                 body = self.jbody()
@@ -795,6 +926,19 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json(save_pose_shot(self.jbody()))
             if u.path == "/api/poses/custom":
                 return self.json(save_custom_pose(self.jbody()))
+            if u.path == "/api/library":
+                return self.json(library_save(self.jbody()))
+            if u.path == "/api/library/upload":
+                return self.json(library_upload(Path(q.get("name", "image.png")).name, q.get("kind", "prop"), self.body()))
+            if u.path == "/api/library/expression":
+                return self.json({"id": expression_job(self.jbody())})
+            m = re.fullmatch(r"/api/library/item/([^/]{1,600})(/delete)?", u.path)
+            if m:
+                aid = unquote(m.group(1))
+                if m.group(2):
+                    LIBRARY.remove(aid)
+                    return self.json({"ok": True})
+                return self.json(LIBRARY.update(aid, self.jbody()))
             m = re.fullmatch(r"/api/jobs/([0-9a-f]{8})/(cancel|dismiss)", u.path)
             if m:   # the x on a job: stop it if it is still running, and forget it
                 job = JOBS.pop(m.group(1), None)
