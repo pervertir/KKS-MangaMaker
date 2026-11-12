@@ -26,6 +26,7 @@
   "dependencies": {
     "bezier-js": "^6.1.4",
     "clipper2-ts": "^2.0.1-19",
-    "immer": "^11.2.10"
+    "immer": "^11.2.10",
+    "perfect-freehand": "^1.2.2"
   }
 }
