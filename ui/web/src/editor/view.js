@@ -6,6 +6,7 @@ import { placeInline } from "./inline-edit.js";
 import { drawFlipped, drawPage } from "./manga-tools.js";
 import { H, S, W, layers, page, selL } from "./state.ts";
 import { boxes } from "../core/format.ts";
+import { drawHandles } from "../lettering/handles.ts";
 import { getTool } from "../core/tools.ts";
 import { drawAnts, hasSelection, selectionPage } from "../core/selection.ts";
 
@@ -183,6 +184,7 @@ export function drawSelection(l, px) {
       const t = P(l.tail.x, l.tail.y);
       ctx.fillStyle = "#ff4f7b"; ctx.beginPath(); ctx.arc(t.x, t.y, 7 * px, 0, 7); ctx.fill(); ctx.strokeStyle = "#fff"; ctx.stroke(); ctx.strokeStyle = "#4c8dff";
     }
+    drawHandles(ctx, l, P, px);
     if (l.type !== "panel") {
       const t = P(0, -hh), rp = P(0, -hh - 34 * px);
       ctx.beginPath(); ctx.moveTo(t.x, t.y); ctx.lineTo(rp.x, rp.y); ctx.stroke();

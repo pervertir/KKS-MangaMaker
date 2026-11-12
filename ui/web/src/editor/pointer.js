@@ -14,11 +14,12 @@ import { snapBox } from "./snapping.js";
 import { H, S, W, layers, selL } from "./state.ts";
 import { keyLabel } from "./tools.js";
 import { getTool } from "../core/tools.ts";
+import { dblOutline, dragHandle, onOutline, pressHandle, scaleShapes } from "../lettering/handles.ts";
 import { samplesOf, stabilizer } from "../core/input.ts";
 import { DC, corners, cv, interacting, requestDraw, requestView, stage, toPage, zoomAt, set_DC } from "./view.js";
 
 /* ================================================================ pointer */
-export const DRAG_TOOLS = { panel: 1, caption: 1, text: 1, sfx: 1, bubble: 1, vbubble: 1, tone: 1, speed: 1 };
+export const DRAG_TOOLS = { panel: 1, caption: 1, text: 1, sfx: 1, bubble: 1, vbubble: 1, balloon: 1, tone: 1, speed: 1 };
 export let spaceDown = false;
 /* tones and lines clipped to a panel move and stretch with it */
 export function clipKids(l) {
@@ -50,6 +51,7 @@ export function resizeLayer(l, d, p, shift) {
   const ncx = cx0 + lx * ca - ly * sa, ncy = cy0 + lx * sa + ly * ca;
   l.w = w; l.h = hh; l.x = ncx - w / 2; l.y = ncy - hh / 2;
   if (L.tail) l.tail = { x: L.tail.x * w / L.w, y: L.tail.y * hh / L.h };
+  scaleShapes(l, L, w / L.w, hh / L.h);
   if (l.type === "panel" && S.showGuides && !l.rotate) {
     const box = { x: l.x, y: l.y, w: l.w, h: l.h };
     S.guides = [];
@@ -130,6 +132,9 @@ export function init_editor_pointer() {
     }
     if (S.tool === "move") {
       const cur = selL(), hh = hitHandle(cur, p);
+      if (hh?.extra && pressHandle(cur, hh.extra, e.altKey)) { commit("Point removed"); refreshPanels(); requestDraw(); return; }
+      if (hh?.extra) { S.drag = { layer: cur, l0: deep(cur), p0: p, q0: local(cur, p), extra: hh.extra }; refreshPanels(); requestDraw(); return; }
+      if (cur && onOutline(cur, local(cur, p), 12 / S.view.s)) return;
       if (hh) {
         S.drag = { layer: cur, l0: deep(cur), p0: p, kids: clipKids(cur), ...(hh.tail ? { tail: true } : hh.rot ? { rot: true } : { hx: hh.hx, hy: hh.hy }) }; return;
       }
@@ -172,6 +177,8 @@ export function init_editor_pointer() {
       S.guides = S.showGuides && !e.ctrlKey ? snapBox(box, l.id, 7 / S.view.s) : [];
       l.x = box.x; l.y = box.y;
       followPanel(d, l);
+    } else if (d.extra) {
+      dragHandle(l, d.extra, local(l, p), d.l0, d.q0, e.altKey);
     } else if (d.tail) {
       const q = local(l, p); l.tail = { x: +q.x.toFixed(1), y: +q.y.toFixed(1) };
     } else if (d.rot) {
@@ -201,17 +208,19 @@ export function init_editor_pointer() {
       return;
     }
     const l = d.layer;
-    if (JSON.stringify(l) !== JSON.stringify(d.l0) || d.duped) commit(d.duped ? "Duplicated" : d.move ? "Moved" : d.tail ? "Tail moved" : d.rot ? "Rotated" : "Resized");
+    if (JSON.stringify(l) !== JSON.stringify(d.l0) || d.duped) commit(d.duped ? "Duplicated" : d.move ? "Moved" : d.extra ? (d.extra.startsWith("tip") ? "Tail moved" : "Shape edited") : d.tail ? "Tail moved" : d.rot ? "Rotated" : "Resized");
     requestDraw();
   });
 
   cv.addEventListener("dblclick", e => {
     const r = cv.getBoundingClientRect(), p = toPage(e.clientX - r.left, e.clientY - r.top);
+    const cur = selL();
+    if (cur && dblOutline(cur, local(cur, p), 12 / S.view.s)) { commit("Point added"); refreshPanels(); requestDraw(); return; }
     const l = hitLayer(p);
     if (!l) return;
     S.sel = l.id;
     if (l.type === "panel") { if (l.image) enterAdjust(l); else { showLib("shots"); status("Drag a render from Shots onto the panel"); } }
-    else if (["bubble", "caption", "text", "vbubble"].includes(l.type)) showInline(l);
+    else if (["bubble", "caption", "text", "vbubble", "balloon"].includes(l.type)) showInline(l);
     refreshPanels();
   });
 

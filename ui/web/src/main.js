@@ -61,6 +61,7 @@ import * as m51 from "./helpers/tips.js";
 import * as m52 from "./helpers/guide.js";
 import * as m53 from "./helpers/wiring.js";
 import "./select/tools.ts";
+import "./lettering/index.ts";
 
 /* the dock is markup the start-up code below looks up by id, so it goes in first */
 attach(Dock, document.getElementById("stackpanel"));

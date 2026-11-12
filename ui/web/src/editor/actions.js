@@ -35,7 +35,7 @@ export const act = {
   enter() {
     const l = selL();
     if (l?.type === "panel" && l.image) enterAdjust(l);
-    else if (l && ["bubble", "caption", "text", "vbubble"].includes(l.type)) showInline(l);
+    else if (l && ["bubble", "caption", "text", "vbubble", "balloon"].includes(l.type)) showInline(l);
   },
   selectStep(dir) {
     const ls = layers(); if (!ls.length) return;
@@ -46,6 +46,7 @@ export const act = {
     const l = selL(); if (!l) return;
     if (l.type === "panel") { if (!l.image) return; l.image.flip = !l.image.flip; }
     else if (l.type === "vbubble") { if (!l.tail) return; l.tail = { x: -l.tail.x, y: l.tail.y }; }
+    else if (l.type === "balloon") { if (!l.tails?.length) return; l.tails = l.tails.map(t => ({ ...t, tip: { x: -t.tip.x, y: t.tip.y }, bend: -(t.bend ?? 0.18) })); }
     else l.flip = !l.flip;
     commit("Flipped"); requestDraw();
   },
