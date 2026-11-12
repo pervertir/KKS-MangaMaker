@@ -289,3 +289,11 @@ kbd { font: 11px ui-monospace, Menlo, monospace; background: #1b1b1e; border: 1p
 #tipcard button { padding: 0 6px; }
 #wizbtn { margin-left: 10px; padding: 3px 12px; }
 .casttable { min-width: min(1150px, 92vw); }
+
+/* ----- guide */
+.guide { max-width: 860px; max-height: 70vh; overflow-y: auto; line-height: 1.55; padding-right: 8px; }
+.guide h2 { font-size: 17px; margin: 18px 0 6px; } .guide h3 { font-size: 14px; margin: 16px 0 4px; } .guide h4 { font-size: 13px; margin: 12px 0 4px; }
+.guide pre { background: #151517; border: 1px solid var(--line); border-radius: 6px; padding: 10px; overflow-x: auto; font: 12px/1.5 ui-monospace, Menlo, monospace; }
+.guide code { background: #ffffff12; padding: 0 4px; border-radius: 3px; font: 12px ui-monospace, Menlo, monospace; }
+.guide table { border-collapse: collapse; margin: 6px 0 10px; } .guide td, .guide th { border: 1px solid var(--line); padding: 4px 8px; text-align: left; vertical-align: top; }
+.guide th { background: var(--panel2); }

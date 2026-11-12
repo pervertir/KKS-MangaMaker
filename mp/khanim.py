@@ -295,3 +295,128 @@ def build_h_library(src: Path, out: Path, log=print) -> dict:
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(lib, separators=(",", ":"), ensure_ascii=False), encoding="utf-8")
     return {"count": len(entries), "path": str(out), "by_kind": count}
+
+
+# ------------------------------------------------------------------------------ AnimationLoader mods
+MODE_KIND = {"aibu": "Adult · Foreplay", "houshi": "Adult · Oral & service", "sonyu": "Adult · Sex",
+             "houshi3p": "Adult · Threesome", "sonyu3p": "Adult · Threesome", "houshi3pmmf": "Adult · Threesome",
+             "sonyu3pmmf": "Adult · Threesome", "masturbation": "Adult · Solo", "lesbian": "Adult · Girl & girl"}
+
+
+def _vec(text):
+    try:
+        return tuple(float(v) for v in re.split(r"[,\s]+", text.strip()) if v)[:3]
+    except (ValueError, AttributeError):
+        return None
+
+
+def mod_animations(mods_dir: Path) -> tuple[list[dict], dict]:
+    """Every <Animation> any AnimationLoader zipmod declares, and where each bundle path lives."""
+    import zipfile
+    import xml.etree.ElementTree as ET
+    anims, where = [], {}
+    for z in sorted(mods_dir.rglob("*.zip*")):
+        try:
+            zf = zipfile.ZipFile(z)
+        except zipfile.BadZipFile:
+            continue
+        with zf:
+            for n in zf.namelist():
+                if n.lower().endswith(".unity3d"):
+                    where[n.lower().removeprefix("abdata/")] = (z, n)
+            if "manifest.xml" not in zf.namelist():
+                continue
+            try:
+                root = ET.fromstring(zf.read("manifest.xml"))
+            except ET.ParseError:
+                continue
+            for a in root.iter():
+                if a.tag.lower() != "animation":
+                    continue
+                g = lambda tag: next((c.text for c in a.iter() if c.tag.lower() == tag.lower() and c.text), None)  # noqa: E731
+                ks = a.find("GameSpecificOverrides/KoikatsuSunshine")
+                name = (ks.findtext("AnimationName") if ks is not None else None) or g("AnimationName")
+                anims.append({"name": (name or "").strip(), "mode": (g("Mode") or "").lower(), "fpath": g("PathFemale"), "mpath": g("PathMale"),
+                              "fctrl": g("ControllerFemale"), "f2ctrl": g("ControllerFemale1"), "mctrl": g("ControllerMale"),
+                              "fpos": _vec(g("PositionHeroine") or ""), "mpos": _vec(g("PositionPlayer") or ""), "mod": z.stem})
+    return anims, where
+
+
+def build_mod_library(mods_dir: Path, out: Path, log=print, tmp: Path | None = None) -> dict:
+    """Named H positions added by AnimationLoader mods, as group poses (same reader as the base game)."""
+    import tempfile
+    import UnityPy
+    anims, where = mod_animations(mods_dir)
+    log(f"[h-mods] {len(anims)} animations declared")
+    tmp = Path(tmp or tempfile.mkdtemp(prefix="khmods_"))
+    cache: dict[str, dict] = {}
+
+    def controllers(path: str) -> dict:
+        key = (path or "").lower().removeprefix("abdata/")
+        if key in cache:
+            return cache[key]
+        cache[key] = {}
+        hit = where.get(key)
+        if not hit:
+            return cache[key]
+        import zipfile
+        with zipfile.ZipFile(hit[0]) as zf:
+            dest = tmp / re.sub(r"[^\w.]+", "_", key)
+            dest.write_bytes(zf.read(hit[1]))
+        env = UnityPy.load(str(dest))
+        clips = {o.path_id: o for o in env.objects if o.type.name == "AnimationClip"}
+        for o in env.objects:
+            if o.type.name == "AnimatorController":
+                d = o.read()
+                names = {}
+                for pp in d.m_AnimationClips:
+                    c = clips.get(pp.m_PathID)
+                    if c is not None:
+                        names.setdefault(c.peek_name() if hasattr(c, "peek_name") else c.read().m_Name, c)
+                cache[key][d.m_Name] = names
+        return cache[key]
+
+    def actor(path, ctrl, male, offset):
+        if not path or not ctrl:
+            return None
+        clips = controllers(path).get(ctrl)
+        if not clips:
+            return None
+        c = clips.get(_pick_clip(clips))
+        if c is None:
+            return None
+        pts = actor_points(c.read(), male)
+        if offset:
+            pts = pts + np.array(offset[:3]) * (MALE_SCALE if male else 1.0)
+        return pts
+
+    entries, seen, count = [], set(), {}
+    for a in anims:
+        kind = MODE_KIND.get(a["mode"].replace(" ", ""), "Adult")
+        key = (a["name"].lower(), a["fctrl"], a["mctrl"])
+        if not a["name"] or key in seen:
+            continue
+        seen.add(key)
+        try:
+            actors = []
+            f = actor(a["fpath"], a["fctrl"], False, a["fpos"])
+            if f is not None:
+                actors.append((f, "girl"))
+            if a["f2ctrl"]:
+                f2 = actor(a["fpath"], a["f2ctrl"], False, None)
+                if f2 is not None:
+                    actors.append((f2, "girl"))
+            m = actor(a["mpath"], a["mctrl"], True, a["mpos"])
+            if m is not None:
+                actors.append((m, "boy"))
+            if not actors:
+                continue
+            count[kind] = count.get(kind, 0) + 1
+            pid = "hmod/" + re.sub(r"[^\w]+", "_", f"{a['mod']}_{a['name']}").strip("_").lower()
+            entries.append(group_entry(pid, a["name"], kind, actors, 1.0 if len(actors) < 2 else 1.25))
+        except Exception as e:  # noqa: BLE001
+            log(f"[h-mods] skipped {a['name']}: {e}")
+    lib = {"version": 1, "source": "AnimationLoader H positions", "count": len(entries), "poses": entries}
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(lib, separators=(",", ":"), ensure_ascii=False), encoding="utf-8")
+    return {"count": len(entries), "path": str(out), "by_kind": count}

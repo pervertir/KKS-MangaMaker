@@ -186,7 +186,8 @@ function scriptWizard(focus) {
     h("div", {}, h("div", { class: "form" }, rowOf("Template", tpl), rowOf("Pages", mode), rowOf("Reading", reading), rowOf("Panels / page", per),
       rowOf("Shots", h("label", { class: "hint", style: "display:flex;gap:6px;align-items:center;margin:0" }, mkShots, "one per panel, named"), prefix),
       rowOf("Series", series)), h("div", { class: "section" }, "Preview"), prev)));
-  box.append(h("div", { class: "mfoot" }, h("button", { onclick: () => { ta.value = WIZ_EXAMPLE; update(); } }, "Example"), h("div", { class: "spacer" }),
+  box.append(h("div", { class: "mfoot" }, h("button", { onclick: () => { ta.value = WIZ_EXAMPLE; update(); } }, "Example"),
+    h("button", { onclick: () => typeof wizardGuide === "function" && wizardGuide(), title: "How to write a script, with examples" }, "Guide"), h("div", { class: "spacer" }),
     h("button", { onclick: closeModal }, "Cancel"),
     h("button", { class: "primary", onclick: async () => {
       const pages = update(); if (!pages.length) return toast("Write at least one panel", "err");

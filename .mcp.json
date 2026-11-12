@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "kks-mangamaker": {
+      "command": "./mangamaker-mcp",
+      "args": []
+    }
+  }
+}

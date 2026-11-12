@@ -194,7 +194,14 @@ def pose_library() -> dict:
             build_h_library(CFG.h_anim_dir, hlib)
         except Exception as e:  # noqa: BLE001
             sys.stderr.write(f"[ui] H-scene poses not built: {e}\n")
-    for f in (lib, hlib, POSES / "custom.json"):
+    hmods = POSES / "h_mods_library.json"
+    if not hmods.exists() and CFG.h_mods_dir.is_dir():
+        try:
+            from mp.khanim import build_mod_library
+            build_mod_library(CFG.h_mods_dir, hmods)
+        except Exception as e:  # noqa: BLE001
+            sys.stderr.write(f"[ui] mod H positions not built: {e}\n")
+    for f in (lib, hlib, hmods, POSES / "custom.json"):
         if f.exists():
             poses += json.loads(f.read_text(encoding="utf-8")).get("poses", [])
     from mp.kkpose import KINDS, pose_kind
@@ -226,6 +233,39 @@ def save_custom_pose(pose: dict) -> dict:
     POSES.mkdir(parents=True, exist_ok=True)
     f.write_text(json.dumps(data, separators=(",", ":"), ensure_ascii=False), encoding="utf-8")
     return entry
+
+
+def save_upload(fname: str, data: bytes) -> Path:
+    fname = Path(fname).name
+    stem, ext = Path(fname).stem, Path(fname).suffix.lower()
+    if ext not in (".png", ".jpg", ".jpeg", ".webp"):
+        raise ValueError("png, jpg or webp only")
+    UPLOADS.mkdir(parents=True, exist_ok=True)
+    stem = re.sub(r"[^A-Za-z0-9_\-]", "_", stem)[:60] or "upload"
+    dest, k = UPLOADS / f"{stem}{ext}", 1
+    while dest.exists():
+        dest, k = UPLOADS / f"{stem}_{k}{ext}", k + 1
+    dest.write_bytes(data)
+    return dest
+
+
+def detect_poses(fname: str, data: bytes) -> dict:
+    """Pose tab › From image: DWPose on the pod finds every person; each becomes a saved pose (My poses)
+    plus its place in the picture. The image is kept in uploads so the editor can show it as a guide."""
+    from mp.comfy_client import Comfy
+    from mp.kkpose import pose_kind
+    from mp.posedetect import poses_from_image
+    img = save_upload(fname, data)
+    comfy = Comfy(CFG.comfy_url, lambda m: sys.stderr.write(m + "\n"))
+    if not comfy.alive():
+        raise RuntimeError("the pod's ComfyUI is not answering: start the pod (pod pill › Start pod) and try again")
+    res = poses_from_image(comfy, img)
+    out = []
+    for i, p in enumerate(res["people"], 1):
+        e = save_custom_pose({"name": f"{img.stem} #{i}", "body": p["body"], "hands": p["hands"]})
+        e["kind"] = e.get("kind") or pose_kind(e, "")
+        out.append({"pose": e, "place": p["place"]})
+    return {"guide": mp_ref(img), "w": res["w"], "h": res["h"], "people": out}
 
 
 def save_pose_shot(body: dict) -> dict:
@@ -538,7 +578,93 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == "/api/pod":
                 return self.json(pod_status())
             if u.path == "/api/poses":
-                return self.cached_json("poses", pose_library, deps=[POSES / "library.json", POSES / "h_library.json", POSES / "custom.json", CFG.studio_pose_dir])
+                return self.cached_json("poses", pose_library, deps=[POSES / "library.json", POSES / "h_library.json", POSES / "h_mods_library.json", POSES / "custom.json", CFG.studio_pose_dir])
+            if u.path == "/api/guide":
+                return self.file(ROOT / "docs" / "SCRIPT_WIZARD.md", "text/markdown; charset=utf-8")
+            if u.path == "/api/cast":
+                return self.json({"cast": json.loads(CAST.read_text(encoding="utf-8")) if CAST.exists() else []})
+            if u.path == "/api/pose/scene":
+                p = shot_dir(q.get("name", "")) / "pose_scene.json"
+                return self.json(json.loads(p.read_text()) if p.exists() else {"error": "no scene"}, 200 if p.exists() else 404)
+            if u.path.startswith("/api/jobs/"):
+                job = JOBS.get(u.path.rsplit("/", 1)[-1])
+                if not job:
+                    return self.json({"error": "no such job"}, 404)
+                since = int(q.get("since", 0))
+                return self.json({**{k: job[k] for k in ("id", "label", "done", "code")}, "lines": job["lines"][since:], "next": len(job["lines"])})
+            if u.path == "/api/jobs":
+                return self.json([{k: j[k] for k in ("id", "label", "done", "code", "started")} for j in JOBS.values()])
+            return self.json({"error": "not found"}, 404)
+        except (FileNotFoundError, KeyError) as e:
+            return self.json({"error": f"not found: {e}"}, 404)
+        except Exception as e:  # noqa: BLE001
+            return self.json({"error": str(e)}, 400)
+
+    def do_POST(self):
+        u = urlparse(self.path)
+        q = {k: v[0] for k, v in parse_qs(u.query).items()}
+        try:
+            if u.path == "/api/project":
+                doc = self.jbody()
+                name = q.get("name", "")
+                if not NAME_RE.match(name):
+                    return self.json({"error": "project name: letters, digits, space, _ - . only"}, 400)
+                d = PROJECTS / name
+                d.mkdir(parents=True, exist_ok=True)
+                (d / "project.json").write_text(json.dumps(doc, indent=1))
+                return self.json({"ok": True, "path": str(d / "project.json")})
+            if u.path == "/api/export/page":
+                name, n = q["name"], int(q["n"])
+                if not NAME_RE.match(name):
+                    return self.json({"error": "bad name"}, 400)
+                d = PROJECTS / name
+                d.mkdir(parents=True, exist_ok=True)
+                im = Image.open(io.BytesIO(self.body())).convert("RGB")
+                dest = d / f"page_{n:02d}.png"
+                im.save(dest)
+                return self.json({"ok": True, "path": str(dest)})
+            if u.path == "/api/export/pdf":
+                name, count = q["name"], int(q["count"])
+                d = PROJECTS / name
+                files = [d / f"page_{n:02d}.png" for n in range(1, count + 1)]
+                missing = [f.name for f in files if not f.exists()]
+                if missing:
+                    return self.json({"error": f"missing {', '.join(missing)}"}, 400)
+                ims = [Image.open(f).convert("RGB") for f in files]
+                dest = d / f"{name}.pdf"
+                ims[0].save(dest, save_all=True, append_images=ims[1:], resolution=300)
+                return self.json({"ok": True, "path": str(dest)})
+            if u.path == "/api/import":
+                name = q.get("script", "")
+                p = (ROOT / "scripts" / name).resolve()
+                if (ROOT / "scripts").resolve() not in p.parents or not p.exists():
+                    return self.json({"error": "script not found"}, 404)
+                return self.json(import_script(p))
+            if u.path == "/api/upload":
+                fname = Path(q.get("name", "upload.png")).name
+                stem, ext = Path(fname).stem, Path(fname).suffix.lower()
+                if ext not in (".png", ".jpg", ".jpeg", ".webp"):
+                    return self.json({"error": "png, jpg or webp only"}, 400)
+                UPLOADS.mkdir(parents=True, exist_ok=True)
+                stem = re.sub(r"[^A-Za-z0-9_\-]", "_", stem)[:60] or "upload"
+                dest = UPLOADS / f"{stem}{ext}"
+                k = 1
+                while dest.exists():
+                    dest = UPLOADS / f"{stem}_{k}{ext}"
+                    k += 1
+                dest.write_bytes(self.body())
+                with Image.open(dest) as im:
+                    w, h = im.size
+                return self.json({"ref": mp_ref(dest), "name": dest.stem, "w": w, "h": h})
+            if u.path == "/api/shot/yaml":
+                body = self.jbody()
+                d = shot_dir(body["name"])
+                yaml.safe_load(body["yaml"])  # refuse broken YAML before writing
+                side = next((d / n for n in SIDECAR_NAMES if (d / n).exists()), d / "shot.yaml")
+                side.write_text(body["yaml"], encoding="utf-8")
+                return self.json({"ok": True})
+            if u.path == "/api/shot/new":
+                return self.json(create_shot(self.jbody()))
             if u.path == "/api/cast":
                 return self.json({"cast": json.loads(CAST.read_text(encoding="utf-8")) if CAST.exists() else []})
             if u.path == "/api/pose/scene":
@@ -656,6 +782,8 @@ class Handler(BaseHTTPRequestHandler):
                     t = re.sub(r"(?m)^style:.*$", line, t) if re.search(r"(?m)^style:", t) else t + line + "\n"
                     side.write_text(t, encoding="utf-8")
                 return self.json({"ok": True})
+            if u.path == "/api/pose/detect":
+                return self.json(detect_poses(q.get("name", "image.png"), self.body()))
             if u.path == "/api/pose/shot":
                 return self.json(save_pose_shot(self.jbody()))
             if u.path == "/api/poses/custom":
@@ -706,6 +834,41 @@ def with_characters(text: str, chars: list[dict]) -> str:
     start = m.start()
     end = text.index("\nidentity:", start) + 1
     return text[:start] + block + "\n" + text[end:]
+
+
+def enrich_from_cast(chars: list[dict]) -> list[dict]:
+    """Fill name-only characters from the character sheet (series, LoRA, looks, girl/boy, reference)."""
+    cast = {c.get("name", "").lower(): c for c in (json.loads(CAST.read_text(encoding="utf-8")) if CAST.exists() else [])}
+    out = []
+    for c in chars:
+        k = cast.get(str(c.get("name", "")).lower())
+        if k:
+            c = {**c, "series": c.get("series") or k.get("series", ""), "lora": c.get("lora") or k.get("lora", "auto"),
+                 "tags": c.get("tags") or k.get("tags", ""), "gender": c.get("gender") or k.get("gender", "girl"), "ref": c.get("ref") or k.get("ref")}
+        out.append(c)
+    return out
+
+
+def create_shot(body: dict) -> dict:
+    """A new shot folder with its sidecar: characters (left to right), prompt, reference from the cast."""
+    d = shot_dir(body["name"], must_exist=False)
+    if d.exists():
+        raise ValueError("a shot with that name exists")
+    chars = [c for c in (body.get("characters") or []) if str(c.get("name", "")).strip()]
+    if not chars and body.get("character"):
+        chars = [{"name": body["character"], "series": body.get("series") or ""}]
+    chars = chars or [{"name": "", "series": ""}]   # unnamed: generic, described by tags
+    if body.get("cast"):
+        chars = enrich_from_cast(chars)
+    side = write_example(d, str(chars[0]["name"]).strip(), str(chars[0].get("series", "")).strip())
+    text = with_characters(side.read_text(encoding="utf-8"), chars)
+    if body.get("prompt"):
+        text = re.sub(r"(?m)^prompt:.*$", lambda m: "prompt: " + json.dumps(str(body["prompt"]), ensure_ascii=False), text)
+    if body.get("keep"):   # made by the script wizard: the editor letters the page, no sample line
+        text = re.sub(r"(?ms)^dialogue:\n.*\Z", "dialogue: []\n", text)
+    side.write_text(text, encoding="utf-8")
+    apply_reference(d, chars)
+    return {"ok": True}
 
 
 def shot_dir(name: str, must_exist: bool = True) -> Path:

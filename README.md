@@ -220,11 +220,24 @@ The library is filtered by pose type (standing, sitting, kneeling, lying, ...).
 from the game's H animations (`abdata/h/anim`), which are Unity animation clips rather than pose files:
 `mp/khanim.py` decodes one frame of each position's main loop for every actor and stores the actors
 together as a group pose, turned to the side view that separates the bodies best. Build them once with
-`./mangapipe poses build-h` (needs `pip install UnityPy`); they are written to `poses/h_library.json`,
-which is not committed. In the Pose tab, **Turn everyone** rotates a whole group while keeping it together.
+`./mangapipe poses build-h` (needs `pip install UnityPy`); they are written to `poses/h_library.json`. `./mangapipe poses build-h-mods` does the same for the named positions that
+AnimationLoader mods add (`mods/Sideloader Modpack - Animations`; 155 in this install) into
+`poses/h_mods_library.json`. In the Pose tab, **Turn everyone** rotates a whole group while keeping it together.
 
 Paths to the game (captures, templates, poses) can be overridden per machine in an untracked
 `config.local.yaml` next to `config.yaml`.
+
+## Claude: MCP server and script skill
+
+`./mangamaker-mcp` is an MCP server (stdio, no extra packages) over the same pipeline: `script_format`,
+`check_script`, `build_pages_from_script`, `list_shots`, `list_poses`, `pose_shot` (draws the OpenPose
+image server-side, single figures or whole group poses), `render_shot` (on the pod), `place_renders`,
+`pod`, `cast`. `.mcp.json` registers it for Claude Code in this folder; elsewhere:
+`claude mcp add kks-mangamaker -- /path/to/KKS-MangaMaker/mangamaker-mcp`.
+
+`.claude/skills/kks-mangamaker-script` teaches Claude to write Script Wizard scripts (and to build,
+pose and render them through the MCP server). The format and craft notes are in
+[docs/SCRIPT_WIZARD.md](docs/SCRIPT_WIZARD.md), also in the editor under Help › Script Wizard guide.
 
 ## Commands
 

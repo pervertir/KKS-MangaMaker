@@ -20,4 +20,3 @@ config.local.yaml
 # The character sheet is per user
 cast.json
 poses/custom.json
-poses/h_library.json

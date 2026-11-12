@@ -546,6 +546,29 @@ function renderPoseSide(valuesOnly) {
       h("button", { class: "primary", onclick: () => savePoseShot(true), title: "Save, then render on the pod" }, "Save & render")),
     P.panel ? h("p", { class: "hint" }, "The render lands in the panel you opened this from.") : null);
 }
+/* Pose from an image: the picture goes to the pod's pose detector; every person found comes back as a
+   figure where they stand (saved under My poses), and the picture stays underneath as a guide. */
+async function poseFromImage(f) {
+  if (!f) return;
+  status("Finding the people in the picture on the pod…"); toast("Detecting poses on the pod (a few seconds once it is warm)…");
+  try {
+    const r = await post(`/api/pose/detect?name=${encodeURIComponent(f.name)}`, f, true);
+    if (!r.people.length) { status(""); return toast("No people found in that picture", "err"); }
+    const ia = r.w / r.h;
+    if (!P.panel && !P.scene.chars.length) {
+      const best = ASPECTS.map(([v]) => v.split("x").map(Number)).sort((p, q) => Math.abs(p[0] / p[1] - ia) - Math.abs(q[0] / q[1] - ia))[0];
+      [P.scene.w, P.scene.h] = best;
+    }
+    const sa = P.scene.w / P.scene.h;
+    for (const { pose, place } of r.people) {
+      P.lib.unshift(pose); P.byId.set(pose.id, pose);
+      const c = newChar(pose.id, 0.5 + (place.x - 0.5) * ia / sa, place.y);
+      c.scale = place.scale; P.scene.chars.push(c); P.sel = c.id;
+    }
+    const im = new Image(); im.onload = () => { P.ref = im; P.refAlpha = 0.45; pdraw(); renderPoseSide(); }; im.src = thumb(r.guide, 1600);
+    pcommit(`${r.people.length} figure${r.people.length > 1 ? "s" : ""} from ${f.name}`); pfit(); renderPoseLib(); status("");
+  } catch (e) { status(""); toast(e.message, "err"); }
+}
 async function loadRef(f) {
   if (!f) return;
   const im = new Image(); im.onload = () => { P.ref = im; P.refAlpha = 0.35; renderPoseSide(); pdraw(); }; im.src = URL.createObjectURL(f);
@@ -722,4 +745,10 @@ function poseKey(e) {
     for (const s of withScene) body.append(h("div", { class: "row" }, h("button", { style: "flex:1;text-align:left", onclick: () => { closeModal(); openPoseStudio({ shot: s.name }); } }, s.name)));
   };
   $("#psback").onclick = () => setMode("page");
+  $("#psfromimg").onclick = () => $("#psimgfile").click();
+  $("#psimgfile").onchange = e => { poseFromImage(e.target.files[0]); e.target.value = ""; };
+  $("#psstage").addEventListener("drop", e => {           // dropping an image file on the canvas does the same
+    const f = [...(e.dataTransfer.files || [])].find(x => /^image\//.test(x.type)); if (!f) return; e.preventDefault(); poseFromImage(f);
+  });
+  $("#psstage").addEventListener("dragover", e => { if (e.dataTransfer.types.includes("Files")) e.preventDefault(); });
 })();
