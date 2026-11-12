@@ -40,6 +40,7 @@ COPY docs ./docs
 COPY poses ./poses
 COPY shots/_example ./shots/_example
 COPY ui/server.py ./ui/server.py
+COPY ui/library ./ui/library
 COPY --from=web /web/dist ./ui/web/dist
 # container paths for the game folders (mount them under /kks, or leave them out: the editor runs without)
 COPY docker/editor.config.yaml ./config.local.yaml

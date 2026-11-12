@@ -20,3 +20,14 @@ describe("book format", () => {
     expect(canvasSize(f, 2).w).toBe(Math.round(mmToPx(f, 370)));
   });
 });
+
+import { planBands } from "../bands.ts";
+describe("bands", () => {
+  it("covers the page with bands under the pixel cap", () => {
+    const b = planBands(4440, 6210);
+    expect(b.reduce((n, x) => n + x.h, 0)).toBe(6210);
+    expect(Math.max(...b.map(x => x.h * 4440))).toBeLessThanOrEqual(16_000_000);
+    expect(b.length).toBe(2);
+    expect(planBands(1800, 2700)).toEqual([{ y: 0, h: 2700 }]);
+  });
+});

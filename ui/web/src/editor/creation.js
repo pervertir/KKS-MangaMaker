@@ -9,6 +9,8 @@ import { setTool } from "./tools.js";
 import { addEffect, currentToneFields, pageSelection, speedFields } from "./effects/apply.ts";
 import { contains } from "../core/geometry/region.ts";
 import { requestDraw } from "./view.js";
+import { newBalloon } from "../lettering/index.ts";
+import { applyFrameShape } from "./frames.js";
 
 /* ================================================================ creation */
 /* Page theme: ONE switch for the whole editor (Edit > Preferences), applied when drawing, never stored
@@ -58,6 +60,7 @@ export function createAt(tool, c, small) {
   if (tool === "panel") {
     if (small) return;
     l = addLayer({ type: "panel", x: c.x, y: c.y, w: c.w, h: c.h, shot: "", image: null }, insertIndexForPanel());
+    if (S.panelShape !== "rect" && S.panelShape !== "polygon") applyFrameShape(l, S.panelShape);
   } else if (tool === "bubble") {
     const m = bubbleMeta(S.bubble), w = small ? 460 : Math.max(c.w, 120), hh = w * m.h / m.w;
     const cx = small ? c.x : c.x + c.w / 2, cy = small ? c.y : c.y + c.h / 2;
@@ -71,9 +74,7 @@ export function createAt(tool, c, small) {
   } else if (tool === "vbubble") {
     const w = small ? 440 : Math.max(c.w, 120), hh = small ? 300 : Math.max(c.h, 80);
     const cx = small ? c.x : c.x + c.w / 2, cy = small ? c.y : c.y + c.h / 2;
-    l = addLayer({ type: "vbubble", shape: S.vshape, x: cx - w / 2, y: cy - hh / 2, w, h: hh, text: "",
-      tail: S.vshape === "flash" ? null : { x: -w * 0.18, y: hh * 0.85 }, seed: Math.floor(Math.random() * 1e6),
-      font: S.vshape === "burst" ? "Bangers" : "MMComic" });
+    l = addLayer(newBalloon(S.vshape, cx - w / 2, cy - hh / 2, w, hh));
   } else if (tool === "tone" || tool === "speed") {
     // a click inside the selection fills the selection; otherwise a click fills the panel under it, a drag fills the box
     const props = tool === "tone" ? currentToneFields() : speedFields(), reg = pageSelection();
@@ -88,7 +89,7 @@ export function createAt(tool, c, small) {
     l = addLayer({ type: "text", sfx: true, x: small ? c.x - w / 2 : c.x, y: small ? c.y - hh / 2 : c.y, w, h: hh, text: "", rotate: -8,
       color: "#ffffff", stroke: "#000000", strokeWidth: 12, font: "Bangers", fontSize: 0 });
   }
-  commit("Added " + (l.type === "text" && l.sfx ? "SFX" : l.type === "vbubble" ? "bubble" : l.type));
+  commit("Added " + (l.type === "text" && l.sfx ? "SFX" : l.type === "vbubble" || l.type === "balloon" ? "bubble" : l.type));
   setTool("move");
   requestDraw();
   if (l.type !== "panel") showInline(l);

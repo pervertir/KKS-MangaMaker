@@ -9,6 +9,7 @@ Nothing renders on this Mac: `run`/`render` go to the pod configured in config.y
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import io
 import json
@@ -32,6 +33,8 @@ from PIL import Image, ImageOps  # noqa: E402
 
 from mp.compose import _interior_rect  # noqa: E402
 from mp.config import Config  # noqa: E402
+from mp.export import ExportError, export_book  # noqa: E402
+from mp.library import KINDS, Library, words  # noqa: E402
 from mp.page import STRIPS_SUBDIR, detect_panels, find_render, load_script, reading_order, _shot_dir, _shot_dialogue  # noqa: E402
 from mp.sidecar import SIDECAR_NAMES, write_example  # noqa: E402
 
@@ -44,6 +47,7 @@ CACHE.mkdir(parents=True, exist_ok=True)
 SHOTS = ROOT / "shots"
 PROJECTS = ROOT / "pages"
 UPLOADS = ROOT / "assets" / "uploads"
+MODELS3D = ROOT / "assets" / "scenes3d"
 PAGE_W, PAGE_H = 1800, 2700
 ASSET_DIRS = {
     "decor": "Decorative Elements/Decorative-Elements-Images",
@@ -55,9 +59,11 @@ NAME_RE = re.compile(r"^[A-Za-z0-9_\-. ]{1,80}$")
 
 # ------------------------------------------------------------------------------ images
 def resolve_ref(ref: str) -> Path:
-    """`tpl:<rel>` (Comics templates), `mp:<rel>` (MangaPipeline/) or `cap:<rel>` (Studio captures).
-    Refuses anything that escapes its root."""
+    """`tpl:<rel>` (Comics templates), `mp:<rel>` (MangaPipeline/), `cap:<rel>` (Studio captures) or
+    `lib:<sha>.<ext>` (the asset library). Refuses anything that escapes its root."""
     kind, _, rel = ref.partition(":")
+    if kind == "lib":
+        return LIBRARY.blob_path(rel)
     base = {"tpl": TPL, "mp": ROOT, "cap": CFG.cap_dir}.get(kind)
     if base is None or not rel:
         raise ValueError(f"bad image ref {ref!r}")
@@ -74,7 +80,9 @@ def mp_ref(p: Path) -> str:
 
 
 def sized(p: Path, w: int | None) -> tuple[bytes, str]:
-    """The file itself, or a PNG/JPEG no wider than `w`, cached by path+mtime+w."""
+    """The file itself, or a PNG/JPEG no wider than `w`, cached by path+mtime+w. SVG is sent as it is."""
+    if p.suffix.lower() == ".svg":
+        return p.read_bytes(), "image/svg+xml"
     if not w:
         ctype = "image/png" if p.suffix.lower() == ".png" else "image/jpeg"
         return p.read_bytes(), ctype
@@ -153,6 +161,123 @@ def assets() -> dict:
     out["uploads"] = [{"ref": mp_ref(p), "name": p.stem, "multiply": False}
                       for p in sorted(UPLOADS.glob("*")) if p.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp")]
     return out
+
+
+# ------------------------------------------------------------------------ asset library
+LIBRARY = Library(ROOT / "assets" / "library", resolve_ref)
+MANPU = Path(__file__).resolve().parent / "library" / "manpu"
+SEED_KINDS = {"decor": ("effect", "decor"), "particles": ("effect", "particles"), "speedlines": ("effect", "speed lines")}
+_seeded = threading.Event()
+
+
+def svg_size(p: Path) -> tuple[int, int]:
+    m = re.search(rb'<svg[^>]*\bwidth="(\d+)"[^>]*\bheight="(\d+)"', p.read_bytes()[:2000])
+    return (int(m.group(1)), int(m.group(2))) if m else (512, 512)
+
+
+def image_size(p: Path) -> tuple[int, int]:
+    if p.suffix.lower() == ".svg":
+        return svg_size(p)
+    with Image.open(p) as im:
+        return im.size
+
+
+def upload_entry(p: Path) -> dict:
+    w, h = image_size(p)
+    return {"id": mp_ref(p), "kind": "prop", "name": p.stem, "tags": ["upload", *words(p.stem)],
+            "payload": {"type": "image", "ref": mp_ref(p), "w": w, "h": h, "multiply": False}}
+
+
+def library_seed() -> list[dict]:
+    """What the library starts with: manpu symbols, the template pack's bubbles and effect images, uploads.
+    Template images stay where they are; the library only points at them."""
+    out = []
+    for p in sorted(MANPU.glob("*.svg")):
+        w, h = svg_size(p)
+        out.append({"id": "manpu:" + p.stem, "kind": "expression", "name": p.stem.replace("-", " "), "tags": ["manpu", *words(p.stem)],
+                    "payload": {"type": "image", "ref": mp_ref(p), "w": w, "h": h, "multiply": False}})
+    for b in bubbles():
+        out.append({"id": b["ref"], "kind": "balloon", "name": "Bubble " + b["key"], "tags": ["bubble", "template"],
+                    "thumb": b["ref"], "payload": {"type": "bubble", "key": b["key"]}})
+    for cat, items in assets().items():
+        if cat == "uploads":
+            for a in items:
+                out.append(upload_entry(resolve_ref(a["ref"])))
+            continue
+        kind, tag = SEED_KINDS[cat]
+        for a in items:
+            out.append({"id": a["ref"], "kind": kind, "name": a["name"], "tags": [tag, *words(a["name"])],
+                        "payload": {"type": "image", "ref": a["ref"], "w": 0, "h": 0, "multiply": a["multiply"]}})
+    for e in out:
+        pay = e["payload"]
+        if pay["type"] == "image" and not pay["w"]:
+            try:
+                pay["w"], pay["h"] = image_size(resolve_ref(pay["ref"]))
+            except (OSError, ValueError):
+                pass
+    return out
+
+
+def library() -> dict:
+    if not _seeded.is_set():
+        LIBRARY.seed(library_seed())
+        _seeded.set()
+    cast = [c.get("name", "") for c in (json.loads(CAST.read_text(encoding="utf-8")) if CAST.exists() else [])]
+    chars = sorted({*filter(None, cast), *LIBRARY.characters()}, key=str.lower)
+    return {"kinds": list(KINDS), "characters": chars, "assets": LIBRARY.all()}
+
+
+def library_save(body: dict) -> dict:
+    """A placed image (render, panel image, image layer) or a group of layers, saved as a library asset."""
+    meta = {k: body.get(k) for k in ("kind", "name", "tags", "character")}
+    meta["kind"] = meta["kind"] or "prop"
+    if body.get("layers"):
+        thumb = body.get("thumb") or ""
+        png = base64.b64decode(thumb.split(",", 1)[1]) if thumb.startswith("data:image/png;base64,") else None
+        return LIBRARY.add_layers(layers=body["layers"], thumb_png=png, source=body.get("source"), **meta)
+    ref = str(body.get("ref") or "")
+    w, h = image_size(resolve_ref(ref))
+    return LIBRARY.add_image(ref=ref, w=w, h=h, multiply=bool(body.get("multiply")), source=body.get("source"), **meta)
+
+
+def library_upload(fname: str, kind: str, data: bytes) -> dict:
+    ext = Path(fname).suffix.lower()
+    ref = LIBRARY.put_blob(data, ext)
+    w, h = image_size(resolve_ref(ref))
+    return LIBRARY.add_image(kind or "prop", Path(fname).stem[:80], ref, w, h, tags=words(Path(fname).stem))
+
+
+def shot_characters(d: Path) -> list[dict]:
+    side = next((d / n for n in SIDECAR_NAMES if (d / n).exists()), None)
+    data = (json.loads(side.read_text()) if side.suffix == ".json" else yaml.safe_load(side.read_text(encoding="utf-8"))) if side else {}
+    return [c for c in (data or {}).get("characters") or [] if isinstance(c, dict)]
+
+
+def expression_job(body: dict) -> str:
+    """A new face for one character of a render, made on the pod; when it is done, it is saved to the
+    library as an expression of that character."""
+    d = shot_dir(body["shot"])
+    src = resolve_ref(str(body["ref"]))
+    tags = re.sub(r"\s+", " ", str(body.get("tags") or "")).strip()[:200]
+    if not tags:
+        raise ValueError("describe the expression, e.g. smile, closed eyes")
+    who = int(body.get("character") or 1)
+    chars = shot_characters(d)
+    if not 1 <= who <= max(len(chars), 1):
+        raise ValueError(f"the shot has {len(chars)} character(s)")
+    name = str((chars[who - 1] if chars else {}).get("name") or "").strip()
+
+    def done(job: dict):
+        made = next((l[6:].strip() for l in reversed(job["lines"]) if l.startswith("wrote ")), None)
+        if job["code"] != 0 or not made:
+            return
+        p = Path(made)
+        w, h = image_size(p)
+        a = LIBRARY.add_image("expression", f"{name or d.name}: {tags}", mp_ref(p), w, h, tags=["face", *tags.split(",")],
+                              character=name, source={"shot": d.name, "from": body["ref"]})
+        job["lines"].append(f"saved to the asset library as \"{a['name']}\"")
+    args = ["expression", str(d.relative_to(ROOT)), "--image", str(src), "--tags", tags, "--character", str(who)]
+    return start_job(args, f"expression {d.name}: {tags}", done)
 
 
 def shots() -> list[dict]:
@@ -274,7 +399,7 @@ def save_pose_shot(body: dict) -> dict:
     scene) and the sidecar's characters/prompt, so `run` renders it with no Studio capture at all."""
     import base64
     d = shot_dir(body["name"], must_exist=False)
-    chars = body.get("characters") or [{"name": "", "series": ""}]
+    chars = body.get("characters") or ([] if body.get("background") else [{"name": "", "series": ""}])
     side = next((d / n for n in SIDECAR_NAMES if (d / n).exists()), None)
     if side is None:
         side = write_example(d, str(chars[0]["name"]).strip(), str(chars[0].get("series", "")).strip())
@@ -309,8 +434,20 @@ def save_pose_shot(body: dict) -> dict:
     apply_reference(d, chars)
     png = body["png"].split(",", 1)[-1]
     Image.open(io.BytesIO(base64.b64decode(png))).convert("RGB").save(d / "pose.png")
+    old = d / "pose_scene.json"
+    had3d = old.exists() and bool(json.loads(old.read_text(encoding="utf-8") or "{}").get("bg3d"))
+    for key in ("depth", "lines"):      # the 3D background's passes, same camera as the pose
+        if body.get(key):
+            Image.open(io.BytesIO(base64.b64decode(body[key].split(",", 1)[-1]))).convert("L").save(d / f"{key}.png")
+        elif had3d and (d / f"{key}.png").exists():
+            (d / f"{key}.png").unlink()
     (d / "pose_scene.json").write_text(json.dumps(body.get("scene") or {}, indent=1), encoding="utf-8")
     return {"ok": True, "pose": mp_ref(d / "pose.png")}
+
+
+def models3d() -> list[dict]:
+    MODELS3D.mkdir(parents=True, exist_ok=True)
+    return [{"ref": mp_ref(p), "name": p.stem} for p in sorted(MODELS3D.glob("*.glb"))]
 
 
 def apply_reference(d: Path, chars: list[dict]) -> None:
@@ -420,11 +557,11 @@ def dialogue_layer(d: dict, rect, bmap) -> dict | None:
 # ---------------------------------------------------------------------------- jobs
 JOBS: dict[str, dict] = {}
 MANGAPIPE = ROOT / "mangapipe"
-SHOT_CMDS = {"run", "render", "grab", "compose"}
+SHOT_CMDS = {"run", "render", "grab", "compose", "matte"}
 POD_ACTIONS = {"status", "start", "stop", "url", "restart"}
 
 
-def start_job(args: list[str], label: str) -> str:
+def start_job(args: list[str], label: str, on_done=None) -> str:
     jid = uuid.uuid4().hex[:8]
     job = {"id": jid, "label": label, "args": args, "lines": [], "done": False, "code": None, "started": time.time()}
     JOBS[jid] = job
@@ -440,6 +577,11 @@ def start_job(args: list[str], label: str) -> str:
         except Exception as e:  # noqa: BLE001
             job["lines"].append(f"error: {e}")
             job["code"] = -1
+        if on_done:
+            try:
+                on_done(job)
+            except Exception as e:  # noqa: BLE001
+                job["lines"].append(f"error: {e}")
         job["done"] = True
 
     threading.Thread(target=run, daemon=True).start()
@@ -585,6 +727,8 @@ class Handler(BaseHTTPRequestHandler):
                     deps=[ROOT / "scripts", UPLOADS, CFG.path, TPL])
             if u.path == "/api/shots":
                 return self.json(shots())
+            if u.path == "/api/library":
+                return self.json(library())
             if u.path == "/api/projects":
                 return self.json(projects())
             if u.path == "/api/project":
@@ -605,6 +749,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self.file(ROOT / "docs" / "SCRIPT_WIZARD.md", "text/markdown; charset=utf-8")
             if u.path == "/api/cast":
                 return self.json({"cast": json.loads(CAST.read_text(encoding="utf-8")) if CAST.exists() else []})
+            if u.path == "/model":
+                p = resolve_ref(q["ref"])
+                if p.suffix.lower() != ".glb":
+                    return self.json({"error": "not a model"}, 400)
+                return self.send(200, p.read_bytes(), "model/gltf-binary", cache=True)
+            if u.path == "/api/scene3d/models":
+                return self.json(models3d())
             if u.path == "/api/pose/scene":
                 p = shot_dir(q.get("name", "")) / "pose_scene.json"
                 return self.json(json.loads(p.read_text()) if p.exists() else {"error": "no scene"}, 200 if p.exists() else 404)
@@ -635,7 +786,7 @@ class Handler(BaseHTTPRequestHandler):
             if hashlib.sha256(data).hexdigest() != m.group(2):
                 return self.json({"error": "content does not match its hash"}, 400)
             f.parent.mkdir(parents=True, exist_ok=True)
-            tmp = f.with_suffix(".part")
+            tmp = f.with_name(f"{f.name}.{threading.get_ident()}.part")
             tmp.write_bytes(data)
             tmp.replace(f)
             return self.json({"ok": True})
@@ -661,8 +812,25 @@ class Handler(BaseHTTPRequestHandler):
                     return self.json({"error": "bad name"}, 400)
                 d = PROJECTS / name
                 d.mkdir(parents=True, exist_ok=True)
-                im = Image.open(io.BytesIO(self.body())).convert("RGB")
-                dest = d / f"page_{n:02d}.png"
+                dest = d / f"{'spread' if q.get('spread') else 'page'}_{n:02d}.png"
+                if "bands" in q:
+                    k, count = int(q["band"]), int(q["bands"])
+                    if not (0 <= k < count <= 64):
+                        return self.json({"error": "bad band"}, 400)
+                    (d / f".{dest.stem}.band{k:02d}.png").write_bytes(self.body())
+                    parts = [d / f".{dest.stem}.band{j:02d}.png" for j in range(count)]
+                    if not all(p.exists() for p in parts):
+                        return self.json({"ok": True, "band": k})
+                    ims = [Image.open(p).convert("RGB") for p in parts]
+                    im = Image.new("RGB", (ims[0].width, sum(i.height for i in ims)), "white")
+                    y = 0
+                    for i in ims:
+                        im.paste(i, (0, y))
+                        y += i.height
+                    for p in parts:
+                        p.unlink()
+                else:
+                    im = Image.open(io.BytesIO(self.body())).convert("RGB")
                 im.save(dest)
                 return self.json({"ok": True, "path": str(dest)})
             if u.path == "/api/export/pdf":
@@ -674,7 +842,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self.json({"error": f"missing {', '.join(missing)}"}, 400)
                 ims = [Image.open(f).convert("RGB") for f in files]
                 dest = d / f"{name}.pdf"
-                ims[0].save(dest, save_all=True, append_images=ims[1:], resolution=300)
+                ims[0].save(dest, save_all=True, append_images=ims[1:], resolution=float(q.get("dpi", 300)))
                 return self.json({"ok": True, "path": str(dest)})
             if u.path == "/api/import":
                 name = q.get("script", "")
@@ -745,8 +913,25 @@ class Handler(BaseHTTPRequestHandler):
                     return self.json({"error": "bad name"}, 400)
                 d = PROJECTS / name
                 d.mkdir(parents=True, exist_ok=True)
-                im = Image.open(io.BytesIO(self.body())).convert("RGB")
-                dest = d / f"page_{n:02d}.png"
+                dest = d / f"{'spread' if q.get('spread') else 'page'}_{n:02d}.png"
+                if "bands" in q:
+                    k, count = int(q["band"]), int(q["bands"])
+                    if not (0 <= k < count <= 64):
+                        return self.json({"error": "bad band"}, 400)
+                    (d / f".{dest.stem}.band{k:02d}.png").write_bytes(self.body())
+                    parts = [d / f".{dest.stem}.band{j:02d}.png" for j in range(count)]
+                    if not all(p.exists() for p in parts):
+                        return self.json({"ok": True, "band": k})
+                    ims = [Image.open(p).convert("RGB") for p in parts]
+                    im = Image.new("RGB", (ims[0].width, sum(i.height for i in ims)), "white")
+                    y = 0
+                    for i in ims:
+                        im.paste(i, (0, y))
+                        y += i.height
+                    for p in parts:
+                        p.unlink()
+                else:
+                    im = Image.open(io.BytesIO(self.body())).convert("RGB")
                 im.save(dest)
                 return self.json({"ok": True, "path": str(dest)})
             if u.path == "/api/export/pdf":
@@ -758,8 +943,17 @@ class Handler(BaseHTTPRequestHandler):
                     return self.json({"error": f"missing {', '.join(missing)}"}, 400)
                 ims = [Image.open(f).convert("RGB") for f in files]
                 dest = d / f"{name}.pdf"
-                ims[0].save(dest, save_all=True, append_images=ims[1:], resolution=300)
+                ims[0].save(dest, save_all=True, append_images=ims[1:], resolution=float(q.get("dpi", 300)))
                 return self.json({"ok": True, "path": str(dest)})
+            if u.path == "/api/export/book":
+                name = q.get("name", "")
+                if not NAME_RE.match(name) or not (PROJECTS / name / "project.json").exists():
+                    return self.json({"error": "save the project first"}, 400)
+                body = self.jbody()
+                try:
+                    return self.json(export_book(PROJECTS / name, body.get("formats") or [], body.get("options") or {}))
+                except ExportError as e:
+                    return self.json({"error": str(e)}, 400)
             if u.path == "/api/import":
                 name = q.get("script", "")
                 p = (ROOT / "scripts" / name).resolve()
@@ -781,6 +975,7 @@ class Handler(BaseHTTPRequestHandler):
                 dest.write_bytes(self.body())
                 with Image.open(dest) as im:
                     w, h = im.size
+                LIBRARY.seed([upload_entry(dest)])
                 return self.json({"ref": mp_ref(dest), "name": dest.stem, "w": w, "h": h})
             if u.path == "/api/shot/yaml":
                 body = self.jbody()
@@ -828,8 +1023,37 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json(detect_poses(q.get("name", "image.png"), self.body()))
             if u.path == "/api/pose/shot":
                 return self.json(save_pose_shot(self.jbody()))
+            if u.path == "/api/scene3d/upload":
+                fname = Path(q.get("name", "scene.glb")).name
+                if Path(fname).suffix.lower() != ".glb":
+                    return self.json({"error": "glTF binary (.glb) only"}, 400)
+                data = self.body()
+                if data[:4] != b"glTF":
+                    return self.json({"error": "not a glTF binary file"}, 400)
+                MODELS3D.mkdir(parents=True, exist_ok=True)
+                stem = re.sub(r"[^A-Za-z0-9_\-]", "_", Path(fname).stem)[:60] or "scene"
+                dest = MODELS3D / f"{stem}.glb"
+                k = 1
+                while dest.exists() and dest.read_bytes() != data:
+                    dest = MODELS3D / f"{stem}_{k}.glb"
+                    k += 1
+                dest.write_bytes(data)
+                return self.json({"ref": mp_ref(dest), "name": dest.stem})
             if u.path == "/api/poses/custom":
                 return self.json(save_custom_pose(self.jbody()))
+            if u.path == "/api/library":
+                return self.json(library_save(self.jbody()))
+            if u.path == "/api/library/upload":
+                return self.json(library_upload(Path(q.get("name", "image.png")).name, q.get("kind", "prop"), self.body()))
+            if u.path == "/api/library/expression":
+                return self.json({"id": expression_job(self.jbody())})
+            m = re.fullmatch(r"/api/library/item/([^/]{1,600})(/delete)?", u.path)
+            if m:
+                aid = unquote(m.group(1))
+                if m.group(2):
+                    LIBRARY.remove(aid)
+                    return self.json({"ok": True})
+                return self.json(LIBRARY.update(aid, self.jbody()))
             m = re.fullmatch(r"/api/jobs/([0-9a-f]{8})/(cancel|dismiss)", u.path)
             if m:   # the x on a job: stop it if it is still running, and forget it
                 job = JOBS.pop(m.group(1), None)
@@ -847,6 +1071,11 @@ class Handler(BaseHTTPRequestHandler):
                         args += ["--seed", str(int(body["seed"]))]
                     if cmd == "run":
                         args.append("--no-compose")  # the editor letters the page itself
+                    if cmd == "matte" and body.get("image"):
+                        img = resolve_ref(str(body["image"]))
+                        if d not in img.parents:
+                            return self.json({"error": "that render is not in this shot"}, 400)
+                        args += ["--image", str(img.relative_to(ROOT))]
                     label = f"{cmd} {d.name}"
                 elif cmd == "pod" and body.get("action") in POD_ACTIONS:
                     args, label = ["pod", body["action"]], f"pod {body['action']}"

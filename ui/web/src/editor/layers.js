@@ -10,17 +10,22 @@ import { S, bubbleMeta, layers, selL } from "./state.ts";
 import { deleteSelected, sc } from "./tools.js";
 import { requestDraw } from "./view.js";
 import { ui } from "../ui/store.svelte.ts";
+import { plainText } from "../lettering/ruby.ts";
+import { expressionDialog, saveRenderDialog, saveSelectionDialog } from "../assets/dialogs.ts";
+import { layerType } from "../core/registry.ts";
+import { blobGen } from "../draw/blobs.ts";
 
 /* ================================================================ layers list */
-export const TYPE_IC = { panel: "▭", bubble: "💬", vbubble: "🗨", caption: "▤", text: "T", image: "🖼", tone: "▦", speed: "✺" };
+export const TYPE_IC = { panel: "▭", bubble: "💬", vbubble: "🗨", balloon: "🗨", caption: "▤", text: "T", image: "🖼", tone: "▦", speed: "✺", raster: "✎", vector: "✒" };
 export function layerName(l) {
   if (l.name) return l.name;
   if (l.type === "panel") return "Panel" + (l.shot ? ` · ${l.shot}` : "");
   if (l.type === "image") return l.ref.split("/").pop();
   if (l.type === "tone") return `Screentone · ${l.shape === "flat" ? "" : l.lpi + " L "}${l.grad ? "gradient" : l.pct + "%"}`;
   if (l.type === "speed") return { focus: "Focus lines", parallel: "Speed lines", beta: "Beta flash", uni: "Uni flash" }[l.mode] || "Speed lines";
-  const t = (l.text || "").replace(/\s+/g, " ").trim();
-  return (l.sfx ? "SFX" : l.type === "bubble" || l.type === "vbubble" ? "Bubble" : l.type === "caption" ? "Caption" : "Text") + (t ? ` · ${t}` : "");
+  if (layerType(l.type) && l.type !== "balloon") return layerType(l.type).label;
+  const t = plainText(l.text || "").replace(/\s+/g, " ").trim();
+  return (l.sfx ? "SFX" : l.type === "bubble" || l.type === "vbubble" || l.type === "balloon" ? "Bubble" : l.type === "caption" ? "Caption" : "Text") + (t ? ` · ${t}` : "");
 }
 /* monochrome line icons (currentColor), so they follow the theme instead of emoji colours */
 export const UI_ICON = {
@@ -39,7 +44,7 @@ export const THUMBS = new Map();   // layer id -> {key, canvas}: redrawn only wh
 export function layerThumb(l, T = 32) {
   const refs = [l.image?.ref, l.type === "bubble" ? bubbleMeta(l.bubble)?.ref : null].filter(Boolean);
   const loaded = refs.map(r => [0, ...LEVELS].map(w => IMG.get(r + "|" + w)?.complete ? 1 : 0).join("")).join("/");
-  const key = T + "|" + JSON.stringify(l) + "|" + loaded;
+  const key = T + "|" + JSON.stringify(l) + "|" + loaded + (l.type === "raster" ? "|" + blobGen() : "");
   const hit = THUMBS.get(l.id);
   if (hit && hit.key === key) return hit.canvas;
   const c = paintLayerThumb(l, T); THUMBS.set(l.id, { key, canvas: c });
@@ -52,7 +57,7 @@ export function paintLayerThumb(l, T = 32) {
   const w = Math.max(1, l.w), hh = Math.max(1, l.h), s = (T * 2 - pad * 2) / Math.max(w, hh);
   g.fillStyle = "#d4d4da"; g.fillRect(0, 0, T * 2, T * 2);
   g.save(); g.translate(T - (l.x + w / 2) * s, T - (l.y + hh / 2) * s); g.scale(s, s);
-  try { drawLayer(g, { ...l, visible: true, opacity: 1 }, { rs: s, export: true }); } catch { }
+  try { drawLayer(g, { ...l, visible: true, opacity: 1 }, { rs: s, export: true, solo: true }); } catch { }
   g.restore();
   return c;
 }
@@ -60,7 +65,14 @@ export function layerMenu() {
   return [["Delete", deleteSelected, "Del", !selL()], ["Duplicate", act.duplicate, sc("Duplicate layer")], null,
     ["Bring forward", act.layerUp, sc("Bring forward")], ["Send backward", act.layerDown, sc("Send backward")],
     ["Bring to front", act.toFront, sc("Bring to front")], ["Send to back", act.toBack, sc("Send to back")], null,
-    ["Lock / unlock", act.toggleLock, sc("Lock / unlock")], ["Hide / show", act.toggleHide, sc("Hide / show")]];
+    ["Lock / unlock", act.toggleLock, sc("Lock / unlock")], ["Hide / show", act.toggleHide, sc("Hide / show")], null,
+    ["Save to asset library…", saveSelectionDialog, "", !selL()], ...libraryItems()];
+}
+/* a panel's render can be saved on its own, or get a new face expression */
+function libraryItems() {
+  const l = selL();
+  if (l?.type !== "panel" || !l.image) return [];
+  return [["Save render as background…", () => saveRenderDialog(l.image.ref, l.shot || "")], ["New expression…", () => expressionDialog(l.shot || "", l.image.ref), "", !l.shot]];
 }
 /* The Layers list is src/ui/LayersPane.svelte; this tells it (and the Panels tab) to read the document again. */
 export function renderLayers() { ui.rev++; }

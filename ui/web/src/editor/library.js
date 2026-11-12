@@ -8,9 +8,10 @@ import { cv, stage, toPage, toScreen } from "./view.js";
 import { ui } from "../ui/store.svelte.ts";
 import { addEffect, toneFields } from "./effects/apply.ts";
 import { toneById } from "./effects/tones.ts";
+import { lib, loadLibrary, placeAsset } from "../assets/library.ts";
 
 /* ================================================================ library */
-export const LIBTABS = [["shots", "Shots"], ["bubbles", "Bubbles"], ["layouts", "Layouts"], ["tones", "Tones"], ["decor", "Decor"], ["speedlines", "Speed lines"], ["particles", "Particles"], ["uploads", "Uploads"]];
+export const LIBTABS = [["shots", "Shots"], ["assets", "Assets"], ["bubbles", "Bubbles"], ["layouts", "Layouts"], ["tones", "Tones"]];
 /* The tab itself is src/ui/Library.svelte; this tells it to read the editor state again. */
 export function renderLibrary() { ui.rev++; }
 export function imgSize(ref) {
@@ -20,7 +21,7 @@ export async function uploadFile(f, at) {
   try {
     const r = await post(`/api/upload?name=${encodeURIComponent(f.name)}`, f, true);
     S.cat.assets.uploads.push({ ref: r.ref, name: r.name, multiply: false });
-    if (S.libTab === "uploads") renderLibrary();
+    loadLibrary();
     return r;
   } catch (e) { toast(e.message, "err"); }
 }
@@ -64,7 +65,7 @@ export function init_editor_library() {
       const t = toneById(d.id);
       if (t) { S.toneId = t.id; const box = pl ? { x: pl.x, y: pl.y, w: pl.w, h: pl.h } : { x: p.x - 300, y: p.y - 300, w: 600, h: 600 }; addEffect("tone", toneFields(t.spec), box, pl); }
     }
-    else if (d.kind === "asset") { const dim = await imgSize(d.ref); addImageLayer(d.ref, dim.w, dim.h, p, d.multiply); }
+    else if (d.kind === "libasset") { const a = lib.assets.find(q => q.id === d.id); if (a) placeAsset(a, p); }
     refreshPanels();
   });
 }

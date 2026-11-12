@@ -1,24 +1,27 @@
-import { $, clamp, h } from "../editor/core.js";
+import { $, clamp, h, uid } from "../editor/core.js";
 import { commit } from "../editor/history.js";
 import { renderShot } from "../editor/jobs.js";
 import { layoutDialog } from "../editor/layouts.js";
 import { VTEXT } from "../editor/manga-tools.js";
 import { refreshPanels } from "../editor/misc.js";
 import { closeModal, modal } from "../editor/modal.js";
-import { gotoPage, renderPageThumbs } from "../editor/pages.js";
+import { gotoPage, renderPageThumbs, renderPages } from "../editor/pages.js";
+import { guides, safeArea, slotLabel, spreadMisplaced } from "../editor/book.ts";
 import { H, S, W, bubbleMeta } from "../editor/state.ts";
 import { fit } from "../editor/text.js";
 import { panelOrder, requestDraw } from "../editor/view.js";
 import { poseForPanel } from "../pose/open.js";
+import { balloonText, merged } from "../lettering/index.ts";
 
 /* ================================================================ page checker */
-export const TEXT_TYPES = ["bubble", "vbubble", "caption", "text"];
+export const TEXT_TYPES = ["bubble", "vbubble", "balloon", "caption", "text"];
 export const PRINT_MIN_PX = 28;          // ~8 pt on a B5 page at 1800 px wide: smaller is hard to read in print
-export function safeRect() { const mm = W() / 182, s = 8 * mm; return { x: s, y: s, w: W() - 2 * s, h: H() - 2 * s }; }
+export function safeRect(pg = S.doc.pages[S.page]) { return safeArea(S.doc, pg); }
 export const boxOf = l => ({ x: l.x, y: l.y, w: l.w, h: l.h });
 export const overlapArea = (a, b) => Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
 export const centreIn = (l, p) => { const cx = l.x + l.w / 2, cy = l.y + l.h / 2; return cx >= p.x && cx <= p.x + p.w && cy >= p.y && cy <= p.y + p.h; };
 export function textBox(l) {                    // the box text is fitted into, as drawLayer does it
+  if (l.type === "balloon") { const { sh } = balloonText(l); return [sh.w, sh.h, sh]; }
   if (l.type === "vbubble") { const k = VTEXT[l.shape] || [0.7, 0.64]; return [l.w * k[0], l.h * k[1]]; }
   if (l.type === "bubble") { const m = bubbleMeta(l.bubble); return m ? [l.w * (m.box[2] - m.box[0]) * 0.92, l.h * (m.box[3] - m.box[1]) * 0.92] : [l.w * 0.7, l.h * 0.6]; }
   return [l.w * 0.9, l.h * 0.86];
@@ -43,14 +46,16 @@ export function checkPage(pi) {
     if (!p.image && !p.shot) add("info", p, `${pname(p)} has no render and no shot yet.`, "Pose it…", () => { gotoPage(pi); S.sel = p.id; poseForPanel(p); });
     else if (!p.image) add("info", p, `${pname(p)} (${p.shot}) is not rendered yet.`, "Render", () => renderShot(p.shot));
   });
-  const safe = safeRect();
+  const safe = safeRect(pg), band = guides(S.doc, pg).gutter[0];
+  if (spreadMisplaced(S.doc, pi)) add("warn", null, `The spread on pages ${slotLabel(S.doc, pi)} starts on a right-hand page, so its halves land on two different sheets.`,
+    "Insert a page before it", () => { S.doc.pages.splice(pi, 0, { id: uid(), bg: "#ffffff", layers: [] }); renderPages(); });
   for (const l of texts) {
     const txt = (l.text || "").trim();
-    const what = { bubble: "Bubble", vbubble: "Bubble", caption: "Caption", text: l.sfx ? "SFX" : "Text" }[l.type];
+    const what = { bubble: "Bubble", vbubble: "Bubble", balloon: "Bubble", caption: "Caption", text: l.sfx ? "SFX" : "Text" }[l.type];
     if (!txt) { add("warn", l, `${what} with no text.`, "Delete it", () => { pg.layers.splice(pg.layers.indexOf(l), 1); }); continue; }
     const short = `"${txt.length > 28 ? txt.slice(0, 26) + "…" : txt}"`;
     if (!l.sfx) {
-      const [bw, bh] = textBox(l), f = fit(txt, l, bw, bh, S.doc.maxFont || 56);
+      const [bw, bh, sh] = textBox(l), f = fit(txt, l, bw, bh, S.doc.maxFont || 56, sh);
       if (f.px < PRINT_MIN_PX) add("warn", l, `${what} ${short}: text is ${f.px}px, too small to read in print.`, "Enlarge 25%", () => {
         const cx = l.x + l.w / 2, cy = l.y + l.h / 2; l.w *= 1.25; l.h *= 1.25; l.x = cx - l.w / 2; l.y = cy - l.h / 2; l.fontSize = 0;
       });
@@ -59,6 +64,10 @@ export function checkPage(pi) {
     const outside = l.x < safe.x || l.y < safe.y || l.x + l.w > safe.x + safe.w || l.y + l.h > safe.y + safe.h;
     if (outside && !l.sfx) add("warn", l, `${what} ${short} crosses the safe area: it may be cut off when printed.`, "Move inside", () => {
       l.x = clamp(l.x, safe.x, safe.x + safe.w - l.w); l.y = clamp(l.y, safe.y, safe.y + safe.h - l.h);
+    });
+    else if (band && !l.sfx && l.x < band.x + band.w && l.x + l.w > band.x) add("warn", l, `${what} ${short} sits on the spread's fold, where the binding swallows it.`, "Move off the fold", () => {
+      const mid = band.x + band.w / 2;
+      l.x = l.x + l.w / 2 < mid ? band.x - l.w : band.x + band.w;
     });
     if (l.type === "vbubble" && l.tail) {
       const home = panels.find(p => centreIn(l, p));
@@ -73,7 +82,7 @@ export function checkPage(pi) {
   // overlaps between lettering
   for (let i = 0; i < texts.length; i++) for (let j = i + 1; j < texts.length; j++) {
     const a = texts[i], b = texts[j];
-    if (a.sfx || b.sfx) continue;
+    if (a.sfx || b.sfx || merged(a, b)) continue;
     const ov = overlapArea(boxOf(a), boxOf(b)) / Math.min(a.w * a.h, b.w * b.h);
     if (ov > 0.25) add("warn", b, `"${(b.text || "").slice(0, 20)}" covers "${(a.text || "").slice(0, 20)}".`, "Move apart", () => {
       const dy = (a.y + a.h) - b.y + 10; b.y = clamp(b.y + dy, 0, H() - b.h);
@@ -107,7 +116,7 @@ export function checkerDialog(all) {
       : "Nothing to fix: reading order, bubble tails, text size, print safe area and overlaps all look good."));
     const fixable = items.filter(i => i.fix && i.level === "warn");
     if (fixable.length > 1) body.append(h("div", { class: "btnrow" }, h("button", { class: "primary", onclick: () => {
-      for (const it of fixable) if (!["Pose it…", "Render", "Choose a layout"].includes(it.fixLabel)) it.fix();
+      for (const it of fixable) if (!["Pose it…", "Render", "Choose a layout", "Insert a page before it"].includes(it.fixLabel)) it.fix();
       commit("Fixed " + fixable.length + " issues"); requestDraw(); renderPageThumbs(); render();
     } }, `Fix all ${fixable.length}`)));
     for (const it of items) body.append(h("div", { class: "checkrow " + it.level },

@@ -1,5 +1,6 @@
 import type { Layer } from "../types.ts";
 import { rect, transform, type Region } from "./geometry/region.ts";
+import type { TransformRules } from "./transform.ts";
 
 export interface DrawOpts {
   /** device px per page px the result will be shown at (pick image LOD and tone resolution from it) */
@@ -27,6 +28,13 @@ export interface LayerTypeDef<L extends Layer = Layer> {
   printable?: boolean;
   /** Layers with clip set to this layer's id are cropped to its outline (panels). */
   clipsOthers?: boolean;
+  /** Paint once into a bitmap and reuse it on screen until the layer changes; needs `bounds`. Files are always painted fresh. */
+  cache?: boolean;
+  /** How the shared transform box treats the layer; `false` hides it. `onScale` adjusts content that does not
+   *  follow the box by itself (a tail point, a path in layer coordinates) from the layer as it was at drag start. */
+  transform?: false | (TransformRules & { onScale?(l: L, before: L): void });
+  /** Everything the layer paints, in page px, including strokes and shadows. */
+  bounds?(l: L): { x: number; y: number; w: number; h: number };
 }
 
 const defs = new Map<string, LayerTypeDef<any>>();

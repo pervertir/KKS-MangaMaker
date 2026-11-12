@@ -47,6 +47,25 @@ export interface BookFormat {
   dpi: number;
   binding: "rtl" | "ltr";
   colour: "mono" | "grey" | "colour";
+  /** the preset the size came from (book.ts FORMAT_PRESETS) or "custom" */
+  preset?: string;
+  /** extra margin (mm) on the bound edge, and on each side of a spread's fold */
+  gutter?: number;
+  /** exported pages keep the bleed (print) or are cut to the trim (screen) */
+  exportBleed?: boolean;
+}
+
+export interface Numbering {
+  show: boolean;
+  start: number;
+  style: "arabic" | "roman";
+  position: "outer" | "center" | "inner";
+  edge: "bottom" | "top";
+  /** mm in from the trim */
+  offset: number;
+  /** mm */
+  size: number;
+  font: string;
 }
 
 export interface Page {
@@ -56,6 +75,9 @@ export interface Page {
   /** 2 for a two-page spread drawn on one double-width canvas */
   span?: 1 | 2;
   kind?: "page" | "cover" | "blank";
+  /** title of the chapter this page opens */
+  chapter?: string;
+  noNumber?: boolean;
 }
 
 export interface Doc {
@@ -66,6 +88,7 @@ export interface Doc {
   width: number;
   height: number;
   format: BookFormat;
+  numbering: Numbering;
   maxFont: number;
   pages: Page[];
 }

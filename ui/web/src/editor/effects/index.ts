@@ -30,7 +30,7 @@ defineLayerType({
 
 let hover: { x: number; y: number } | null = null, target: any = null;
 registerTool({
-  id: "erase", label: "Tone eraser: rub out part of the selected screentone or lines", key: "e", group: "effects", cursor: "none",
+  id: "erase", label: "Tone eraser: rub out part of the selected screentone or lines", key: "shift+e", group: "effects", cursor: "none",
   icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14.5 4.5l5 5-9 9H6l-2.5-2.5z"/><path d="M9.5 9.5l5 5M10.5 18.5H20"/></svg>',
   down(e) {
     const l = selL();
