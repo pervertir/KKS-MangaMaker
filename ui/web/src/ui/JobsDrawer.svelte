@@ -1,11 +1,11 @@
-<script>
-  import { ui } from "./store.svelte.js";
+<script lang="ts">
+  import { ui } from "./store.svelte.ts";
   import { closeJob, toggleJobs, viewJob } from "../editor/jobs.js";
 
-  let pre = $state();
+  let pre = $state<HTMLPreElement>();
   // keep the log pinned to its end while it grows, unless the reader scrolled up
   let pinned = true;
-  const onscroll = () => { pinned = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 20; };
+  const onscroll = () => { if (pre) pinned = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 20; };
   $effect(() => { ui.jobLog; if (pre && pinned) pre.scrollTop = pre.scrollHeight; });
   const MARK = { run: "… ", ok: "✓ ", bad: "⚠ " };
   const TIP = { run: "Running", ok: "Finished", bad: "Failed: click to read the log" };

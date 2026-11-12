@@ -7,15 +7,15 @@ import { renderShot, toggleJobs } from "./jobs.js";
 import { layerName } from "./layers.js";
 import { refreshPanels, status, toast } from "./misc.js";
 import { toggleOverview } from "./pages.js";
-import { S, layers, selL, H, W } from "./state.js";
+import { S, layers, selL, H, W } from "./state.ts";
 import { deleteSelected, setTool } from "./tools.js";
 import { requestDraw, requestView } from "./view.js";
 
-import { ui } from "../ui/store.svelte.js";
-import { applyFrameShape, bleedPanel, panelBase, setPanelPoly } from "./frames.js";
+import { ui } from "../ui/store.svelte.ts";
+import { applyFrameShape, bleedPanel, isPlainRect, panelBase, setPanelPoly, splitOutline } from "./frames.js";
+import { finishPoly } from "./polygon-panels.js";
 import { bleedPoints, derivePage, splitPanel } from "./knife.js";
 import { renderOptions } from "./options.js";
-import { finishPoly } from "./pointer.js";
 import { refreshProps } from "./props.js";
 
 /* ================================================================ actions */
@@ -43,7 +43,7 @@ export const act = {
     if (S.polyDraft) return finishPoly();
     const l = selL();
     if (l?.type === "panel" && l.image) enterAdjust(l);
-    else if (l && ["bubble", "caption", "text", "vbubble"].includes(l.type)) showInline(l);
+    else if (l && ["bubble", "caption", "text", "vbubble", "balloon"].includes(l.type)) showInline(l);
   },
   selectStep(dir) {
     const ls = layers(); if (!ls.length) return;
@@ -54,6 +54,7 @@ export const act = {
     const l = selL(); if (!l) return;
     if (l.type === "panel") { if (!l.image) return; l.image.flip = !l.image.flip; }
     else if (l.type === "vbubble") { if (!l.tail) return; l.tail = { x: -l.tail.x, y: l.tail.y }; }
+    else if (l.type === "balloon") { if (!l.tails?.length) return; l.tails = l.tails.map(t => ({ ...t, tip: { x: -t.tip.x, y: t.tip.y }, bend: -(t.bend ?? 0.18) })); }
     else l.flip = !l.flip;
     commit("Flipped"); requestDraw();
   },
@@ -90,7 +91,6 @@ export const act = {
 
 /* runs once at start-up, in the original order (see main.js) */
 export function init_editor_actions() {
-  $("#laydel").onclick = () => deleteSelected();
 
   document.addEventListener("click", e => { const b = e.target.closest("[data-act]"); if (b && act[b.dataset.act]) act[b.dataset.act](); });
 }

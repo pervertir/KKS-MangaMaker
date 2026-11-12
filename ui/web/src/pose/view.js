@@ -1,9 +1,11 @@
 import { $ } from "../editor/core.js";
-import { HANDLES } from "../editor/view.js";
+import { SCALE_HANDLES as HANDLES } from "../core/transform.ts";
 import { drawSkeleton } from "./draw.js";
 import { bounds, project } from "./geometry.js";
 import { JOINT_NAMES, P } from "./model.js";
 import { pcur } from "./scene.js";
+import { bg, groundFigures, preview } from "./scene3d.ts";
+import { floorDepth, vanishing } from "./camera3d.ts";
 
 /* ---------------------------------------------------------------- view */
 export const pcv = () => $("#pscanvas");
@@ -24,6 +26,19 @@ export function pdrawNow() {
   g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, cv.width, cv.height);
   g.save(); g.translate(ox, oy); g.scale(s, s);
   g.fillStyle = "#000"; g.fillRect(0, 0, w, h);
+  const b3 = bg();
+  if (b3) {
+    groundFigures();
+    const room = preview(pdraw);
+    if (room) { g.globalAlpha = b3.alpha ?? 0.55; g.drawImage(room, 0, 0, w, h); g.globalAlpha = 1; }
+    const hz = vanishing(b3.cam, w, h).horizon;
+    if (hz != null) { g.strokeStyle = "#f5b84baa"; g.lineWidth = 1.5 / s; g.setLineDash([8 / s, 6 / s]); g.beginPath(); g.moveTo(0, hz * h); g.lineTo(w, hz * h); g.stroke(); g.setLineDash([]); }
+    if (b3.ground) for (const c of P.scene.chars) {      // where each figure stands
+      if (c.hidden || floorDepth(b3.cam, w, h, c.x * w, c.y * h) == null) continue;
+      const rr = Math.max(6, 0.18 * c.scale * h / 1.75);
+      g.fillStyle = c.id === P.sel ? "#4c8dff55" : "#ffffff33"; g.beginPath(); g.ellipse(c.x * w, c.y * h, rr, rr * 0.28, 0, 0, Math.PI * 2); g.fill();
+    }
+  }
   if (P.ref) { g.globalAlpha = P.refAlpha; g.drawImage(P.ref, 0, 0, w, h); g.globalAlpha = 1; }
   g.strokeStyle = "#ffffff18"; g.lineWidth = 1 / s;                         // thirds guide
   for (const f of [1 / 3, 2 / 3]) { g.beginPath(); g.moveTo(w * f, 0); g.lineTo(w * f, h); g.moveTo(0, h * f); g.lineTo(w, h * f); g.stroke(); }

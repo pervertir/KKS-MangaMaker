@@ -166,6 +166,10 @@ top (or Ctrl/⌘+Shift+P):
 - **Page**: panels, renders, template or drawn bubbles, text, SFX, captions, screentones and speed
   lines, pages and spreads, export to PNG/PDF. Built-in panel layouts (splash, tiers, 4-koma, classic
   six, ...) and print guides (trim and safe area, View menu) need no template pack.
+  File > Export book (Ctrl/⌘+Alt+E) also builds a webtoon strip (panels restacked in reading order and
+  sliced, 800 px wide by default), a CBZ with ComicInfo.xml, a fixed-layout EPUB 3 and a print PDF
+  (1-bit, greyscale or CMYK with black on K only, TrimBox and BleedBox) into `pages/<project>/export/`.
+  The CMYK conversion uses the macOS Generic CMYK profile, or the one `MANGAMAKER_CMYK_PROFILE` points to.
 - **Panel shapes**: besides rectangles, a panel can be slanted, a trapezoid, a wedge with a diagonal
   gutter, cut-corner, a shard, a circle or oval (close-ups, insets), rounded (memory), or any polygon
   (Panel tool, Polygon: click the corners). Edges can be a line, dashed (memory), wavy (dream,
@@ -219,6 +223,19 @@ Helpers for first-time manga makers:
   from the prompts and dialogue.
 - **Tips**: a hint card for the active tool (close it, or Help › Hide tips).
 
+**Asset library** (Library › Assets) keeps backgrounds, props, expressions, balloons, effects and
+saved layer groups for every project, in `assets/library/` on the machine running the editor
+(`index.json` plus content-addressed `blobs/`). Search by name or tag, filter by kind or character,
+click to add or drag onto the page; a background dropped on a panel fills it. **Save to asset
+library** (Edit menu, or right-click a layer) keeps the selected layer, or a panel with everything on
+it, and right-clicking a render saves it as a background. Images are copied in by hash and never
+removed, so pages that used an asset still open after it is edited or deleted. On first start it
+holds the manpu symbols (sweat drop, anger mark, blush lines, sparkles, ...), the template pack's
+bubbles, speed lines, particles and decor (linked, not copied) and earlier uploads.
+**New expression…** (right-click a render, or a panel with one) repaints one character's face on the
+pod with that character's LoRA and the expression tags you pick, and saves the result as an
+expression of that character, ready to drop onto a panel.
+
 In the Pose tab, **Shot presets** frame every figure the way storyboards name shots (full body, knees
 up, waist up, chest up, close-up), set the camera (low, high, dutch tilt) and stage two characters
 (facing, over the shoulder, foreground/background).
@@ -255,6 +272,7 @@ server (`ui/server.py`) serves that build.
 | `ui/web/src/pose/` | the Pose tab: `geometry`, `draw`, `ik`, `pointer`, `library`, `side`, `presets` |
 | `ui/web/src/wizard/` | the Script Wizard: `script` (parser and page builder), `editor` (highlighting), `prompt` |
 | `ui/web/src/helpers/` | page checker, starter templates, character sheet, make-it-manga, tips, guide |
+| `ui/web/src/assets/` | the asset library: loading, placing, saving, the dialogs (`mp/library.py` is the store) |
 | `ui/web/src/ui/` | Svelte components (`Preferences`, `JobsDrawer`, `Toasts`) and `store.svelte.js`, the state they draw from |
 | `ui/web/src/main.js` | entry point: imports the modules, runs their start-up code in order, mounts the components |
 
@@ -307,9 +325,11 @@ also builds, poses and renders through the MCP server). The format and craft not
 | `./mangapipe lora NAME [--series S] [--refresh]` | test the Civitai lookup only |
 | `./mangapipe render DIR [--seed N] [--dry-run]` | ComfyUI render only (dry-run validates and writes the graph) |
 | `./mangapipe compose DIR [--image F]` | overlay dialogue on `out/render_*.png` or a given image |
+| `./mangapipe expression DIR --image F --tags T [--character N]` | repaint character N's face (1 = leftmost) on the pod with a new expression |
 | `./mangapipe run DIR [--seed N] [--no-compose]` | everything |
 | `./mangapipe page SCRIPT [--page N] [--pdf] [--out DIR]` | build manga pages from a script |
 | `./mangapipe layouts [--ltr]` | contact sheet of the page templates with panel order |
+| `./mangapipe export PROJECT webtoon\|cbz\|epub\|print [--colour mono\|grey\|colour]` | book formats from an editor project's exported pages |
 | `./mangapipe poses build [--src DIR] [--out F]` | convert the studio pose files into `poses/library.json` |
 
 | `./mangapipe pod create\|setup\|restart\|status\|url\|start\|stop\|remove\|ssh ["cmd"]` | RunPod pod lifecycle (`restart` relaunches ComfyUI after adding nodes) |

@@ -1,11 +1,13 @@
 import { clamp } from "./core.js";
 import { THEMES, themeOf, themed, paperOf } from "./creation.js";
 import { imgFor } from "./images.js";
-import { drawFlipped, drawVBubble, lum, speedCanvas, toneCanvas } from "./manga-tools.js";
-import { S, bubbleMeta, page } from "./state.js";
-import { drawText } from "./text.js";
+import { drawFlipped, drawVBubble, lum } from "./manga-tools.js";
+import { S, bubbleMeta, page } from "./state.ts";
+import { drawSfxText, drawText } from "./text.js";
+import { layerType, outlineOf } from "../core/registry.ts";
+import { clipTo } from "../core/geometry/region.ts";
+import { drawCached } from "../core/layer-cache.ts";
 import { clipToPanel, strokePanel } from "./frames.js";
-
 
 /* ================================================================ drawing */
 export function imageRect(l, im) {
@@ -28,13 +30,28 @@ export function withBox(ctx, l, fn) {
   fn(cx, cy);
   ctx.restore();
 }
+/* the panel a layer is cropped to, looked up on the layer's own page first */
+export function clipPanelOf(l) {
+  if (!l.clip) return null;
+  for (const p of S.doc.pages) if (p.layers.includes(l)) return p.layers.find(q => q.id === l.clip) || null;
+  return S.doc.pages.flatMap(p => p.layers).find(q => q.id === l.clip) || null;
+}
 export function drawLayer(ctx, l, opt = {}) {
   if (!l.visible) return;
+  const def = layerType(l.type);
+  if (def && def.printable === false && opt.export) return;
   const TH = themeOf(opt); l = themed(l, TH);
   ctx.save();
   ctx.globalAlpha = l.opacity ?? 1;
   ctx.globalCompositeOperation = l.blend || "source-over";
   const maxFont = S.doc.maxFont || 56;
+  const clipPanel = l.type !== "panel" && clipPanelOf(l);
+  if (clipPanel) clipTo(ctx, outlineOf(clipPanel));
+  if (def) {
+    if (def.cache && def.bounds && !opt.export && opt.rs) drawCached(ctx, l.id, l, String(TH), opt.rs, def.bounds(l), g => def.draw(g, l, opt));
+    else def.draw(ctx, l, opt);
+    ctx.restore(); return;
+  }
   switch (l.type) {
     case "panel": {
       if (l.gap > 0) strokePanel(ctx, { ...l, border: 0, gap: l.gap + Math.max(0, l.border) }, opt.paper || paperOf(page(), opt));   // the gap first, so a neighbour's art under an inset is cut back
@@ -94,20 +111,13 @@ export function drawLayer(ctx, l, opt = {}) {
     case "text": {
       withBox(ctx, l, () => {
         const big = l.fontSize > 0 ? l.fontSize : Math.max(maxFont, 400);
-        drawText(ctx, l, 0, 0, l.w, l.h, big, l.color === "auto" ? THEMES[TH].ink : l.color);
+        const col = l.color === "auto" ? THEMES[TH].ink : l.color;
+        if (l.sfx) drawSfxText(ctx, l, big, col); else drawText(ctx, l, 0, 0, l.w, l.h, big, col);
       });
       break;
     }
     case "vbubble": {
       withBox(ctx, l, () => drawVBubble(ctx, l, maxFont));
-      break;
-    }
-    case "tone":
-    case "speed": {
-      const clip = l.clip && S.doc.pages.flatMap(p => p.layers).find(q => q.id === l.clip);
-      if (clip) clipToPanel(ctx, clip);
-      const art = l.type === "tone" ? toneCanvas(l) : speedCanvas(l);
-      withBox(ctx, l, () => ctx.drawImage(art, -l.w / 2, -l.h / 2, l.w, l.h));
       break;
     }
     case "image": {

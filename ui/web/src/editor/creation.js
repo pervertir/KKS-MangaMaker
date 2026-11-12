@@ -4,9 +4,12 @@ import { hitLayer } from "./hit.js";
 import { IMG } from "./images.js";
 import { showInline } from "./inline-edit.js";
 import { refreshProps } from "./props.js";
-import { H, S, W, bubbleMeta, layers, normalize } from "./state.js";
-import { TONE_PRESETS, setTool } from "./tools.js";
+import { H, S, W, bubbleMeta, layers, normalize } from "./state.ts";
+import { setTool } from "./tools.js";
+import { addEffect, currentToneFields, pageSelection, speedFields } from "./effects/apply.ts";
+import { contains } from "../core/geometry/region.ts";
 import { requestDraw } from "./view.js";
+import { newBalloon } from "../lettering/index.ts";
 import { applyFrameShape } from "./frames.js";
 
 /* ================================================================ creation */
@@ -71,23 +74,22 @@ export function createAt(tool, c, small) {
   } else if (tool === "vbubble") {
     const w = small ? 440 : Math.max(c.w, 120), hh = small ? 300 : Math.max(c.h, 80);
     const cx = small ? c.x : c.x + c.w / 2, cy = small ? c.y : c.y + c.h / 2;
-    l = addLayer({ type: "vbubble", shape: S.vshape, x: cx - w / 2, y: cy - hh / 2, w, h: hh, text: "",
-      tail: S.vshape === "flash" ? null : { x: -w * 0.18, y: hh * 0.85 }, seed: Math.floor(Math.random() * 1e6),
-      font: S.vshape === "burst" ? "Bangers" : "MMComic" });
+    l = addLayer(newBalloon(S.vshape, cx - w / 2, cy - hh / 2, w, hh));
   } else if (tool === "tone" || tool === "speed") {
-    const pl = small ? hitLayer(c, q => q.type === "panel") : null;   // a click fills the panel under it
+    // a click inside the selection fills the selection; otherwise a click fills the panel under it, a drag fills the box
+    const props = tool === "tone" ? currentToneFields() : speedFields(), reg = pageSelection();
+    if (small && reg && contains(reg, c.x, c.y)) { if (addEffect(tool, props)) setTool("move"); return; }
+    const pl = small ? hitLayer(c, q => q.type === "panel") : null;
     const box = pl ? { x: pl.x, y: pl.y, w: pl.w, h: pl.h } : small ? { x: c.x - 300, y: c.y - 300, w: 600, h: 600 } : c;
     if (box.w < 12 || box.h < 12) return;
-    const base = { ...box, clip: pl ? pl.id : null, seed: Math.floor(Math.random() * 1e6) };
-    const props = tool === "tone" ? { type: "tone", ...TONE_PRESETS[S.tonePreset][1] } : { type: "speed", mode: S.speedMode, ...(S.speedMode === "parallel" ? { count: 120, thick: 10, inner: 0.2, jitter: 0.5 } : {}) };
-    l = addLayer({ ...base, ...props }, pl ? layers().indexOf(pl) + 1 : undefined);
-    commit("Added " + (tool === "tone" ? "screentone" : "speed lines")); setTool("move"); requestDraw(); return;
+    if (addEffect(tool, props, box, pl)) setTool("move");
+    return;
   } else if (tool === "sfx") {
     const w = small ? 620 : c.w, hh = small ? 260 : Math.max(c.h, 60);
     l = addLayer({ type: "text", sfx: true, x: small ? c.x - w / 2 : c.x, y: small ? c.y - hh / 2 : c.y, w, h: hh, text: "", rotate: -8,
       color: "#ffffff", stroke: "#000000", strokeWidth: 12, font: "Bangers", fontSize: 0 });
   }
-  commit("Added " + (l.type === "text" && l.sfx ? "SFX" : l.type === "vbubble" ? "bubble" : l.type));
+  commit("Added " + (l.type === "text" && l.sfx ? "SFX" : l.type === "vbubble" || l.type === "balloon" ? "bubble" : l.type));
   setTool("move");
   requestDraw();
   if (l.type !== "panel") showInline(l);

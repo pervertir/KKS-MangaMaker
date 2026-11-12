@@ -4,7 +4,13 @@ import { drawLayer, drawLayers, imageRect } from "./drawing.js";
 import { imgFor } from "./images.js";
 import { placeInline } from "./inline-edit.js";
 import { drawFlipped, drawPage } from "./manga-tools.js";
-import { H, S, W, layers, page, selL } from "./state.js";
+import { drawNombres, guides } from "./book.ts";
+import { H, S, W, layers, page, selL } from "./state.ts";
+import { drawFxHandles } from "./effects/handles.ts";
+import { boxes } from "../core/format.ts";
+import { drawTransformBox } from "./transform-box.js";
+import { getTool } from "../core/tools.ts";
+import { drawAnts, hasSelection, selectionPage } from "../core/selection.ts";
 import { isPlainRect, panelBase, tracePanel } from "./frames.js";
 import { drawCuts } from "./knife.js";
 
@@ -18,7 +24,7 @@ export let drawQueued = false;
 export const PC = { c: document.createElement("canvas"), cs: 0, key: "", dirty: true };
 export let DC = null;  // drag cache {below, above, from, to, key}
 export const MAX_CACHE = 4096;
-export function requestDraw() { PC.dirty = true; if (!S.drag) DC = null; requestView(); }
+export function requestDraw() { PC.dirty = true; if (!S.drag && !S.liveLayer) DC = null; requestView(); }
 export function requestView() { if (!drawQueued) { drawQueued = true; requestAnimationFrame(draw); } }
 export let settleT = null;
 export function interacting() { S.busy = true; clearTimeout(settleT); settleT = setTimeout(() => { S.busy = false; requestView(); }, 160); }
@@ -55,10 +61,11 @@ export function paintCache(target, cs, from, to) {           // layers [from, to
   const ls = layers();
   const paper = paperOf(page());
   drawLayers(g, ls, from, to, { rs: cs, paper });
+  if (to === ls.length) drawNombres(g, S.doc, S.page);
   return target;
 }
 export function liveRange() {                                  // contiguous layer range that moves with the drag
-  const d = S.drag, ls = layers();
+  const d = S.drag?.layer ? S.drag : { layer: S.liveLayer }, ls = layers();
   const ids = new Set([d.layer.id, ...(d.kids || []).map(k => k.q.id)]);
   let a = ls.length, b = -1;
   ls.forEach((l, i) => { if (ids.has(l.id)) { a = Math.min(a, i); b = Math.max(b, i); } });
@@ -78,7 +85,8 @@ export function draw() {
   // page content clipped to the paper (bubbles may hang over panel borders, not off the page)
   ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W(), H()); ctx.clip();
   const ad = S.adjust && layers().find(l => l.id === S.adjust);
-  const cs = cacheScale(), dragging = S.drag?.layer && !S.drag.pan;
+  /* S.liveLayer: a layer being painted on, redrawn every frame between the frozen layers under and over it */
+  const cs = cacheScale(), dragging = (S.drag?.layer && !S.drag.pan) || S.liveLayer;
   if (dragging) {
     const [from, to] = liveRange(), key = `${page().id}|${from}|${to}|${layers().length}|${cs}`;
     if (!DC || DC.key !== key) {
@@ -129,21 +137,33 @@ export function draw() {
   }
   for (const g of S.guides) {
     ctx.strokeStyle = "#ff3df2"; ctx.lineWidth = px; ctx.beginPath();
-    if (g.x != null) { ctx.moveTo(g.x, -2000); ctx.lineTo(g.x, H() + 2000); } else { ctx.moveTo(-2000, g.y); ctx.lineTo(W() + 2000, g.y); }
+    if (g.x != null) { ctx.moveTo(g.x, -2000); ctx.lineTo(g.x, H() + 2000); }
+    else if (g.y != null) { ctx.moveTo(-2000, g.y); ctx.lineTo(W() + 2000, g.y); }
+    else if (g.line) { ctx.moveTo(g.line[0][0], g.line[0][1]); ctx.lineTo(g.line[1][0], g.line[1][1]); }
+    else if (g.point) { ctx.moveTo(g.point[0] - 12 * px, g.point[1]); ctx.lineTo(g.point[0] + 12 * px, g.point[1]); ctx.moveTo(g.point[0], g.point[1] - 12 * px); ctx.lineTo(g.point[0], g.point[1] + 12 * px); }
     ctx.stroke();
   }
   const s = selL();
-  if (s && !ad) drawSelection(s, px);
+  if (s && !ad && s.type !== "ruler") { drawTransformBox(ctx, s, px); if (S.tool === "move") drawFxHandles(ctx, s, px); }
+  getTool(S.tool)?.overlay?.(ctx, px);
+  if (hasSelection() && selectionPage() === page().id) { drawAnts(ctx, px); antsTick(); }
 }
-/* print guides on the 1800x2700 page (B5-ish tankobon at 350 dpi): trim 3 mm in from the edge (the bleed),
-   safe area 5 mm inside the trim. Art that must survive the cut stays inside the green line. */
+let antsT = 0;
+function antsTick() { if (!antsT) antsT = setTimeout(() => { antsT = 0; requestView(); }, 120); }
+/* print guides from the book format: trim (cut line), safe area (keep text and faces inside),
+   the spread's fold and the gutter band either side of it that the binding swallows */
 export function drawPrintGuides(px) {
-  const mm = W() / 182 * 1, bleed = 3 * mm, safe = bleed + 5 * mm;
-  ctx.save(); ctx.lineWidth = 1.5 * px; ctx.setLineDash([10 * px, 6 * px]);
-  ctx.strokeStyle = "#ff4f7b"; ctx.strokeRect(bleed, bleed, W() - 2 * bleed, H() - 2 * bleed);
-  ctx.strokeStyle = "#3ccf8e"; ctx.strokeRect(safe, safe, W() - 2 * safe, H() - 2 * safe);
-  ctx.setLineDash([]); ctx.fillStyle = "#ff4f7b"; ctx.font = `${12 * px}px sans-serif`;
-  ctx.fillText("trim", bleed + 4 * px, bleed - 4 * px); ctx.fillStyle = "#3ccf8e"; ctx.fillText("safe area", safe + 4 * px, safe + 14 * px);
+  const G = guides(S.doc, page());
+  ctx.save(); ctx.lineWidth = 1.5 * px;
+  for (const r of G.gutter) { ctx.fillStyle = "#f5b84b22"; ctx.fillRect(r.x, r.y, r.w, r.h); }
+  ctx.setLineDash([10 * px, 6 * px]);
+  ctx.strokeStyle = "#ff4f7b"; ctx.strokeRect(G.trim.x, G.trim.y, G.trim.w, G.trim.h);
+  ctx.strokeStyle = "#3ccf8e"; for (const r of G.safe) ctx.strokeRect(r.x, r.y, r.w, r.h);
+  if (G.fold != null) { ctx.strokeStyle = "#f5b84b"; ctx.beginPath(); ctx.moveTo(G.fold, 0); ctx.lineTo(G.fold, H()); ctx.stroke(); }
+  ctx.setLineDash([]); ctx.font = `${12 * px}px sans-serif`;
+  ctx.fillStyle = "#ff4f7b"; ctx.fillText("trim", G.trim.x + 4 * px, G.trim.y - 4 * px);
+  ctx.fillStyle = "#3ccf8e"; ctx.fillText("safe area", G.safe[0].x + 4 * px, G.safe[0].y + 14 * px);
+  if (G.fold != null) { ctx.fillStyle = "#f5b84b"; ctx.fillText("fold", G.fold + 4 * px, G.trim.y + 14 * px); }
   ctx.restore();
 }
 export function drawPanelOrder(px) {
@@ -172,43 +192,4 @@ export function corners(l) {
   const P = (dx, dy) => ({ x: cx + dx * c - dy * s, y: cy + dx * s + dy * c });
   return { P, cx, cy, a };
 }
-export const HANDLES = [[-1, -1], [0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0]];
-/* a polygon panel's corners are handles of their own, so its box handles stand a little outside them */
-export const isPolyPanel = l => l?.type === "panel" && l.shape === "poly" && l.pts?.length >= 3 && l.pts.length <= 24;   // a curved piece (a split circle) has too many to handle
-export const boxPad = (l, px) => isPolyPanel(l) ? 18 * px : 0;
-export function vertexHandles(l) {
-  const P = panelBase(l);
-  return { P, M: P.map((p, i) => { const q = P[(i + 1) % P.length]; return { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 }; }) };
-}
-export function drawSelection(l, px) {
-  const pad = boxPad(l, px), { P } = corners(l), hw = l.w / 2 + pad, hh = l.h / 2 + pad;
-  const pts = [P(-hw, -hh), P(hw, -hh), P(hw, hh), P(-hw, hh)];
-  ctx.save();
-  ctx.strokeStyle = l.locked ? "#f5b84b" : "#4c8dff"; ctx.lineWidth = 1.5 * px;
-  if (l.type === "panel" && !isPlainRect(l)) { ctx.beginPath(); tracePanel(ctx, l); ctx.stroke(); ctx.setLineDash([6 * px, 5 * px]); }
-  ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.closePath(); ctx.stroke();
-  ctx.setLineDash([]);
-  if (!l.locked && isPolyPanel(l)) {
-    const { P: V, M } = vertexHandles(l);
-    for (const m of M) { ctx.fillStyle = "#4c8dff88"; ctx.beginPath(); ctx.arc(m.x, m.y, 4 * px, 0, 7); ctx.fill(); }
-    for (const v of V) { ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(v.x, v.y, 6.5 * px, 0, 7); ctx.fill(); ctx.stroke(); }
-  }
-  if (!l.locked) {
-    for (const [hx, hy] of HANDLES) {
-      const p = P(hx * hw, hy * hh), r = 5 * px;
-      ctx.fillStyle = "#fff"; ctx.fillRect(p.x - r, p.y - r, r * 2, r * 2); ctx.strokeRect(p.x - r, p.y - r, r * 2, r * 2);
-    }
-    if (l.type === "vbubble" && l.tail) {
-      const t = P(l.tail.x, l.tail.y);
-      ctx.fillStyle = "#ff4f7b"; ctx.beginPath(); ctx.arc(t.x, t.y, 7 * px, 0, 7); ctx.fill(); ctx.strokeStyle = "#fff"; ctx.stroke(); ctx.strokeStyle = "#4c8dff";
-    }
-    if (l.type !== "panel") {
-      const t = P(0, -hh), rp = P(0, -hh - 34 * px);
-      ctx.beginPath(); ctx.moveTo(t.x, t.y); ctx.lineTo(rp.x, rp.y); ctx.stroke();
-      ctx.fillStyle = "#4c8dff"; ctx.beginPath(); ctx.arc(rp.x, rp.y, 6 * px, 0, 7); ctx.fill();
-    }
-  }
-  ctx.restore();
-}
-
 export function set_DC(v) { DC = v; }

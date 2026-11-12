@@ -7,7 +7,7 @@ import { toast } from "./misc.js";
 import { closeModal, modal } from "./modal.js";
 import { renderPanelsTab } from "./panels-tab.js";
 import { refreshProps, rowOf } from "./props.js";
-import { S, selL } from "./state.js";
+import { S, selL } from "./state.ts";
 
 /* ================================================================ shots */
 export async function loadShots() {

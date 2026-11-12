@@ -1,6 +1,7 @@
 
 import { clamp, deep } from "./core.js";
 import { rng } from "./manga-tools.js";
+import { provideOutline } from "../core/registry.ts";
 /* Panel frame shapes. A panel keeps its bounding box (x, y, w, h) for layout, snapping and reading order;
    its outline comes from:
      shape   "rect" (default) | "poly" (pts: [[u, v], ...] as fractions of the box) | "ellipse"
@@ -248,3 +249,6 @@ export function layoutThumb(entries, W, H, tw = 120) {
   }
   return c;
 }
+
+/* shaped panels give the core their real outline, so clipping, hit tests and selections follow the shape */
+provideOutline(l => l.type === "panel" && !isPlainRect(l) ? [panelOutline(l).map(p => [p.x, p.y])] : null);

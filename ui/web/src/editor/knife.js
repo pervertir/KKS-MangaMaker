@@ -1,6 +1,6 @@
 import { h, uid } from "./core.js";
 import { clipHalf, panelBase, polyArea, setPanelPoly } from "./frames.js";
-import { S, H, W, page } from "./state.js";
+import { S, H, W, page } from "./state.ts";
 
 /* Knife cuts. A page keeps its cuts as lines: cuts [{id, a: [x, y], b: [x, y], gutter: null | px}].
    A panel made by cutting keeps the outline it was cut from and which side of each cut it lies on:

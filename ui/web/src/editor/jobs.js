@@ -6,9 +6,9 @@ import { toast } from "./misc.js";
 import { renderPageThumbs } from "./pages.js";
 import { renderPanelsTab } from "./panels-tab.js";
 import { loadShots } from "./shots.js";
-import { S } from "./state.js";
+import { S } from "./state.ts";
 import { requestDraw } from "./view.js";
-import { ui } from "../ui/store.svelte.js";
+import { ui } from "../ui/store.svelte.ts";
 import { IMG } from "./images.js";
 import { matteRef } from "./drawing.js";
 import { refreshProps } from "./props.js";
@@ -45,6 +45,7 @@ export async function pollJobs() {
         toast(`${j.label}: ${r.code === 0 ? "done" : "failed"}`, r.code === 0 ? "ok" : "err");
         if (["run", "render", "grab"].includes(j.body.cmd)) await afterRender(j.body.shot, j.body.cmd !== "grab");
         if (j.body.cmd === "pod") refreshPod(true);
+        j.after?.(r.code);
         if (j.body.cmd === "matte" && r.code === 0) mattesReady(j.body.image);
       }
     } catch (e) { j.done = true; j.lines.push("error: " + e.message); }

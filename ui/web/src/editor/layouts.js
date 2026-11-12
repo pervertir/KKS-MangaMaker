@@ -3,7 +3,7 @@ import { commit } from "./history.js";
 import { thumb } from "./images.js";
 import { closeModal, modal } from "./modal.js";
 import { renderPages } from "./pages.js";
-import { H, S, W, layers, normalize, page } from "./state.js";
+import { H, S, W, layers, normalize, page } from "./state.ts";
 import { panelOrder, requestDraw } from "./view.js";
 import { SHAPED_LAYOUTS, layoutEntry, layoutThumb, shapedLayout } from "./frames.js";
 import { gridTree, gutters, knifeLayout } from "./knife.js";

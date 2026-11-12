@@ -6,20 +6,26 @@ import { commit } from "./history.js";
 import { IMG, LEVELS } from "./images.js";
 import { popMenu } from "./menus.js";
 import { refreshPanels } from "./misc.js";
-import { S, bubbleMeta, layers, selL } from "./state.js";
+import { S, bubbleMeta, layers, selL } from "./state.ts";
 import { deleteSelected, sc } from "./tools.js";
 import { requestDraw } from "./view.js";
+import { ui } from "../ui/store.svelte.ts";
+import { plainText } from "../lettering/ruby.ts";
+import { expressionDialog, saveRenderDialog, saveSelectionDialog } from "../assets/dialogs.ts";
+import { layerType } from "../core/registry.ts";
+import { blobGen } from "../draw/blobs.ts";
 
 /* ================================================================ layers list */
-export const TYPE_IC = { panel: "▭", bubble: "💬", vbubble: "🗨", caption: "▤", text: "T", image: "🖼", tone: "▦", speed: "✺" };
+export const TYPE_IC = { panel: "▭", bubble: "💬", vbubble: "🗨", balloon: "🗨", caption: "▤", text: "T", image: "🖼", tone: "▦", speed: "✺", raster: "✎", vector: "✒" };
 export function layerName(l) {
   if (l.name) return l.name;
   if (l.type === "panel") return "Panel" + (l.shot ? ` · ${l.shot}` : "");
   if (l.type === "image") return l.ref.split("/").pop();
-  if (l.type === "tone") return `Screentone · ${l.pattern}${l.fade !== "none" ? " " + l.fade : ""}`;
-  if (l.type === "speed") return l.mode === "focus" ? "Focus lines" : "Speed lines";
-  const t = (l.text || "").replace(/\s+/g, " ").trim();
-  return (l.sfx ? "SFX" : l.type === "bubble" || l.type === "vbubble" ? "Bubble" : l.type === "caption" ? "Caption" : "Text") + (t ? ` · ${t}` : "");
+  if (l.type === "tone") return `Screentone · ${l.shape === "flat" ? "" : l.lpi + " L "}${l.grad ? "gradient" : l.pct + "%"}`;
+  if (l.type === "speed") return { focus: "Focus lines", parallel: "Speed lines", beta: "Beta flash", uni: "Uni flash" }[l.mode] || "Speed lines";
+  if (layerType(l.type) && l.type !== "balloon") return layerType(l.type).label;
+  const t = plainText(l.text || "").replace(/\s+/g, " ").trim();
+  return (l.sfx ? "SFX" : l.type === "bubble" || l.type === "vbubble" || l.type === "balloon" ? "Bubble" : l.type === "caption" ? "Caption" : "Text") + (t ? ` · ${t}` : "");
 }
 /* monochrome line icons (currentColor), so they follow the theme instead of emoji colours */
 export const UI_ICON = {
@@ -38,7 +44,7 @@ export const THUMBS = new Map();   // layer id -> {key, canvas}: redrawn only wh
 export function layerThumb(l, T = 32) {
   const refs = [l.image?.ref, l.type === "bubble" ? bubbleMeta(l.bubble)?.ref : null].filter(Boolean);
   const loaded = refs.map(r => [0, ...LEVELS].map(w => IMG.get(r + "|" + w)?.complete ? 1 : 0).join("")).join("/");
-  const key = T + "|" + JSON.stringify(l) + "|" + loaded;
+  const key = T + "|" + JSON.stringify(l) + "|" + loaded + (l.type === "raster" ? "|" + blobGen() : "");
   const hit = THUMBS.get(l.id);
   if (hit && hit.key === key) return hit.canvas;
   const c = paintLayerThumb(l, T); THUMBS.set(l.id, { key, canvas: c });
@@ -51,7 +57,7 @@ export function paintLayerThumb(l, T = 32) {
   const w = Math.max(1, l.w), hh = Math.max(1, l.h), s = (T * 2 - pad * 2) / Math.max(w, hh);
   g.fillStyle = "#d4d4da"; g.fillRect(0, 0, T * 2, T * 2);
   g.save(); g.translate(T - (l.x + w / 2) * s, T - (l.y + hh / 2) * s); g.scale(s, s);
-  try { drawLayer(g, { ...l, visible: true, opacity: 1 }, { rs: s, export: true }); } catch { }
+  try { drawLayer(g, { ...l, visible: true, opacity: 1 }, { rs: s, export: true, solo: true }); } catch { }
   g.restore();
   return c;
 }
@@ -59,59 +65,14 @@ export function layerMenu() {
   return [["Delete", deleteSelected, "Del", !selL()], ["Duplicate", act.duplicate, sc("Duplicate layer")], null,
     ["Bring forward", act.layerUp, sc("Bring forward")], ["Send backward", act.layerDown, sc("Send backward")],
     ["Bring to front", act.toFront, sc("Bring to front")], ["Send to back", act.toBack, sc("Send to back")], null,
-    ["Lock / unlock", act.toggleLock, sc("Lock / unlock")], ["Hide / show", act.toggleHide, sc("Hide / show")]];
+    ["Lock / unlock", act.toggleLock, sc("Lock / unlock")], ["Hide / show", act.toggleHide, sc("Hide / show")], null,
+    ["Save to asset library…", saveSelectionDialog, "", !selL()], ...libraryItems()];
 }
-/* a list is rebuilt on every change: keep where it was scrolled, and bring the picked row into view only when the pick changes */
-export const LISTSEL = {};
-export function rebuildList(box, build) {
-  const y = box.scrollTop; box.innerHTML = ""; build(); box.scrollTop = y;
-  if (LISTSEL[box.id] !== S.sel) { LISTSEL[box.id] = S.sel; box.querySelector(".on")?.scrollIntoView({ block: "nearest" }); }
+/* a panel's render can be saved on its own, or get a new face expression */
+function libraryItems() {
+  const l = selL();
+  if (l?.type !== "panel" || !l.image) return [];
+  return [["Save render as background…", () => saveRenderDialog(l.image.ref, l.shot || "")], ["New expression…", () => expressionDialog(l.shot || "", l.image.ref), "", !l.shot]];
 }
-/* Layers tab: everything except the frames, front to back. A run of panels is one marker row, so the
-   stack stays truthful (a tone can sit over or under the frames) while the frames live in the Panels tab. */
-export function renderLayers() {
-  const box = $("#layers"), ls = layers(), rev = [...ls].reverse();
-  let n = 0;
-  rebuildList(box, () => {
-    for (let i = 0; i < rev.length; i++) {
-      if (rev[i].type !== "panel") { n++; box.append(layerRow(rev[i], ls)); continue; }
-      let j = i; while (j + 1 < rev.length && rev[j + 1].type === "panel") j++;
-      box.append(panelRunRow(rev.slice(i, j + 1), ls)); i = j;
-    }
-    if (!n) box.prepend(h("div", { class: "empty" }, "No lettering on this page yet. B bubble · O drawn bubble · T text · S sound effect · C caption."));
-  });
-  $("#cnt-layers").textContent = n || "";
-}
-export function layerRow(l, ls) {
-  const row = h("div", { class: "layer" + (l.id === S.sel ? " on" : ""), draggable: true,
-    onclick: () => { S.sel = l.id; refreshPanels(); requestDraw(); },
-    ondblclick: () => { const n = prompt("Layer name", layerName(l)); if (n != null) { l.name = n; commit(); } },
-    ondragstart: e => e.dataTransfer.setData("text/layer", l.id),
-    ondragover: e => { e.preventDefault(); row.classList.add("dragover"); },
-    ondragleave: () => row.classList.remove("dragover"),
-    ondrop: e => {
-      e.preventDefault(); row.classList.remove("dragover");
-      const id = e.dataTransfer.getData("text/layer"), src = ls.find(q => q.id === id); if (!src || src === l) return;
-      ls.splice(ls.indexOf(src), 1); ls.splice(ls.indexOf(l) + 1, 0, src); commit("Reordered"); requestDraw();
-    } },
-    svgBtn(l.visible ? "eye" : "eyeOff", l.visible ? "" : "offv", "Show / hide", () => { l.visible = !l.visible; commit(); requestDraw(); }),
-    layerThumb(l),
-    h("span", { class: "nm", title: layerName(l) }, layerName(l)),
-    svgBtn(l.locked ? "lock" : "unlock", l.locked ? "" : "offv", l.locked ? "Unlock" : "Lock", () => { l.locked = !l.locked; commit(); requestDraw(); }),
-    svgBtn("trash", "del", "Delete layer (Delete)", () => { S.sel = l.id; deleteSelected(); }));
-  row.addEventListener("contextmenu", e => { e.preventDefault(); S.sel = l.id; refreshPanels(); requestDraw(); popMenu(e.clientX, e.clientY, layerMenu()); });
-  return row;
-}
-export function panelRunRow(run, ls) {          // run[0] is the frontmost frame of the run
-  const row = h("div", { class: "layer run" + (run.some(q => q.id === S.sel) ? " on" : ""), title: "The panel frames sit here in the stack. Click to work on them in the Panels tab; drop a layer here to put it just above them.",
-    onclick: () => setDockTab("panels", true),
-    ondragover: e => { e.preventDefault(); row.classList.add("dragover"); },
-    ondragleave: () => row.classList.remove("dragover"),
-    ondrop: e => {
-      e.preventDefault(); row.classList.remove("dragover");
-      const id = e.dataTransfer.getData("text/layer"), src = ls.find(q => q.id === id); if (!src) return;
-      ls.splice(ls.indexOf(src), 1); ls.splice(ls.indexOf(run[0]) + 1, 0, src); commit("Reordered"); requestDraw();
-    } },
-    h("span", {}, "▭"), `${run.length} panel${run.length === 1 ? "" : "s"}`, h("span", { class: "go" }, "›"));
-  return row;
-}
+/* The Layers list is src/ui/LayersPane.svelte; this tells it (and the Panels tab) to read the document again. */
+export function renderLayers() { ui.rev++; }

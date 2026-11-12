@@ -7,7 +7,7 @@ export function modal(title, cls) {
   $("#modal").hidden = false;
   return box;
 }
-/* a dialog whose content is a mounted component (src/ui/mount.js) is unmounted when it goes away */
+/* a dialog whose content is a mounted component (src/ui/mount.ts) is unmounted when it goes away */
 function dropContent(box) { const u = box._unmount; box._unmount = null; if (u) u(); }
 export function closeModal() { $("#modal").hidden = true; dropContent($("#modalbox")); }
 
