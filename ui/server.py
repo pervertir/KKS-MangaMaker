@@ -46,6 +46,7 @@ CACHE.mkdir(parents=True, exist_ok=True)
 SHOTS = ROOT / "shots"
 PROJECTS = ROOT / "pages"
 UPLOADS = ROOT / "assets" / "uploads"
+MODELS3D = ROOT / "assets" / "scenes3d"
 PAGE_W, PAGE_H = 1800, 2700
 ASSET_DIRS = {
     "decor": "Decorative Elements/Decorative-Elements-Images",
@@ -397,7 +398,7 @@ def save_pose_shot(body: dict) -> dict:
     scene) and the sidecar's characters/prompt, so `run` renders it with no Studio capture at all."""
     import base64
     d = shot_dir(body["name"], must_exist=False)
-    chars = body.get("characters") or [{"name": "", "series": ""}]
+    chars = body.get("characters") or ([] if body.get("background") else [{"name": "", "series": ""}])
     side = next((d / n for n in SIDECAR_NAMES if (d / n).exists()), None)
     if side is None:
         side = write_example(d, str(chars[0]["name"]).strip(), str(chars[0].get("series", "")).strip())
@@ -432,8 +433,20 @@ def save_pose_shot(body: dict) -> dict:
     apply_reference(d, chars)
     png = body["png"].split(",", 1)[-1]
     Image.open(io.BytesIO(base64.b64decode(png))).convert("RGB").save(d / "pose.png")
+    old = d / "pose_scene.json"
+    had3d = old.exists() and bool(json.loads(old.read_text(encoding="utf-8") or "{}").get("bg3d"))
+    for key in ("depth", "lines"):      # the 3D background's passes, same camera as the pose
+        if body.get(key):
+            Image.open(io.BytesIO(base64.b64decode(body[key].split(",", 1)[-1]))).convert("L").save(d / f"{key}.png")
+        elif had3d and (d / f"{key}.png").exists():
+            (d / f"{key}.png").unlink()
     (d / "pose_scene.json").write_text(json.dumps(body.get("scene") or {}, indent=1), encoding="utf-8")
     return {"ok": True, "pose": mp_ref(d / "pose.png")}
+
+
+def models3d() -> list[dict]:
+    MODELS3D.mkdir(parents=True, exist_ok=True)
+    return [{"ref": mp_ref(p), "name": p.stem} for p in sorted(MODELS3D.glob("*.glb"))]
 
 
 def apply_reference(d: Path, chars: list[dict]) -> None:
@@ -543,7 +556,7 @@ def dialogue_layer(d: dict, rect, bmap) -> dict | None:
 # ---------------------------------------------------------------------------- jobs
 JOBS: dict[str, dict] = {}
 MANGAPIPE = ROOT / "mangapipe"
-SHOT_CMDS = {"run", "render", "grab", "compose"}
+SHOT_CMDS = {"run", "render", "grab", "compose", "matte"}
 POD_ACTIONS = {"status", "start", "stop", "url", "restart"}
 
 
@@ -610,6 +623,17 @@ def _gzip(body: bytes, key: str | None) -> bytes:
             _GZ.clear()
         _GZ[key] = out
     return out
+
+
+BLOB_RE = re.compile(r"/api/project/([^/]{1,80})/blob/([0-9a-f]{64})")
+
+
+def blob_path(name: str, digest: str) -> Path:
+    """Content-addressed project data (painted layers, masks, imported art): pages/<name>/blobs/<sha256>."""
+    name = unquote(name)
+    if not NAME_RE.match(name):
+        raise ValueError("bad project name")
+    return PROJECTS / name / "blobs" / digest
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -712,6 +736,10 @@ class Handler(BaseHTTPRequestHandler):
                     return self.json({"error": "bad name"}, 400)
                 p = PROJECTS / name / "project.json"
                 return self.json(json.loads(p.read_text()) if p.exists() else {"error": "not found"}, 200 if p.exists() else 404)
+            m = BLOB_RE.fullmatch(u.path)
+            if m:
+                f = blob_path(*m.groups())
+                return self.send(200, f.read_bytes(), "application/octet-stream", cache=True) if f.exists() else self.json({"error": "no such blob"}, 404)
             if u.path == "/api/pod":
                 return self.json(pod_status())
             if u.path == "/api/poses":
@@ -720,6 +748,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self.file(ROOT / "docs" / "SCRIPT_WIZARD.md", "text/markdown; charset=utf-8")
             if u.path == "/api/cast":
                 return self.json({"cast": json.loads(CAST.read_text(encoding="utf-8")) if CAST.exists() else []})
+            if u.path == "/model":
+                p = resolve_ref(q["ref"])
+                if p.suffix.lower() != ".glb":
+                    return self.json({"error": "not a model"}, 400)
+                return self.send(200, p.read_bytes(), "model/gltf-binary", cache=True)
+            if u.path == "/api/scene3d/models":
+                return self.json(models3d())
             if u.path == "/api/pose/scene":
                 p = shot_dir(q.get("name", "")) / "pose_scene.json"
                 return self.json(json.loads(p.read_text()) if p.exists() else {"error": "no scene"}, 200 if p.exists() else 404)
@@ -734,6 +769,26 @@ class Handler(BaseHTTPRequestHandler):
             return self.json({"error": "not found"}, 404)
         except (FileNotFoundError, KeyError) as e:
             return self.json({"error": f"not found: {e}"}, 404)
+        except Exception as e:  # noqa: BLE001
+            return self.json({"error": str(e)}, 400)
+
+    def do_PUT(self):
+        u = urlparse(self.path)
+        try:
+            m = BLOB_RE.fullmatch(u.path)
+            if not m:
+                return self.json({"error": "not found"}, 404)
+            f = blob_path(*m.groups())
+            if f.exists():
+                return self.json({"ok": True, "exists": True})
+            data = self.body()
+            if hashlib.sha256(data).hexdigest() != m.group(2):
+                return self.json({"error": "content does not match its hash"}, 400)
+            f.parent.mkdir(parents=True, exist_ok=True)
+            tmp = f.with_name(f"{f.name}.{threading.get_ident()}.part")
+            tmp.write_bytes(data)
+            tmp.replace(f)
+            return self.json({"ok": True})
         except Exception as e:  # noqa: BLE001
             return self.json({"error": str(e)}, 400)
 
@@ -756,8 +811,25 @@ class Handler(BaseHTTPRequestHandler):
                     return self.json({"error": "bad name"}, 400)
                 d = PROJECTS / name
                 d.mkdir(parents=True, exist_ok=True)
-                im = Image.open(io.BytesIO(self.body())).convert("RGB")
-                dest = d / f"page_{n:02d}.png"
+                dest = d / f"{'spread' if q.get('spread') else 'page'}_{n:02d}.png"
+                if "bands" in q:
+                    k, count = int(q["band"]), int(q["bands"])
+                    if not (0 <= k < count <= 64):
+                        return self.json({"error": "bad band"}, 400)
+                    (d / f".{dest.stem}.band{k:02d}.png").write_bytes(self.body())
+                    parts = [d / f".{dest.stem}.band{j:02d}.png" for j in range(count)]
+                    if not all(p.exists() for p in parts):
+                        return self.json({"ok": True, "band": k})
+                    ims = [Image.open(p).convert("RGB") for p in parts]
+                    im = Image.new("RGB", (ims[0].width, sum(i.height for i in ims)), "white")
+                    y = 0
+                    for i in ims:
+                        im.paste(i, (0, y))
+                        y += i.height
+                    for p in parts:
+                        p.unlink()
+                else:
+                    im = Image.open(io.BytesIO(self.body())).convert("RGB")
                 im.save(dest)
                 return self.json({"ok": True, "path": str(dest)})
             if u.path == "/api/export/pdf":
@@ -769,7 +841,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self.json({"error": f"missing {', '.join(missing)}"}, 400)
                 ims = [Image.open(f).convert("RGB") for f in files]
                 dest = d / f"{name}.pdf"
-                ims[0].save(dest, save_all=True, append_images=ims[1:], resolution=300)
+                ims[0].save(dest, save_all=True, append_images=ims[1:], resolution=float(q.get("dpi", 300)))
                 return self.json({"ok": True, "path": str(dest)})
             if u.path == "/api/import":
                 name = q.get("script", "")
@@ -840,8 +912,25 @@ class Handler(BaseHTTPRequestHandler):
                     return self.json({"error": "bad name"}, 400)
                 d = PROJECTS / name
                 d.mkdir(parents=True, exist_ok=True)
-                im = Image.open(io.BytesIO(self.body())).convert("RGB")
-                dest = d / f"page_{n:02d}.png"
+                dest = d / f"{'spread' if q.get('spread') else 'page'}_{n:02d}.png"
+                if "bands" in q:
+                    k, count = int(q["band"]), int(q["bands"])
+                    if not (0 <= k < count <= 64):
+                        return self.json({"error": "bad band"}, 400)
+                    (d / f".{dest.stem}.band{k:02d}.png").write_bytes(self.body())
+                    parts = [d / f".{dest.stem}.band{j:02d}.png" for j in range(count)]
+                    if not all(p.exists() for p in parts):
+                        return self.json({"ok": True, "band": k})
+                    ims = [Image.open(p).convert("RGB") for p in parts]
+                    im = Image.new("RGB", (ims[0].width, sum(i.height for i in ims)), "white")
+                    y = 0
+                    for i in ims:
+                        im.paste(i, (0, y))
+                        y += i.height
+                    for p in parts:
+                        p.unlink()
+                else:
+                    im = Image.open(io.BytesIO(self.body())).convert("RGB")
                 im.save(dest)
                 return self.json({"ok": True, "path": str(dest)})
             if u.path == "/api/export/pdf":
@@ -853,7 +942,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self.json({"error": f"missing {', '.join(missing)}"}, 400)
                 ims = [Image.open(f).convert("RGB") for f in files]
                 dest = d / f"{name}.pdf"
-                ims[0].save(dest, save_all=True, append_images=ims[1:], resolution=300)
+                ims[0].save(dest, save_all=True, append_images=ims[1:], resolution=float(q.get("dpi", 300)))
                 return self.json({"ok": True, "path": str(dest)})
             if u.path == "/api/import":
                 name = q.get("script", "")
@@ -924,6 +1013,22 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json(detect_poses(q.get("name", "image.png"), self.body()))
             if u.path == "/api/pose/shot":
                 return self.json(save_pose_shot(self.jbody()))
+            if u.path == "/api/scene3d/upload":
+                fname = Path(q.get("name", "scene.glb")).name
+                if Path(fname).suffix.lower() != ".glb":
+                    return self.json({"error": "glTF binary (.glb) only"}, 400)
+                data = self.body()
+                if data[:4] != b"glTF":
+                    return self.json({"error": "not a glTF binary file"}, 400)
+                MODELS3D.mkdir(parents=True, exist_ok=True)
+                stem = re.sub(r"[^A-Za-z0-9_\-]", "_", Path(fname).stem)[:60] or "scene"
+                dest = MODELS3D / f"{stem}.glb"
+                k = 1
+                while dest.exists() and dest.read_bytes() != data:
+                    dest = MODELS3D / f"{stem}_{k}.glb"
+                    k += 1
+                dest.write_bytes(data)
+                return self.json({"ref": mp_ref(dest), "name": dest.stem})
             if u.path == "/api/poses/custom":
                 return self.json(save_custom_pose(self.jbody()))
             if u.path == "/api/library":
@@ -956,6 +1061,11 @@ class Handler(BaseHTTPRequestHandler):
                         args += ["--seed", str(int(body["seed"]))]
                     if cmd == "run":
                         args.append("--no-compose")  # the editor letters the page itself
+                    if cmd == "matte" and body.get("image"):
+                        img = resolve_ref(str(body["image"]))
+                        if d not in img.parents:
+                            return self.json({"error": "that render is not in this shot"}, 400)
+                        args += ["--image", str(img.relative_to(ROOT))]
                     label = f"{cmd} {d.name}"
                 elif cmd == "pod" and body.get("action") in POD_ACTIONS:
                     args, label = ["pod", body["action"]], f"pod {body['action']}"

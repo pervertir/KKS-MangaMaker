@@ -166,6 +166,18 @@ top (or Ctrl/⌘+Shift+P):
 - **Page**: panels, renders, template or drawn bubbles, text, SFX, captions, screentones and speed
   lines, pages and spreads, export to PNG/PDF. Built-in panel layouts (splash, tiers, 4-koma, classic
   six, ...) and print guides (trim and safe area, View menu) need no template pack.
+- **Panel shapes**: besides rectangles, a panel can be slanted, a trapezoid, a wedge with a diagonal
+  gutter, cut-corner, a shard, a circle or oval (close-ups, insets), rounded (memory), or any polygon
+  (Panel tool, Polygon: click the corners). Edges can be a line, dashed (memory), wavy (dream,
+  flashback) or jagged (shock). Properties > Frame also has Bleed (run off the page edges), Borderless,
+  a Gap band for insets laid over another panel, slanted splits (⌥\\ side by side, ⌥⇧\\ top / bottom) and
+  Edit corners (drag a corner, drag an edge dot to add one, ⌥-click to remove). Renders, screentones
+  and speed lines are clipped to the shape on screen and in exports. Layouts > Shaped frames has
+  slanted tiers, zigzag, diagonal, shattered, perspective, inset, dream, memory, shock and bleed pages.
+- **Break out of frame**: Properties > Render in panel > Break out of frame lets a panel's characters reach
+  over its border and into the gutter or the next panel while the background stays inside. The first
+  time, the characters are cut out of the render with SAM 3 on the pod (`mangapipe matte <shot>`, saved
+  as `out/matte_<render>.png`); then pick how far (Reach) and which sides. Lettering stays on top.
 - **Pose**: builds the OpenPose image for a shot instead of a CharaStudio capture. Pick a pose from the
   library (click, or drag onto the canvas) for each character, then turn, tilt, rotate, size and mirror
   it, and pose by dragging: a hand or foot pulls its whole arm or leg along (IK with soft limits:

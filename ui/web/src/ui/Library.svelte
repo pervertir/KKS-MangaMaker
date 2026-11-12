@@ -10,7 +10,7 @@
   import { commit } from "../editor/history.js";
   import { thumb } from "../editor/images.js";
   import { renderShot } from "../editor/jobs.js";
-  import { applyLayout, presetTiles } from "../editor/layouts.js";
+  import { applyLayout, presetTiles, shapedTiles } from "../editor/layouts.js";
   import { LIBTABS, renderLibrary } from "../editor/library.js";
   import { popMenu } from "../editor/menus.js";
   import { status } from "../editor/misc.js";
@@ -26,7 +26,7 @@
   const cat = (): Obj => (ui.rev, S.cat || { bubbles: [], layouts: [], assets: {} });
   const images = (s: Obj): [string, string][] => [...s.renders.map((r: string): [string, string] => [r, "render"]), ...s.finals.map((r: string): [string, string] => [r, "final"])];
   // the built-in layout tiles are drawn by the editor; redrawn when the reading direction flips
-  const presets = $derived.by(() => { ui.rev; return S.doc && S.libTab === "layouts" ? { dir: S.doc.reading, el: presetTiles((r: unknown, n: string) => applyLayout(r, n)) } : null; });
+  const presets = $derived.by(() => { ui.rev; return S.doc && S.libTab === "layouts" ? { dir: S.doc.reading, el: presetTiles((r: unknown, n: string) => applyLayout(r, n)), shaped: shapedTiles((r: unknown, n: string) => applyLayout(r, n)) } : null; });
 
   const drag = (data: Obj) => (e: DragEvent) => e.dataTransfer!.setData("application/x-manga", JSON.stringify(data));
   const go = (k: string) => { S.libTab = k; renderLibrary(); };
@@ -100,7 +100,8 @@
   {:else if tab() === "layouts"}
     <div class="hint">Click to apply to this page (renders already placed carry over in reading order).</div>
     <div class="section">Built-in</div>
-    {#if presets}{#key presets.dir}<div class="slot" use:node={presets.el}></div>{/key}{/if}
+    {#if presets}{#key presets.dir}<div class="slot" use:node={presets.el}></div>
+      <div class="section">Shaped frames</div><div class="slot" use:node={presets.shaped}></div>{/key}{/if}
     {#if cat().layouts.length}
       <div class="section">Template pack</div>
       <div class="tiles">

@@ -11,15 +11,18 @@ import { deleteSelected, sc } from "./tools.js";
 import { requestDraw } from "./view.js";
 import { ui } from "../ui/store.svelte.ts";
 import { expressionDialog, saveRenderDialog, saveSelectionDialog } from "../assets/dialogs.ts";
+import { layerType } from "../core/registry.ts";
+import { blobGen } from "../draw/blobs.ts";
 
 /* ================================================================ layers list */
-export const TYPE_IC = { panel: "▭", bubble: "💬", vbubble: "🗨", caption: "▤", text: "T", image: "🖼", tone: "▦", speed: "✺" };
+export const TYPE_IC = { panel: "▭", bubble: "💬", vbubble: "🗨", caption: "▤", text: "T", image: "🖼", tone: "▦", speed: "✺", raster: "✎", vector: "✒" };
 export function layerName(l) {
   if (l.name) return l.name;
   if (l.type === "panel") return "Panel" + (l.shot ? ` · ${l.shot}` : "");
   if (l.type === "image") return l.ref.split("/").pop();
   if (l.type === "tone") return `Screentone · ${l.pattern}${l.fade !== "none" ? " " + l.fade : ""}`;
   if (l.type === "speed") return l.mode === "focus" ? "Focus lines" : "Speed lines";
+  if (layerType(l.type)) return layerType(l.type).label;
   const t = (l.text || "").replace(/\s+/g, " ").trim();
   return (l.sfx ? "SFX" : l.type === "bubble" || l.type === "vbubble" ? "Bubble" : l.type === "caption" ? "Caption" : "Text") + (t ? ` · ${t}` : "");
 }
@@ -40,7 +43,7 @@ export const THUMBS = new Map();   // layer id -> {key, canvas}: redrawn only wh
 export function layerThumb(l, T = 32) {
   const refs = [l.image?.ref, l.type === "bubble" ? bubbleMeta(l.bubble)?.ref : null].filter(Boolean);
   const loaded = refs.map(r => [0, ...LEVELS].map(w => IMG.get(r + "|" + w)?.complete ? 1 : 0).join("")).join("/");
-  const key = T + "|" + JSON.stringify(l) + "|" + loaded;
+  const key = T + "|" + JSON.stringify(l) + "|" + loaded + (l.type === "raster" ? "|" + blobGen() : "");
   const hit = THUMBS.get(l.id);
   if (hit && hit.key === key) return hit.canvas;
   const c = paintLayerThumb(l, T); THUMBS.set(l.id, { key, canvas: c });

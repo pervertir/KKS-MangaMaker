@@ -1,5 +1,7 @@
 import { schedThumbs } from "./pages.js";
 import { requestDraw } from "./view.js";
+import { bumpRenderEpoch } from "../core/layer-cache.ts";
+import { waitTiles } from "../draw/blobs.ts";
 
 /* ================================================================ images */
 /* Every picture is fetched at the smallest size that is sharp on screen (256 … 2048 px wide, resized
@@ -14,7 +16,7 @@ export function getImg(ref, w = 0) {
   if (!im) {
     im = new Image();
     im.decoding = "async";
-    im.onload = () => { requestDraw(); schedThumbs(true); };
+    im.onload = () => { bumpRenderEpoch(); requestDraw(); schedThumbs(true); };
     im.src = `/img?ref=${encodeURIComponent(ref)}${w ? "&w=" + w : ""}`;
     IMG.set(k, im);
   }
@@ -31,6 +33,5 @@ export function imgFor(ref, needPx) {
 export const thumb = (ref, w = 240) => `/img?ref=${encodeURIComponent(ref)}&w=${w}`;
 export function waitImages() {
   const pend = [...IMG.values()].filter(i => !i.complete);
-  if (!pend.length) return Promise.resolve();
-  return Promise.all(pend.map(i => new Promise(r => { i.onload = i.onerror = r; })));
+  return Promise.all([waitTiles(), ...pend.map(i => new Promise(r => { i.onload = i.onerror = r; }))]);
 }

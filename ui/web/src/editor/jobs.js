@@ -8,8 +8,10 @@ import { renderPanelsTab } from "./panels-tab.js";
 import { loadShots } from "./shots.js";
 import { S } from "./state.ts";
 import { requestDraw } from "./view.js";
-
 import { ui } from "../ui/store.svelte.ts";
+import { IMG } from "./images.js";
+import { matteRef } from "./drawing.js";
+import { refreshProps } from "./props.js";
 
 /* ================================================================ jobs & pod */
 export async function startJob(body) {
@@ -44,6 +46,7 @@ export async function pollJobs() {
         if (["run", "render", "grab"].includes(j.body.cmd)) await afterRender(j.body.shot, j.body.cmd !== "grab");
         if (j.body.cmd === "pod") refreshPod(true);
         j.after?.(r.code);
+        if (j.body.cmd === "matte" && r.code === 0) mattesReady(j.body.image);
       }
     } catch (e) { j.done = true; j.lines.push("error: " + e.message); }
     ended ||= j.done;
@@ -65,6 +68,15 @@ export async function afterRender(shot, fillPanels) {
     l.image = { ref: s.renders[0], iw: dim.w, ih: dim.h, fit: "cover", focus: [0.5, 0.3], zoom: 1, flip: false, ...(keep || {}) }; n++;
   }
   if (n) { commit(`New render placed in ${n} panel${n > 1 ? "s" : ""}`); requestDraw(); renderPageThumbs(); }
+}
+/* a finished cut-out: every panel showing that render breaks out of its frame */
+export function mattesReady(ref) {
+  const m = matteRef(ref); let n = 0;
+  for (const pg of S.doc.pages) for (const l of pg.layers) if (l.type === "panel" && l.image?.ref === ref) {
+    l.image = { ...l.image, matte: m }; l.breakout ||= { reach: 160, sides: "trbl" }; n++;
+  }
+  for (const k of [...IMG.keys()]) if (k.startsWith(m + "|")) IMG.delete(k);      // a re-cut replaces the file under the same name
+  if (n) { commit(`Characters cut out: ${n} panel${n > 1 ? "s" : ""} break out of the frame`); requestDraw(); renderPageThumbs(); refreshProps(); }
 }
 export function toggleJobs(show) { ui.jobsOpen = show ?? !ui.jobsOpen; renderJobs(); }
 export function viewJob(id) { S.jobView = id; renderJobs(); }

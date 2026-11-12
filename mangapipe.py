@@ -7,6 +7,7 @@
   mangapipe render <shot_dir> [--seed N] [--dry-run]             ComfyUI render only
   mangapipe compose <shot_dir> [--image FILE]                    dialogue overlay only
   mangapipe expression <shot_dir> --image FILE --tags TAGS [--character N]   new face expression on a render
+  mangapipe matte <shot_dir> [--image FILE] [--prompt person]    cut the characters out of a render (SAM 3 on the pod)
   mangapipe run <shot_dir> [--seed N] [--no-compose] [--dry-run] everything, end to end
   mangapipe page <script.yaml> [--page N] [--pdf]                lay renders into manga pages with dialogue
   mangapipe layouts                                              contact sheet of the 100 page templates
@@ -99,6 +100,12 @@ def render(shot: dict, cfg: Config, seed: int | None, dry_run: bool, refresh: bo
         prepare_pose(shot["_depth_path"], depth_cn, (w, h))  # same fit and black padding as the pose
         depth_name = comfy.upload(depth_cn, "manga", f"{shot['shot']}_depth.png")
         log(f"[depth] {shot['_depth_path'].name} -> {w}x{h}")
+    lines_name = None
+    if shot.get("_lines_path") is not None:
+        lines_cn = shot["_out"] / "lines_cn.png"
+        prepare_pose(shot["_lines_path"], lines_cn, (w, h))
+        lines_name = comfy.upload(lines_cn, "manga", f"{shot['shot']}_lines.png")
+        log(f"[lines] {shot['_lines_path'].name} -> {w}x{h}")
 
     multi = len(shot["characters"]) > 1 and shot.get("head_inpaint", True) and any(l["lora"] for l in loras)
     base_loras = loras
@@ -113,7 +120,7 @@ def render(shot: dict, cfg: Config, seed: int | None, dry_run: bool, refresh: bo
             log("[regions] " + ", ".join(f"{c['name']} x={x0}-{x1}" for c, (x0, x1, _) in zip(shot["characters"], regions)))
         else:
             log("[regions] could not split the pose into one column per character; prompting globally")
-    graph = build_graph(shot, cfg, base_loras, identity, pose_name, ref_name, (w, h), the_seed, regions, depth_name)
+    graph = build_graph(shot, cfg, base_loras, identity, pose_name, ref_name, (w, h), the_seed, regions, depth_name, lines_name)
     style = cfg.style(shot.get("style", "flat_anime"))
     pos, neg = build_prompt(shot, style, loras)
     (shot["_out"] / "workflow_api.json").write_text(json.dumps(graph, indent=2))
@@ -282,6 +289,7 @@ def main(argv=None):
     p = sub.add_parser("grab");    p.add_argument("shot_dir", type=Path); p.add_argument("--pose", type=Path); p.add_argument("--ref", type=Path)
     p = sub.add_parser("lora");    p.add_argument("name"); p.add_argument("--series", default=""); p.add_argument("--refresh", action="store_true")
     p = sub.add_parser("render");  p.add_argument("shot_dir", type=Path); p.add_argument("--seed", type=int); p.add_argument("--dry-run", action="store_true"); p.add_argument("--refresh-lora", action="store_true")
+    p = sub.add_parser("matte");   p.add_argument("shot_dir", type=Path); p.add_argument("--image", type=Path); p.add_argument("--prompt", default="person")
     p = sub.add_parser("compose"); p.add_argument("shot_dir", type=Path); p.add_argument("--image", type=Path, action="append")
     p = sub.add_parser("page");    p.add_argument("script", type=Path); p.add_argument("--page", type=int, action="append"); p.add_argument("--pdf", action="store_true"); p.add_argument("--out", type=Path)
     p = sub.add_parser("layouts"); p.add_argument("--ltr", action="store_true"); p.add_argument("--out", type=Path)
@@ -339,6 +347,16 @@ def main(argv=None):
             return 0
         if a.cmd == "expression":
             expression(shot, cfg, a.image, a.tags, a.character - 1, a.seed)
+            return 0
+        if a.cmd == "matte":
+            from mp.subject import make_matte
+            img = Path(a.image) if a.image else (sorted(shot["_out"].glob("render_*.png"), key=lambda p: p.stat().st_mtime) or [None])[-1]
+            if img is None or not img.exists():
+                raise ShotError("no render to cut out; render first or pass --image")
+            comfy = Comfy(cfg.comfy_url, log)
+            if not comfy.alive():
+                raise ComfyError(f"ComfyUI is not reachable at {cfg.comfy_url}; run `mangapipe pod start` and retry.")
+            make_matte(comfy, img, cfg, a.prompt, log=log)
             return 0
         if a.cmd == "compose":
             imgs = a.image or sorted(shot["_out"].glob("render_*.png"))
