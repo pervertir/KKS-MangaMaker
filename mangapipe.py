@@ -24,6 +24,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from mp.chapter import ChapterError  # noqa: E402
 from mp.civitai import Civitai, CivitaiError  # noqa: E402
 from mp.comfy_client import Comfy, ComfyError  # noqa: E402
 from mp.compose import compose  # noqa: E402
@@ -281,6 +282,44 @@ def _model_listed(info: dict, key: str, cfg: Config) -> bool:
 
 
 # ------------------------------------------------------------------------------- cli
+def chapter_cmd(cfg: Config, a) -> int:
+    """Re-render a chapter from its JSON: `sync` pulls shot folders in (and upgrades a version 1 file),
+    `status` lists stale panels, `render` writes and renders them on the pod."""
+    from mp import chapter as ch
+    root = Path(__file__).resolve().parent
+    path = Path(a.project)
+    if not path.suffix:
+        path = root / "pages" / a.project / "project.json"
+    doc = ch.load(path)
+    cast_file = root / "cast.json"
+    cast = json.loads(cast_file.read_text(encoding="utf-8")) if cast_file.exists() else []
+    pulled = ch.sync(doc, root / "shots", cast, newer_than=path.stat().st_mtime)
+    if pulled:
+        log(f"[chapter] scenes from shot folders: {', '.join(pulled)}")
+    if a.action == "status":
+        stale = {id(l) for _, _, l in ch.stale(doc)}
+        for pi, k, l in ch.panels(doc):
+            state = "no scene" if not l.get("scene") else ("needs render" if id(l) in stale else "up to date")
+            log(f"page {pi} panel {k}: {l.get('shot') or '-':24} {state}")
+    if a.action == "render":
+        sys.path.insert(0, str(root / "ui"))
+        from server import pose_library  # noqa: E402  (the editor's library: basics, studio, H, custom)
+        poses = {p["id"]: p for p in pose_library()["poses"]}
+
+        def render_shot(d: Path, seed: int) -> list[Path]:
+            return render(load_shot(d, cfg), cfg, seed, False, False)
+
+        name = path.parent.name
+        try:
+            ch.render_chapter(doc, name, root, poses, render_shot, a.page, a.dry_run, log)
+        finally:
+            if not a.dry_run:
+                ch.save(doc, path)       # keep every panel that did render, even if a later one failed
+    if pulled and a.action != "render":
+        ch.save(doc, path)
+    return 0
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="mangapipe", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--config", type=Path, default=None)
@@ -300,6 +339,8 @@ def main(argv=None):
     p = sub.add_parser("poses");   p.add_argument("action", choices=["build", "build-h", "build-h-mods"]); p.add_argument("--src", type=Path); p.add_argument("--out", type=Path)
     p = sub.add_parser("expression"); p.add_argument("shot_dir", type=Path); p.add_argument("--image", type=Path, required=True); p.add_argument("--tags", required=True)
     p.add_argument("--character", type=int, default=1, help="which character, counted from the left (1 = leftmost)"); p.add_argument("--seed", type=int)
+    p = sub.add_parser("chapter"); p.add_argument("action", choices=["sync", "status", "render"]); p.add_argument("project"); p.add_argument("--page", type=int, action="append"); p.add_argument("--dry-run", action="store_true")
+    p = sub.add_parser("live");    p.add_argument("shot_dir", type=Path); p.add_argument("--char", action="append", help="pose char id, or bg; default: all"); p.add_argument("--bg-prompt", default=""); p.add_argument("--dry-run", action="store_true")
     p = sub.add_parser("run");     p.add_argument("shot_dir", type=Path); p.add_argument("--seed", type=int); p.add_argument("--dry-run", action="store_true"); p.add_argument("--no-compose", action="store_true"); p.add_argument("--refresh-lora", action="store_true")
     a = ap.parse_args(argv)
     cfg = Config(a.config)
@@ -339,6 +380,8 @@ def main(argv=None):
             return 0
         if a.cmd == "pod":
             return pod_cmd(cfg, a.action, a.cmdline)
+        if a.cmd == "chapter":
+            return chapter_cmd(cfg, a)
         if a.cmd == "poses" and a.action == "build-h-mods":
             from mp.khanim import build_mod_library   # needs: pip install UnityPy
             r = build_mod_library(a.src or cfg.h_mods_dir, a.out or Path(__file__).resolve().parent / "poses" / "h_mods_library.json", log)
@@ -358,6 +401,14 @@ def main(argv=None):
                 log("  skipped " + f)
             return 0
         shot = load_shot(a.shot_dir, cfg)
+        if a.cmd == "live":
+            from mp.live import render_layers
+            if a.bg_prompt:
+                shot["live_bg_prompt"] = a.bg_prompt
+            r = render_layers(shot, cfg, lambda sh, seed: render(sh, cfg, seed, a.dry_run, False),
+                              None if a.dry_run else Comfy(cfg.comfy_url, log), a.char, a.dry_run, log)
+            log(f"[live] background: {r['bg'].name if r['bg'] else '-'}; cutouts: {len(r['actors'])}")
+            return 0
         if a.cmd == "render":
             render(shot, cfg, a.seed, a.dry_run, a.refresh_lora)
             return 0
@@ -385,7 +436,7 @@ def main(argv=None):
             if files and not a.no_compose:
                 do_compose(shot, cfg, files)
             return 0
-    except (ShotError, CivitaiError, ComfyError, RemoteError, PageError, FileNotFoundError, ValueError, KeyError) as e:
+    except (ChapterError, ShotError, CivitaiError, ComfyError, RemoteError, PageError, FileNotFoundError, ValueError, KeyError) as e:
         log(f"error: {e}")
         return 1
 

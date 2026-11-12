@@ -69,6 +69,7 @@ import "./select/tools.ts";
 import "./lettering/index.ts";
 import * as m55 from "./editor/rulers.ts";
 import * as m56 from "./pose/scene3d.ts";
+import * as m57 from "./editor/live.js";
 
 /* the dock is markup the start-up code below looks up by id, so it goes in first */
 attach(Dock, document.getElementById("stackpanel"));
@@ -89,6 +90,7 @@ m30.init_editor_misc();
 m31.init_editor_boot();
 m43.init_pose_wiring();
 m53.init_helpers_wiring();
+m57.init_editor_live();
 
 /* Svelte components that are always on screen */
 attach(JobsDrawer);
@@ -96,6 +98,6 @@ attach(Toasts);
 
 /* Every export is also readable as a global: index.html's inline handlers, the browser console and the
    automated checks address the editor that way. Read-only views of the live bindings. */
-for (const mod of [m0, m1, m2, m3, m4, m5, m6, m7, m8, m9, m10, m11, m12, m13, m14, m15, m16, m17, m18, m19, m20, m21, m22, m23, m24, m25, m26, m27, m28, m29, m30, m31, m32, m33, m34, m35, m36, m37, m38, m39, m40, m41, m42, m43, m44, m45, m46, m47, m48, m49, m50, m51, m52, m53, m54, m55, m56])
+for (const mod of [m0, m1, m2, m3, m4, m5, m6, m7, m8, m9, m10, m11, m12, m13, m14, m15, m16, m17, m18, m19, m20, m21, m22, m23, m24, m25, m26, m27, m28, m29, m30, m31, m32, m33, m34, m35, m36, m37, m38, m39, m40, m41, m42, m43, m44, m45, m46, m47, m48, m49, m50, m51, m52, m53, m54, m55, m56, m57])
   for (const k of Object.keys(mod))        // skips real window members (status, ...); element ids (#layers, #pages) are not own properties
     if (!Object.prototype.hasOwnProperty.call(window, k)) Object.defineProperty(window, k, { get: () => mod[k], configurable: true });

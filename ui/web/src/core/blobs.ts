@@ -59,7 +59,7 @@ export async function uploadBlobs(project: string, doc: unknown): Promise<number
     const b = await getBlob(hash, project);
     if (!b) throw new Error(`missing image data ${hash.slice(0, 8)}…`);
     if (!onServer.has(key)) {
-      const r = await fetch(`/api/project/${encodeURIComponent(project)}/blob/${hash}`, { method: "PUT", body: b });
+      const r = await fetch(`/api/project/${encodeURIComponent(project)}/blob/${hash}`, { method: "PUT", headers: { "X-MangaMaker": "1" }, body: b });
       if (!r.ok) throw new Error(`could not upload image data: ${(await r.json().catch(() => ({}))).error || r.status}`);
       sent++;
     }

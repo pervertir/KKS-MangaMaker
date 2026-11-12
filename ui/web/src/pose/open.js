@@ -14,7 +14,7 @@ import { pdraw, pfit } from "./view.js";
 export async function openPoseStudio(opt = {}) {
   await loadPoseLib();
   if (opt.shot !== undefined || !P.scene) {
-    P.shot = opt.shot || ""; P.panel = opt.panel || null; P.scene = null;
+    P.shot = opt.shot || ""; P.panel = opt.panel || null; P.scene = null; P.liveKey = null;
     if (P.shot) { try { const sc = await api(`/api/pose/scene?name=${encodeURIComponent(P.shot)}`); P.scene = { ...newScene(), ...sc }; } catch { } }
     if (!P.scene) {
       let w = 832, hh = 1216;

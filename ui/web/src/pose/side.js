@@ -1,3 +1,4 @@
+import { saveLiveKey } from "../editor/live.js";
 import { $, clamp, deep, h, post, uid } from "../editor/core.js";
 import { commit } from "../editor/history.js";
 import { thumb } from "../editor/images.js";
@@ -277,6 +278,7 @@ export function downloadPose() {
   const a = h("a", { href: renderPosePNG().toDataURL("image/png"), download: `${P.shot || "pose"}_openpose.png` }); a.click();
 }
 export async function savePoseShot(andRender) {
+  if (P.liveKey) { saveLiveKey(); return; }              // editing a Live Manga keyframe, not a shot
   const vis = P.scene.chars.filter(c => !c.hidden);
   if (!vis.length) return toast("Add a character first", "err");
   let name = P.shot;

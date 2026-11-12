@@ -22,7 +22,8 @@ export const api = async (path, opts = {}) => {
   if (!r.ok || j.error) throw new Error(j.error || r.statusText);
   return j;
 };
-export const post = (path, body, raw) => api(path, { method: "POST", body: raw ? body : JSON.stringify(body || {}) });
+// X-MangaMaker: the server refuses writes without it, so other websites can't drive it (see Handler.allowed)
+export const post = (path, body, raw) => api(path, { method: "POST", headers: { "X-MangaMaker": "1" }, body: raw ? body : JSON.stringify(body || {}) });
 
 /* runs once at start-up, in the original order (see main.js) */
 export function init_editor_core() {
