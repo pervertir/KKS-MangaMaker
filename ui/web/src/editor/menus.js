@@ -15,6 +15,7 @@ import { center, sc, shortcutSheet } from "./tools.js";
 import { fitView, requestView, zoomAt } from "./view.js";
 import { poseForPanel, setMode } from "../pose/open.js";
 import { scriptWizard } from "../wizard/prompt.js";
+import { saveSelectionDialog } from "../assets/dialogs.ts";
 
 /* ================================================================ menus */
 export const MENUS = {
@@ -24,6 +25,7 @@ export const MENUS = {
   Edit: () => [["Undo", undo, sc("Undo"), !S.undo.length], ["Redo", redo, sc("Redo"), !S.redo.length], null,
     ["Cut", act.cut, sc("Cut layer"), !selL()], ["Copy", act.copy, sc("Copy layer"), !selL()], ["Paste", act.paste, sc("Paste layer (works across pages)"), !S.clip],
     ["Duplicate", act.duplicate, sc("Duplicate layer"), !selL()], ["Delete", act.remove, "Del", !selL()], null,
+    ["Save to asset library…", saveSelectionDialog, "", !selL()], null,
     ["Deselect", act.escape, "Esc"], ["Keyboard shortcuts", shortcutSheet, "?"], null, ["Preferences…", preferencesDialog, sc("Preferences")]],
   Layer: () => [["Bring forward", act.layerUp, sc("Bring forward")], ["Send backward", act.layerDown, sc("Send backward")],
     ["Bring to front", act.toFront, sc("Bring to front")], ["Send to back", act.toBack, sc("Send to back")], null,
