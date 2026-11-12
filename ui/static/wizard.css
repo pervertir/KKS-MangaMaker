@@ -1,0 +1,71 @@
+/* Script Wizard: editor, syntax highlighting, prompt tools */
+
+/* Token colours. All of them keep at least 4.5:1 on the editor background (--wz-bg). */
+:root {
+  --wz-bg: #1f1f22;
+  --wz-gutter: #19191b;
+  --wz-desc: #e4e4e7;      /* picture prompt: the plain text of the script */
+  --wz-pun: #9494a0;       /* [ ] , : ( ) */
+  --wz-com: #8f8f9a;       /* # notes */
+  --wz-name: #6cb6ff;      /* cast names and speakers */
+  --wz-big: #ff7b9c;       /* the "!" of a big panel */
+  --wz-key: #c3a6ff;       /* Title / Caption / SFX keywords, moods */
+  --wz-say: #9fdc9a;       /* spoken text */
+  --wz-think: #b9c3ff;
+  --wz-shout: #ffa657;
+  --wz-whisper: #a8b3bd;
+  --wz-caption: #e2cf9c;
+  --wz-sfx: #ff8fb7;
+  --wz-title: #ffd866;
+  --wz-brk: #f5b84b;       /* --- page breaks */
+  --wz-koma: #56d4c0;      /* the 4-koma directive */
+  --wz-num: #8a8a95;       /* line numbers */
+  --wz-gut: 46px;          /* gutter width; the text starts 10px after it */
+}
+
+/* The textarea and the layer under it must lay text out identically: every metric is set here for both,
+   and nothing below may change a glyph's advance (no bold, no italic, no letter-spacing per token). */
+.wized { position: relative; height: 344px; min-height: 120px; max-height: 70vh; resize: vertical; overflow: hidden;
+  background: var(--wz-bg); border: 1px solid var(--line); border-radius: 4px; }
+.wized:focus-within { border-color: var(--accent); }
+.wized::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: var(--wz-gut); background: var(--wz-gutter); border-right: 1px solid var(--line); }
+.wized textarea, .wizhl { box-sizing: border-box; margin: 0; border: 0; border-radius: 0; padding: 8px 10px 8px calc(var(--wz-gut) + 10px);
+  font: 13px/20px ui-monospace, Menlo, Consolas, monospace; letter-spacing: 0; word-spacing: 0; text-indent: 0; text-transform: none; text-align: left;
+  font-variant-ligatures: none; font-kerning: none; tab-size: 4; -moz-tab-size: 4; white-space: pre-wrap; overflow-wrap: break-word; word-break: normal; }
+.wized textarea { position: absolute; inset: 0; width: 100%; height: 100%; resize: none; outline: none; overflow-x: hidden; overflow-y: auto;
+  background: transparent; color: transparent; caret-color: var(--text); -webkit-text-fill-color: transparent; }
+.wized textarea:focus { border: 0; }
+.wized textarea::selection { background: #4c8dff59; color: transparent; }
+.wizhl { position: absolute; left: 0; top: 0; pointer-events: none; user-select: none; color: var(--wz-desc); will-change: transform; }
+.wl { position: relative; min-height: 20px; }
+.wl::before { content: attr(data-g); position: absolute; left: calc(-10px - var(--wz-gut)); top: 0; width: calc(var(--wz-gut) - 8px); text-align: right;
+  font-size: 11px; color: var(--wz-num); white-space: nowrap; }
+.wl.pn::before { color: var(--wz-name); }
+.wl.wn::before { color: var(--warn); }
+
+.wz-desc { color: var(--wz-desc); } .wz-pun { color: var(--wz-pun); } .wz-com { color: var(--wz-com); }
+.wz-name, .wz-who { color: var(--wz-name); } .wz-big { color: var(--wz-big); } .wz-key, .wz-mood { color: var(--wz-key); }
+.wz-say { color: var(--wz-say); } .wz-think { color: var(--wz-think); } .wz-shout { color: var(--wz-shout); } .wz-whisper { color: var(--wz-whisper); }
+.wz-mood.wz-think { color: var(--wz-think); } .wz-mood.wz-shout { color: var(--wz-shout); } .wz-mood.wz-whisper { color: var(--wz-whisper); }
+.wz-caption { color: var(--wz-caption); } .wz-sfx { color: var(--wz-sfx); } .wz-title { color: var(--wz-title); }
+.wz-brk { color: var(--wz-brk); } .wz-koma { color: var(--wz-koma); }
+.wz-warn { text-decoration: underline wavy var(--warn); text-decoration-skip-ink: none; text-underline-offset: 3px; }
+
+/* warnings under the editor: one line each, click to jump */
+.wizwarn { display: flex; flex-direction: column; max-height: 76px; overflow-y: auto; margin-top: 6px; border: 1px solid var(--line); border-radius: 4px; }
+.wizwarn[hidden] { display: none; }
+.wizwarn button { text-align: left; padding: 3px 8px; border-radius: 0; font-size: 11.5px; line-height: 1.45; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: none; }
+.wizwarn button b { color: var(--warn); font-weight: 600; margin-right: 4px; }
+.wizlegend { margin-top: 6px; font: 11px/1.6 ui-monospace, Menlo, Consolas, monospace; white-space: pre-wrap; color: var(--wz-com); }
+
+/* "Copy LLM prompt": a dialog above the wizard (the modal keeps the script underneath) */
+#wizllm { position: fixed; inset: 0; z-index: 45; background: #0009; display: flex; align-items: center; justify-content: center; }
+.wizllmbox { background: #262629; border: 1px solid #47474e; border-radius: 10px; width: min(600px, 94vw); max-height: 90vh; display: flex; flex-direction: column; box-shadow: 0 20px 60px #000c; }
+.wizllmbox textarea { width: 100%; min-height: 96px; resize: vertical; font: 12px/1.5 ui-monospace, Menlo, Consolas, monospace; margin-bottom: 10px; }
+.wizllmbox .row label { flex: none; width: 96px; }
+.wizllmbox .row input:not([type=number]), .wizllmbox .row select { flex: 1; }
+.wizllmbox .mfoot { align-items: center; }
+.wizllmbox textarea[hidden] { display: none; }
+.wizllmbox .form + textarea { margin: 6px 0 0; }
+.wizcount { margin: 0; white-space: nowrap; }
+.wizprev { overflow-wrap: anywhere; }                     /* a long unbroken word in a prompt must not widen the dialog */

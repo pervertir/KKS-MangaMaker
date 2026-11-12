@@ -24,6 +24,15 @@ MODELS = [
     ("https://huggingface.co/Comfy-Org/sam3.1/resolve/main/checkpoints/sam3.1_multiplex_fp16.safetensors",
      "checkpoints", "sam3.1_multiplex_fp16.safetensors"),
 ]
+# Pose tab › From image: SDPose-Wholebody + RT-DETR person boxes (ComfyUI core nodes SDPoseKeypointExtractor and
+# RTDETR_detect). Optional: without them mp/posedetect.py falls back to DWPose. The Human-Art fallback
+# (rtmlib + two ONNX files + manga_pose_nodes.py) needs a shell, so only remote/setup_pod.sh installs it.
+POSE_MODELS = [
+    ("https://huggingface.co/Comfy-Org/SDPose/resolve/main/checkpoints/sdpose_wholebody_fp16.safetensors",
+     "checkpoints", "sdpose_wholebody_fp16.safetensors"),
+    ("https://huggingface.co/Comfy-Org/SDPose/resolve/main/diffusion_models/rt_detr_v4-x-hgnet_fp16.safetensors",
+     "diffusion_models", "rt_detr_v4-x-hgnet_fp16.safetensors"),
+]
 NODE_PACKS = [{"id": "ComfyUI_IPAdapter_plus", "git": "https://github.com/cubiq/ComfyUI_IPAdapter_plus"}]  # Manager list key
 
 
@@ -54,11 +63,31 @@ class PodSetup:
         info = requests.get(self.url + "/object_info", timeout=120).json()
         node, field = {"checkpoints": ("CheckpointLoaderSimple", "ckpt_name"), "controlnet": ("ControlNetLoader", "control_net_name"),
                        "ipadapter": ("IPAdapterModelLoader", "ipadapter_file"), "clip_vision": ("CLIPVisionLoader", "clip_name"),
-                       "loras": ("LoraLoader", "lora_name")}[save_path]
+                       "loras": ("LoraLoader", "lora_name"), "diffusion_models": ("UNETLoader", "unet_name")}[save_path]
         try:
             return filename in info[node]["input"]["required"][field][0]
-        except KeyError:
+        except (KeyError, IndexError, TypeError):
             return False
+
+    def install_pose_models(self) -> None:
+        """The pose detector's models; anything that fails is logged and left (pose detection then falls back)."""
+        try:
+            folders = self.folder_paths()
+            if "SDPoseKeypointExtractor" not in requests.get(self.url + "/object_info", timeout=120).json():
+                self.log("[pod] this ComfyUI has no SDPose nodes (update ComfyUI); fetching its models anyway")
+            ids = {}
+            for url, save_path, filename in POSE_MODELS:
+                if self.have_model(save_path, filename):
+                    self.log(f"[pod] have {filename}")
+                elif save_path not in folders:
+                    self.log(f"[pod] no models/{save_path} folder on this pod; skipped {filename}")
+                else:
+                    ids[filename] = self.start_download(url, save_path, filename)
+                    self.log(f"[pod] downloading {filename} -> models/{save_path}")
+            if ids:
+                self.wait_downloads(ids)
+        except (PodSetupError, requests.RequestException, ValueError) as e:
+            self.log(f"[pod] pose detector models not installed ({e}); Pose from image will use DWPose")
 
     def start_download(self, url: str, save_path: str, filename: str) -> str:
         r = self._post("/server_download/start", {"url": url, "save_path": save_path, "filename": filename})
@@ -198,4 +227,5 @@ class PodSetup:
             missing.append("ComfyUI_IPAdapter_plus (nodes)")
         if missing:
             raise PodSetupError("still missing after setup: " + ", ".join(missing))
+        self.install_pose_models()
         self.log("[pod] setup complete: nodes and models present")

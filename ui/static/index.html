@@ -8,15 +8,16 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Bangers&family=Comic+Neue:wght@400;700&family=Anton&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/app.css">
+<link rel="stylesheet" href="/static/wizard.css">
 </head>
 <body>
 <header id="menubar">
-  <div class="brand">漫 MangaMaker</div>
+  <div class="brand" title="MangaMaker"><span class="mark">漫</span><span class="word"> MangaMaker</span></div>
   <nav id="menus"></nav>
   <div id="modetabs"><button data-mode="page" class="on" title="Page editor">Page</button><button data-mode="pose" title="Pose studio: OpenPose figures for renders">Pose</button></div>
-  <button id="wizbtn" class="primary" title="Script Wizard: write a scene as lines, get pages, panels, bubbles and shots (⌘⇧K)" onclick="setMode('page'); scriptWizard()">✎ Script Wizard</button>
   <div class="spacer"></div>
   <div id="docname" title="Project"></div>
+  <button id="wizbtn" class="primary" title="Script Wizard: write a scene as lines, get pages, panels, bubbles and shots (⌘⇧K)" onclick="setMode('page'); scriptWizard()">✎ Script Wizard</button>
   <button id="podpill" class="pill" title="RunPod ComfyUI">pod …</button>
 </header>
 
@@ -24,6 +25,17 @@
 
 <main id="workspace">
   <aside id="toolbar"></aside>
+
+  <aside id="pagenav">
+    <div class="dockhead">
+      <span id="pagecount">Pages</span>
+      <span class="headbtns">
+        <button id="ovbtn" title="Whole-book overview (Tab)">▦</button>
+        <button id="addpage" title="Add page after this one">＋</button>
+      </span>
+    </div>
+    <div id="pages"></div>
+  </aside>
 
   <section id="center">
     <div id="stage">
@@ -44,37 +56,38 @@
     </div>
   </section>
 
-  <aside id="pagenav">
-    <div class="dockhead">
-      <span id="pagecount">Pages</span>
-      <span class="headbtns">
-        <button id="ovbtn" title="Whole-book overview (Tab)">▦</button>
-        <button id="addpage" title="Add page after this one">＋</button>
-      </span>
-    </div>
-    <div id="pages"></div>
-  </aside>
-
   <aside id="dock">
+    <div id="dockgrip" title="Drag to resize the dock (double-click resets)"></div>
     <div class="dockpanel" id="propspanel">
-      <div class="dockhead"><span id="propstitle">Page</span></div>
+      <div class="dockhead" title="Click to fold Properties away"><span id="propstitle">Page</span></div>
       <div id="props" class="dockbody"></div>
     </div>
-    <div class="dockpanel" id="layerspanel">
-      <div class="dockhead">Layers
-        <span class="headbtns">
+    <div id="docksplit" title="Drag to give Properties more or less room (double-click resets)"></div>
+    <div class="dockpanel grow" id="stackpanel">
+      <div class="dockhead tabs" id="docktabs" role="tablist">
+        <button role="tab" data-tab="layers" title="Lettering, tones and images on this page, front to back">Layers <span class="cnt" id="cnt-layers"></span></button>
+        <button role="tab" data-tab="panels" title="This page's panels in reading order, with their shots and renders">Panels <span class="cnt" id="cnt-panels"></span></button>
+        <button role="tab" data-tab="library" title="Shots, bubbles, layouts and artwork to put on the page">Library</button>
+      </div>
+      <div class="tabpane" id="pane-layers" role="tabpanel">
+        <div id="layers" class="dockbody"></div>
+        <div class="panefoot">
           <button data-act="layerUp" title="Bring forward ( ] )">▲</button>
           <button data-act="layerDown" title="Send backward ( [ )">▼</button>
           <button data-act="duplicate" title="Duplicate (Ctrl+D)">⧉</button>
-          <button id="laydel" title="Delete the selected layer (Delete)"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>
-        </span>
+          <span class="spacer"></span>
+          <button id="laydel" title="Delete the selected layer (Delete)"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>
+        </div>
       </div>
-      <div id="layers" class="dockbody"></div>
-    </div>
-    <div class="dockpanel grow" id="librarypanel">
-      <div class="dockhead tabs" id="libtabs"></div>
-      <div id="libtools"></div>
-      <div id="library" class="dockbody"></div>
+      <div class="tabpane" id="pane-panels" role="tabpanel" hidden>
+        <div id="paneltools"></div>
+        <div id="panels" class="dockbody"></div>
+      </div>
+      <div class="tabpane" id="pane-library" role="tabpanel" hidden>
+        <div class="chips" id="libtabs"></div>
+        <div id="libtools"></div>
+        <div id="library" class="dockbody"></div>
+      </div>
     </div>
   </aside>
 </main>
@@ -88,8 +101,9 @@
   <div id="pscenter">
     <div class="psbar">
       <button id="psback" title="Back to the page">‹ Page</button>
-      <button id="psnew">New scene</button><button id="psopen">Open shot pose…</button><button id="psclear">Clear</button><button id="psfromimg" title="Find the people in a picture (pose detection on the pod) and add them as figures">From image…</button><input id="psimgfile" type="file" accept="image/png,image/jpeg,image/webp" hidden>
+      <button id="psnew">New scene</button><button id="psopen">Open shot pose…</button><button id="psfromimg" title="Find the people in a picture (pose detection on the pod) and add them as figures">From image…</button><input id="psimgfile" type="file" accept="image/png,image/jpeg,image/webp" hidden>
       <span class="spacer"></span><span id="psinfo" class="hint"></span>
+      <button id="psclear" class="ghost danger" title="Remove every character from this scene">Clear</button>
     </div>
     <div id="psstage"><canvas id="pscanvas"></canvas></div>
   </div>
@@ -97,10 +111,11 @@
 </section>
 
 <footer id="statusbar">
-  <span id="st-zoom">100%</span>
   <span id="st-pos"></span>
   <span id="st-msg"></span>
   <div class="spacer"></div>
+  <button id="pagesbtn" class="ghost" title="Show / hide the page strip (Tab opens the whole book)">Pages</button>
+  <span class="zoomer"><button id="zoomout" class="ghost" title="Zoom out">−</button><button id="st-zoom" class="ghost" title="Zoom: fit, actual pixels…">100%</button><button id="zoomin" class="ghost" title="Zoom in">+</button></span>
   <button id="jobsbtn" class="ghost">Jobs</button>
 </footer>
 

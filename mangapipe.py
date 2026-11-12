@@ -160,8 +160,8 @@ def pod_cmd(cfg: Config, action: str, cmdline: str = "") -> int:
         if pod.info():
             log(f"pod '{pod.name}' already exists ({pod.id}, {pod.status()})")
         else:
-            info = pod.create()
-            log(f"created {info.get('id')} ({info.get('machine', {}).get('gpuDisplayName', '')})")
+            info = pod.create(log)
+            log(f"created {info.get('id')} ({info.get('gpu', '')})")
         log("next: mangapipe pod setup   (installs nodes + models, ~12 GB, first time only)")
         return 0
     if action == "status":
@@ -185,7 +185,7 @@ def pod_cmd(cfg: Config, action: str, cmdline: str = "") -> int:
             ip = None
         if ip:
             if action == "setup":
-                log("[pod] ssh: installing ComfyUI_IPAdapter_plus and the models (skips what is already on the volume)")
+                log("[pod] ssh: installing the custom nodes, the render models and the pose detectors (skips what is already there)")
                 log(pod.ssh_script((here / "setup_pod.sh").read_text(), env={"COMFY_DIR": pod.comfy_dir}, timeout=3600))
             log("[pod] ssh: restarting ComfyUI")
             log(pod.ssh_script((here / "restart_comfy.sh").read_text(), env={"COMFY_DIR": pod.comfy_dir}, timeout=120))
@@ -224,7 +224,7 @@ def pod_cmd(cfg: Config, action: str, cmdline: str = "") -> int:
                 raise
             log(f"[pod] {pod.id} cannot start (its host has no free GPU); replacing it with a new pod")
             pod.remove()
-            r = pod.create()
+            r = pod.create(log)
             log(f"[pod] created {r.get('id', '')}; next: mangapipe pod setup (reinstalls nodes and models)")
             return 0
     if action == "stop":

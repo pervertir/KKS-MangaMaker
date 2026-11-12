@@ -7,6 +7,9 @@ runpod:
   image: runpod/comfyui:1.3.3-comfyuiv0.30.0-cuda12.8   # the official "ComfyUI - CUDA 12.8" template image
   container_disk_gb: 60
   gpu: "NVIDIA GeForce RTX 4090"
+  # when that GPU has no stock, `pod create` (and `pod start` replacing a stuck pod) tries these in order;
+  # omit the key to use the built-in list of 24 GB+ cards (5090, PRO 4500, L40S, 6000 Ada, A6000, A40, 3090, A5000, L4)
+  # gpu_fallbacks: ["NVIDIA GeForce RTX 5090", "NVIDIA RTX A6000"]
   data_center: EU-RO-1
   network_volume_id:                 # "manga-comfy" (mc60e9gkm5) was deleted 2026-11-03; models live on the global volume (/workspace-global)
   comfy_dir: /workspace/runpod-slim/ComfyUI
