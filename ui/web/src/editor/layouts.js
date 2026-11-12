@@ -5,6 +5,7 @@ import { closeModal, modal } from "./modal.js";
 import { renderPages } from "./pages.js";
 import { H, S, W, layers, normalize, page } from "./state.js";
 import { panelOrder, requestDraw } from "./view.js";
+import { SHAPED_LAYOUTS, layoutEntry, layoutThumb, shapedLayout } from "./frames.js";
 
 /* ================================================================ layouts */
 export function gridRects(rows, heights, margin = 60, gutter = 30, line = 4) {
@@ -23,9 +24,12 @@ export function applyLayout(rects, label) {
   const ls = layers(), old = panelOrder(ls);
   const keep = ls.filter(l => l.type !== "panel");
   const sx = W() / 1800, sy = H() / 2700;
-  const fresh = rects.map(([x, y, w, hh]) => normalize({ pages: [{ layers: [{ type: "panel", x: x * sx, y: y * sy, w: w * sx, h: hh * sy, shot: "", image: null }] }] }).pages[0].layers[0]);
+  const fresh = rects.map(layoutEntry).map(e => normalize({ pages: [{ layers: [{ ...deep(e), type: "panel", x: e.x * sx, y: e.y * sy, w: e.w * sx, h: e.h * sy, shot: "", image: null }] }] }).pages[0].layers[0]);
   const order = panelOrder(fresh);
-  order.forEach((p, i) => { const o = old[i]; if (o) { p.image = o.image; p.shot = o.shot; p.border = o.border; p.borderColor = o.borderColor; } });
+  order.forEach((p, i) => {
+    const o = old[i], e = layoutEntry(rects[fresh.indexOf(p)]);
+    if (o) { p.image = o.image; p.shot = o.shot; if (e.border == null) p.border = o.border; p.borderColor = o.borderColor; }
+  });
   page().layers = [...fresh, ...keep];
   S.sel = null; commit("Layout " + label); requestDraw(); renderPages();
 }
@@ -53,6 +57,15 @@ export function presetTiles(onPick) {
   }
   return t;
 }
+/* slanted gutters, insets, circles, wavy and jagged frames, bleeds (frames.js SHAPED_LAYOUTS) */
+export function shapedTiles(onPick) {
+  const t = h("div", { class: "tiles" });
+  SHAPED_LAYOUTS.forEach(([name], i) => {
+    const ps = shapedLayout(i, W(), H());
+    t.append(h("div", { class: "tile page", title: name, onclick: () => onPick(shapedLayout(i, W(), H()), name) }, layoutThumb(ps, W(), H()), h("div", { class: "cap" }, name)));
+  });
+  return t;
+}
 export function layoutDialog() {
   const box = modal("Page layout", "");
   const grid = h("div", { class: "layoutgrid" });
@@ -74,6 +87,7 @@ export function layoutDialog() {
       } }, "Apply grid")),
     h("p", { class: "hint" }, "Applying a layout replaces this page's panels. Renders already placed move into the new panels in reading order; bubbles and text stay."),
     h("div", { class: "section" }, "Built-in"), presetTiles((r, n) => { applyLayout(r, n); closeModal(); }),
+    h("div", { class: "section" }, "Shaped frames"), shapedTiles((r, n) => { applyLayout(r, n); closeModal(); }),
     S.cat.layouts.length ? h("div", { class: "section" }, "Template pack") : null,
     grid);
 }

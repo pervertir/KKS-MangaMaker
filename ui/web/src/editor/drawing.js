@@ -1,9 +1,11 @@
 import { clamp } from "./core.js";
-import { THEMES, themeOf, themed } from "./creation.js";
+import { THEMES, themeOf, themed, paperOf } from "./creation.js";
 import { imgFor } from "./images.js";
 import { drawFlipped, drawVBubble, lum, speedCanvas, toneCanvas } from "./manga-tools.js";
-import { S, bubbleMeta } from "./state.js";
+import { S, bubbleMeta, page } from "./state.js";
 import { drawText } from "./text.js";
+import { clipToPanel, strokePanel } from "./frames.js";
+
 
 /* ================================================================ drawing */
 export function imageRect(l, im) {
@@ -35,14 +37,16 @@ export function drawLayer(ctx, l, opt = {}) {
   const maxFont = S.doc.maxFont || 56;
   switch (l.type) {
     case "panel": {
+      if (l.gap > 0) strokePanel(ctx, { ...l, border: 0, gap: l.gap + Math.max(0, l.border) }, opt.paper || paperOf(page(), opt));   // the gap first, so a neighbour's art under an inset is cut back
+      ctx.save(); clipToPanel(ctx, l);
       ctx.fillStyle = l.fill || "#fff";
       ctx.fillRect(l.x, l.y, l.w, l.h);
       const r0 = l.image ? imageRect(l) : null;
       const im = l.image ? imgFor(l.image.ref, r0.w * (opt.rs || 1)) : null;
       if (l.image && im) {
         const r = r0;
-        if (opt.ghost) { ctx.save(); ctx.globalAlpha = 0.3; drawFlipped(ctx, im, r, l.image.flip); ctx.restore(); }
-        ctx.save(); ctx.beginPath(); ctx.rect(l.x, l.y, l.w, l.h); ctx.clip();
+        if (opt.ghost) { ctx.restore(); ctx.save(); ctx.globalAlpha = 0.3; drawFlipped(ctx, im, r, l.image.flip); ctx.restore(); ctx.save(); clipToPanel(ctx, l); }
+        ctx.save();
         if (l.image.gray) ctx.filter = "grayscale(1) contrast(1.18)";
         drawFlipped(ctx, im, r, l.image.flip);
         ctx.restore();
@@ -55,10 +59,8 @@ export function drawLayer(ctx, l, opt = {}) {
         ctx.textAlign = "center"; ctx.textBaseline = "middle";
         ctx.fillText(l.shot ? `${l.shot} (no render)` : "drop a render here", l.x + l.w / 2, l.y + l.h / 2);
       }
-      if (l.border > 0) {
-        ctx.strokeStyle = l.borderColor || "#000"; ctx.lineWidth = l.border;
-        ctx.strokeRect(l.x - l.border / 2, l.y - l.border / 2, l.w + l.border, l.h + l.border);
-      }
+      ctx.restore();
+      strokePanel(ctx, { ...l, gap: 0 }, null);
       break;
     }
     case "bubble": {
@@ -103,7 +105,7 @@ export function drawLayer(ctx, l, opt = {}) {
     case "tone":
     case "speed": {
       const clip = l.clip && S.doc.pages.flatMap(p => p.layers).find(q => q.id === l.clip);
-      if (clip) { ctx.beginPath(); ctx.rect(clip.x, clip.y, clip.w, clip.h); ctx.clip(); }
+      if (clip) clipToPanel(ctx, clip);
       const art = l.type === "tone" ? toneCanvas(l) : speedCanvas(l);
       withBox(ctx, l, () => ctx.drawImage(art, -l.w / 2, -l.h / 2, l.w, l.h));
       break;

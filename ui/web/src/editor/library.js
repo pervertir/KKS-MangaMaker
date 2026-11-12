@@ -4,7 +4,7 @@ import { commit } from "./history.js";
 import { hitLayer } from "./hit.js";
 import { imgW, thumb } from "./images.js";
 import { renderShot } from "./jobs.js";
-import { applyLayout, presetTiles } from "./layouts.js";
+import { applyLayout, presetTiles, shapedTiles } from "./layouts.js";
 import { refreshPanels, status, toast } from "./misc.js";
 import { renderOptions } from "./options.js";
 import { loadShots, shotDialog } from "./shots.js";
@@ -60,7 +60,8 @@ export function renderLibrary() {
   }
   if (S.libTab === "layouts") {
     lib.append(h("div", { class: "hint" }, "Click to apply to this page (renders already placed carry over in reading order)."),
-      h("div", { class: "section" }, "Built-in"), presetTiles((r, n) => applyLayout(r, n)));
+      h("div", { class: "section" }, "Built-in"), presetTiles((r, n) => applyLayout(r, n)),
+      h("div", { class: "section" }, "Shaped frames"), shapedTiles((r, n) => applyLayout(r, n)));
     if (!S.cat.layouts.length) return;
     lib.append(h("div", { class: "section" }, "Template pack"));
     const t = h("div", { class: "tiles" });

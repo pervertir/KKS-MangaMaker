@@ -12,9 +12,11 @@ import { refreshPanels } from "./misc.js";
 import { shotDialog } from "./shots.js";
 import { S, bubbleMeta, layers, page, selL } from "./state.js";
 import { FONTS, LAZY_FONTS, loadFontCss } from "./text.js";
-import { TONE_PRESETS } from "./tools.js";
-import { panelOrder, requestDraw } from "./view.js";
+import { TONE_PRESETS, keyLabel, sc } from "./tools.js";
+import { panelOrder, requestDraw, isPolyPanel } from "./view.js";
 import { poseForPanel } from "../pose/open.js";
+import { FRAME_EDGES, FRAME_SHAPES, frameShapeKey, tracePanel } from "./frames.js";
+
 
 /* ================================================================ panels: properties */
 export function num(label, l, key, opt = {}) {
@@ -155,11 +157,32 @@ export function panelProps(P, l) {
         h("button", { onclick: () => enterAdjust(l) }, "Reposition (Enter)"),
         h("button", { onclick: () => { l.image = null; commit("Image removed"); requestDraw(); refreshPanels(); } }, "Remove image")));
   }
+  const cur = frameShapeKey(l);
   P.append(h("div", { class: "section" }, "Frame"),
+    h("div", { class: "shapes" }, ...FRAME_SHAPES.map(([k, t]) => h("button", { class: "shapebtn" + (cur === k ? " on" : ""), title: t, onclick: () => act.frame(k) }, frameIcon(k)))),
+    select("Edge", FRAME_EDGES, () => l.edge || "solid", v => { l.edge = v; if (v === "jagged" || v === "wavy") l.seed ??= 1; }),
+    ...(l.shape === "rect" ? [slider("Corners", () => l.radius || 0, v => l.radius = v, 0, Math.round(Math.min(l.w, l.h) / 2), 1, v => Math.round(v) + " px")] : []),
+    h("div", { class: "row" }, h("label", {}, "Gap"), h("input", { type: "number", min: 0, value: l.gap || 0, style: "width:64px", title: "Paper-coloured band outside the border, for an inset laid over another panel",
+      onchange: e => { l.gap = Math.max(0, +e.target.value); commit(); requestDraw(); } }), h("span", { class: "hint" }, "px around an inset")),
     h("div", { class: "row" }, h("label", {}, "Border"), h("input", { type: "number", min: 0, value: l.border, style: "width:64px", onchange: e => { l.border = +e.target.value; commit(); requestDraw(); } }),
       h("input", { type: "color", value: l.borderColor, oninput: e => { l.borderColor = e.target.value; requestDraw(); }, onchange: () => commit() }),
       h("span", { class: "hint" }, "fill"), h("input", { type: "color", value: l.fill, oninput: e => { l.fill = e.target.value; requestDraw(); }, onchange: () => commit() })),
-    h("div", { class: "btnrow" }, h("button", { onclick: () => act.split("v") }, "Split ⇆"), h("button", { onclick: () => act.split("h") }, "Split ⇅")));
+    h("div", { class: "btnrow" }, h("button", { onclick: () => act.split("v") }, "Split ⇆"), h("button", { onclick: () => act.split("h") }, "Split ⇅"),
+      h("button", { title: "Split with a slanted gutter, side by side (" + sc("Slanted split side by side") + ")", onclick: () => act.split("v", 12) }, "Slant ⇆"),
+      h("button", { title: "Split with a slanted gutter, top / bottom (" + sc("Slanted split top / bottom") + ")", onclick: () => act.split("h", -7) }, "Slant ⇅")),
+    h("div", { class: "btnrow" },
+      h("button", { title: "Make every corner draggable (drag the dots between corners to add one)", disabled: l.shape === "ellipse", onclick: act.editCorners }, isPolyPanel(l) ? "Corners: drag on page" : "Edit corners"),
+      h("button", { title: "Run the panel off the page edges it is near (a bleed panel)", onclick: act.bleed }, "Bleed"),
+      h("button", { title: "No border (a borderless panel)", onclick: () => { l.border = 0; commit("Borderless"); requestDraw(); refreshProps(); } }, "Borderless")),
+    ...(isPolyPanel(l) ? [h("p", { class: "hint" }, (l.locked ? `Unlock the panel (${keyLabel("mod+l")}), then drag` : "Drag") + " a corner, drag a small dot to add a corner, ⌥-click a corner to remove it. Shift keeps it level, Ctrl skips snapping.")] : []));
+}
+/* a tiny picture of a frame shape for the Properties buttons */
+export function frameIcon(key) {
+  const c = h("canvas", { width: 44, height: 44 }), g = c.getContext("2d"), s = FRAME_SHAPES.find(f => f[0] === key)[2];
+  g.fillStyle = "#e9e9ee"; g.strokeStyle = "#111"; g.lineWidth = 3;
+  const l = { x: 8, y: 6, w: 28, h: 32, ...s, radius: s.radius ? 8 : 0 };
+  g.beginPath(); tracePanel(g, l); g.fill(); g.stroke();
+  return c;
 }
 export function pageProps(P) {
   const pg = page();

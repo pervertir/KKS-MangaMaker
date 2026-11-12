@@ -4,6 +4,7 @@ import { drawLayer } from "./drawing.js";
 import { H, S, W } from "./state.js";
 import { drawText } from "./text.js";
 
+
 /* ================================================================ manga tools */
 export function rng(seed) { // mulberry32: same seed, same lines
   let a = (seed * 2654435761) >>> 0;
@@ -176,7 +177,8 @@ export function lum(hex) {             // 0 (black) .. 1 (white)
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 export function drawPage(ctx, pg, opt = {}) {
-  ctx.fillStyle = paperOf(pg, opt);
+  const paper = paperOf(pg, opt);
+  ctx.fillStyle = paper;
   ctx.fillRect(0, 0, W(), H());
-  for (const l of pg.layers) drawLayer(ctx, l, { ...opt, ghost: opt.ghostId === l.id });
+  for (const l of pg.layers) drawLayer(ctx, l, { ...opt, paper, ghost: opt.ghostId === l.id });
 }
