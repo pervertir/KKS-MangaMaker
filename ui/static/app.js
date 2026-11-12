@@ -56,7 +56,8 @@ function normalize(doc) {
   for (const p of doc.pages) {
     p.id ||= uid(); p.bg ||= "#ffffff"; p.layers ||= [];
     for (const l of p.layers) {
-      l.id ||= uid(); l.visible ??= true; l.locked ??= false; l.opacity ??= 1; l.blend ||= "source-over"; l.rotate ||= 0;
+      // panels are the page's skeleton: locked unless unlocked on purpose, so lettering work cannot nudge a frame
+      l.id ||= uid(); l.visible ??= true; l.locked ??= l.type === "panel"; l.opacity ??= 1; l.blend ||= "source-over"; l.rotate ||= 0;
       if (l.type === "panel") { l.border ??= 6; l.borderColor ||= "#000000"; l.fill ||= "#ffffff"; }
       if (l.type === "text") { l.font ||= l.sfx ? "Bangers" : "MMComic"; l.stroke ||= "#000000"; l.strokeWidth ??= l.sfx ? 10 : 0; l.align ||= "center"; }
       if (l.type === "caption") { l.fill ||= "#ffffff"; l.borderW ??= 4; }
@@ -772,6 +773,7 @@ cv.addEventListener("pointerdown", e => {
     S.sel = hit ? hit.id : null;
     refreshPanels();
     if (hit && !hit.locked) S.drag = { layer: hit, l0: deep(hit), p0: p, move: true, dup: e.altKey && !e.metaKey, kids: clipKids(hit) };
+    else if (hit && hit.type === "panel") status(`Panel locked: ${keyLabel("mod+l")} unlocks it to move or resize (renders, Pose… and splitting still work)`);
     requestView(); return;
   }
   if (DRAG_TOOLS[S.tool]) { S.drag = { creating: { x: p.x, y: p.y, w: 0, h: 0 }, p0: p, tool: S.tool }; requestDraw(); }
@@ -1333,6 +1335,7 @@ const act = {
     commit("Flipped"); requestDraw();
   },
   resetRotation() { const l = selL(); if (!l || !l.rotate) return; l.rotate = 0; commit("Rotation reset"); requestDraw(); },
+  lockPanels(on) { const ps = layers().filter(l => l.type === "panel"); ps.forEach(l => l.locked = on); commit(`${ps.length} panel${ps.length === 1 ? "" : "s"} ${on ? "locked" : "unlocked"}`); refreshPanels(); requestView(); },
   toggleLock() { const l = selL(); if (!l) return; l.locked = !l.locked; commit(l.locked ? "Locked" : "Unlocked"); requestView(); },
   toggleHide() { const l = selL(); if (!l) return; l.visible = !l.visible; commit(l.visible ? "Shown" : "Hidden"); requestDraw(); },
   renderSel() { const l = selL(); if (l?.type === "panel" && l.shot) renderShot(l.shot); else toast("Select a panel that has a shot"); },
@@ -2065,7 +2068,7 @@ const MENUS = {
     ["Bring to front", act.toFront, sc("Bring to front")], ["Send to back", act.toBack, sc("Send to back")], null,
     ["Select layer above", () => act.selectStep(1), sc("Select layer above")], ["Select layer below", () => act.selectStep(-1), sc("Select layer below")], null,
     ["Flip", act.flip, sc("Flip (bubble tail, image, panel render)"), !selL()], ["Reset rotation", act.resetRotation, sc("Reset rotation"), !selL()?.rotate],
-    ["Lock / unlock", act.toggleLock, sc("Lock / unlock"), !selL()], ["Hide / show", act.toggleHide, sc("Hide / show"), !selL()], null,
+    ["Lock / unlock", act.toggleLock, sc("Lock / unlock"), !selL()], ["Lock all panels", () => act.lockPanels(true)], ["Unlock all panels", () => act.lockPanels(false)], ["Hide / show", act.toggleHide, sc("Hide / show"), !selL()], null,
     ["Split panel ⇆", () => act.split("v"), sc("Split panel side by side"), selL()?.type !== "panel"], ["Split panel ⇅", () => act.split("h"), sc("Split panel top / bottom"), selL()?.type !== "panel"],
     ["Reposition render", act.enter, "↵", !(selL()?.image)], ["Render shot on pod", act.renderSel, sc("Render the panel's shot on the pod"), !selL()?.shot]],
   Page: () => [["Whole-book overview", () => toggleOverview(true), sc("Whole-book overview")], ["Next page", () => gotoPage(S.page + 1), sc("Next page")],
