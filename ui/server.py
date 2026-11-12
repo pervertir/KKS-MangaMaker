@@ -44,6 +44,7 @@ CACHE.mkdir(parents=True, exist_ok=True)
 SHOTS = ROOT / "shots"
 PROJECTS = ROOT / "pages"
 UPLOADS = ROOT / "assets" / "uploads"
+MODELS3D = ROOT / "assets" / "scenes3d"
 PAGE_W, PAGE_H = 1800, 2700
 ASSET_DIRS = {
     "decor": "Decorative Elements/Decorative-Elements-Images",
@@ -274,7 +275,7 @@ def save_pose_shot(body: dict) -> dict:
     scene) and the sidecar's characters/prompt, so `run` renders it with no Studio capture at all."""
     import base64
     d = shot_dir(body["name"], must_exist=False)
-    chars = body.get("characters") or [{"name": "", "series": ""}]
+    chars = body.get("characters") or ([] if body.get("background") else [{"name": "", "series": ""}])
     side = next((d / n for n in SIDECAR_NAMES if (d / n).exists()), None)
     if side is None:
         side = write_example(d, str(chars[0]["name"]).strip(), str(chars[0].get("series", "")).strip())
@@ -309,8 +310,20 @@ def save_pose_shot(body: dict) -> dict:
     apply_reference(d, chars)
     png = body["png"].split(",", 1)[-1]
     Image.open(io.BytesIO(base64.b64decode(png))).convert("RGB").save(d / "pose.png")
+    old = d / "pose_scene.json"
+    had3d = old.exists() and bool(json.loads(old.read_text(encoding="utf-8") or "{}").get("bg3d"))
+    for key in ("depth", "lines"):      # the 3D background's passes, same camera as the pose
+        if body.get(key):
+            Image.open(io.BytesIO(base64.b64decode(body[key].split(",", 1)[-1]))).convert("L").save(d / f"{key}.png")
+        elif had3d and (d / f"{key}.png").exists():
+            (d / f"{key}.png").unlink()
     (d / "pose_scene.json").write_text(json.dumps(body.get("scene") or {}, indent=1), encoding="utf-8")
     return {"ok": True, "pose": mp_ref(d / "pose.png")}
+
+
+def models3d() -> list[dict]:
+    MODELS3D.mkdir(parents=True, exist_ok=True)
+    return [{"ref": mp_ref(p), "name": p.stem} for p in sorted(MODELS3D.glob("*.glb"))]
 
 
 def apply_reference(d: Path, chars: list[dict]) -> None:
@@ -605,6 +618,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self.file(ROOT / "docs" / "SCRIPT_WIZARD.md", "text/markdown; charset=utf-8")
             if u.path == "/api/cast":
                 return self.json({"cast": json.loads(CAST.read_text(encoding="utf-8")) if CAST.exists() else []})
+            if u.path == "/model":
+                p = resolve_ref(q["ref"])
+                if p.suffix.lower() != ".glb":
+                    return self.json({"error": "not a model"}, 400)
+                return self.send(200, p.read_bytes(), "model/gltf-binary", cache=True)
+            if u.path == "/api/scene3d/models":
+                return self.json(models3d())
             if u.path == "/api/pose/scene":
                 p = shot_dir(q.get("name", "")) / "pose_scene.json"
                 return self.json(json.loads(p.read_text()) if p.exists() else {"error": "no scene"}, 200 if p.exists() else 404)
@@ -862,6 +882,22 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json(detect_poses(q.get("name", "image.png"), self.body()))
             if u.path == "/api/pose/shot":
                 return self.json(save_pose_shot(self.jbody()))
+            if u.path == "/api/scene3d/upload":
+                fname = Path(q.get("name", "scene.glb")).name
+                if Path(fname).suffix.lower() != ".glb":
+                    return self.json({"error": "glTF binary (.glb) only"}, 400)
+                data = self.body()
+                if data[:4] != b"glTF":
+                    return self.json({"error": "not a glTF binary file"}, 400)
+                MODELS3D.mkdir(parents=True, exist_ok=True)
+                stem = re.sub(r"[^A-Za-z0-9_\-]", "_", Path(fname).stem)[:60] or "scene"
+                dest = MODELS3D / f"{stem}.glb"
+                k = 1
+                while dest.exists() and dest.read_bytes() != data:
+                    dest = MODELS3D / f"{stem}_{k}.glb"
+                    k += 1
+                dest.write_bytes(data)
+                return self.json({"ref": mp_ref(dest), "name": dest.stem})
             if u.path == "/api/poses/custom":
                 return self.json(save_custom_pose(self.jbody()))
             m = re.fullmatch(r"/api/jobs/([0-9a-f]{8})/(cancel|dismiss)", u.path)

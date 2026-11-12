@@ -127,7 +127,7 @@ export function draw() {
     ctx.stroke();
   }
   const s = selL();
-  if (s && !ad) drawSelection(s, px);
+  if (s && !ad && s.type !== "ruler") drawSelection(s, px);
   getTool(S.tool)?.overlay?.(ctx, px);
   if (hasSelection() && selectionPage() === page().id) { drawAnts(ctx, px); antsTick(); }
 }
