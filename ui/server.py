@@ -484,6 +484,17 @@ def _gzip(body: bytes, key: str | None) -> bytes:
     return out
 
 
+BLOB_RE = re.compile(r"/api/project/([^/]{1,80})/blob/([0-9a-f]{64})")
+
+
+def blob_path(name: str, digest: str) -> Path:
+    """Content-addressed project data (painted layers, masks, imported art): pages/<name>/blobs/<sha256>."""
+    name = unquote(name)
+    if not NAME_RE.match(name):
+        raise ValueError("bad project name")
+    return PROJECTS / name / "blobs" / digest
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "MangaMaker/1"
 
@@ -582,6 +593,10 @@ class Handler(BaseHTTPRequestHandler):
                     return self.json({"error": "bad name"}, 400)
                 p = PROJECTS / name / "project.json"
                 return self.json(json.loads(p.read_text()) if p.exists() else {"error": "not found"}, 200 if p.exists() else 404)
+            m = BLOB_RE.fullmatch(u.path)
+            if m:
+                f = blob_path(*m.groups())
+                return self.send(200, f.read_bytes(), "application/octet-stream", cache=True) if f.exists() else self.json({"error": "no such blob"}, 404)
             if u.path == "/api/pod":
                 return self.json(pod_status())
             if u.path == "/api/poses":
@@ -607,6 +622,26 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as e:  # noqa: BLE001
             return self.json({"error": str(e)}, 400)
 
+    def do_PUT(self):
+        u = urlparse(self.path)
+        try:
+            m = BLOB_RE.fullmatch(u.path)
+            if not m:
+                return self.json({"error": "not found"}, 404)
+            f = blob_path(*m.groups())
+            if f.exists():
+                return self.json({"ok": True, "exists": True})
+            data = self.body()
+            if hashlib.sha256(data).hexdigest() != m.group(2):
+                return self.json({"error": "content does not match its hash"}, 400)
+            f.parent.mkdir(parents=True, exist_ok=True)
+            tmp = f.with_name(f"{f.name}.{threading.get_ident()}.part")
+            tmp.write_bytes(data)
+            tmp.replace(f)
+            return self.json({"ok": True})
+        except Exception as e:  # noqa: BLE001
+            return self.json({"error": str(e)}, 400)
+
     def do_POST(self):
         u = urlparse(self.path)
         q = {k: v[0] for k, v in parse_qs(u.query).items()}
@@ -626,8 +661,25 @@ class Handler(BaseHTTPRequestHandler):
                     return self.json({"error": "bad name"}, 400)
                 d = PROJECTS / name
                 d.mkdir(parents=True, exist_ok=True)
-                im = Image.open(io.BytesIO(self.body())).convert("RGB")
                 dest = d / f"page_{n:02d}.png"
+                if "bands" in q:
+                    k, count = int(q["band"]), int(q["bands"])
+                    if not (0 <= k < count <= 64):
+                        return self.json({"error": "bad band"}, 400)
+                    (d / f".page_{n:02d}.band{k:02d}.png").write_bytes(self.body())
+                    parts = [d / f".page_{n:02d}.band{j:02d}.png" for j in range(count)]
+                    if not all(p.exists() for p in parts):
+                        return self.json({"ok": True, "band": k})
+                    ims = [Image.open(p).convert("RGB") for p in parts]
+                    im = Image.new("RGB", (ims[0].width, sum(i.height for i in ims)), "white")
+                    y = 0
+                    for i in ims:
+                        im.paste(i, (0, y))
+                        y += i.height
+                    for p in parts:
+                        p.unlink()
+                else:
+                    im = Image.open(io.BytesIO(self.body())).convert("RGB")
                 im.save(dest)
                 return self.json({"ok": True, "path": str(dest)})
             if u.path == "/api/export/pdf":
@@ -710,8 +762,25 @@ class Handler(BaseHTTPRequestHandler):
                     return self.json({"error": "bad name"}, 400)
                 d = PROJECTS / name
                 d.mkdir(parents=True, exist_ok=True)
-                im = Image.open(io.BytesIO(self.body())).convert("RGB")
                 dest = d / f"page_{n:02d}.png"
+                if "bands" in q:
+                    k, count = int(q["band"]), int(q["bands"])
+                    if not (0 <= k < count <= 64):
+                        return self.json({"error": "bad band"}, 400)
+                    (d / f".page_{n:02d}.band{k:02d}.png").write_bytes(self.body())
+                    parts = [d / f".page_{n:02d}.band{j:02d}.png" for j in range(count)]
+                    if not all(p.exists() for p in parts):
+                        return self.json({"ok": True, "band": k})
+                    ims = [Image.open(p).convert("RGB") for p in parts]
+                    im = Image.new("RGB", (ims[0].width, sum(i.height for i in ims)), "white")
+                    y = 0
+                    for i in ims:
+                        im.paste(i, (0, y))
+                        y += i.height
+                    for p in parts:
+                        p.unlink()
+                else:
+                    im = Image.open(io.BytesIO(self.body())).convert("RGB")
                 im.save(dest)
                 return self.json({"ok": True, "path": str(dest)})
             if u.path == "/api/export/pdf":
