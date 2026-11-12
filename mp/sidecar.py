@@ -116,6 +116,9 @@ def load_shot(shot_dir: Path, cfg) -> dict:
     # Optional depth capture (xukmi Depth item, same camera): adds a depth ControlNet pass.
     depth = shot.get("depth", "depth.png")
     shot["_depth_path"] = (shot_dir / depth) if depth and (shot_dir / depth).exists() else None
+    # Optional line art of the background (Pose studio 3D scene, same camera): adds a line-art pass.
+    lines = shot.get("lines", "lines.png")
+    shot["_lines_path"] = (shot_dir / lines) if lines and (shot_dir / lines).exists() else None
 
     if shot["identity"] not in ("auto", "lora", "ipadapter", "reactor", "none"):
         raise ShotError(f"identity must be auto|lora|ipadapter|reactor|none, got {shot['identity']}")

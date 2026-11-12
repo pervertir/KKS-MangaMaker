@@ -13,14 +13,15 @@ import { ASPECTS, JOINT_NAMES, P, partName, setPart } from "./model.js";
 import { presetSection } from "./presets.js";
 import { newChar, pcommit, pcur } from "./scene.js";
 import { pdraw, pfit } from "./view.js";
+import { ROOMS, ROOM_CAM, bg, importModel, listModels, newBg3D, scenePasses } from "./scene3d.ts";
 
 /* ---------------------------------------------------------------- side panel */
 export function prow(label, ...kids) { return h("div", { class: "row" }, h("label", {}, label), ...kids); }
-export function pslider(label, c, key, min, max, step, fmt = v => v) {
+export function pslider(label, c, key, min, max, step, fmt = v => v, reset) {
   const out = h("span", { class: "val" }, fmt(c[key]));
   const inp = h("input", { type: "range", min, max, step, value: c[key], style: "flex:1",
     oninput: e => { c[key] = +e.target.value; out.textContent = fmt(c[key]); pdraw(); }, onchange: () => pcommit() });
-  inp.addEventListener("dblclick", () => { c[key] = key === "scale" ? 0.85 : 0; pcommit(); });
+  inp.addEventListener("dblclick", () => { c[key] = reset ?? (key === "scale" ? 0.85 : 0); pcommit(); });
   return prow(label, inp, out);
 }
 export function renderPoseSide(valuesOnly) {
@@ -41,6 +42,7 @@ export function renderPoseSide(valuesOnly) {
       h("label", { class: "chk" }, h("input", { type: "checkbox", checked: P.showHands, onchange: e => { P.showHands = e.target.checked; pdraw(); } }), " Hands"),
       h("label", { class: "chk" }, "Guide ", h("input", { type: "file", accept: "image/*", style: "width:120px", onchange: e => loadRef(e.target.files[0]) })),
       P.ref ? h("input", { type: "range", min: 0, max: 1, step: 0.05, value: P.refAlpha, title: "Guide opacity (never exported)", oninput: e => { P.refAlpha = +e.target.value; pdraw(); } }) : null));
+  side.append(...bg3dSection());
   side.append(...presetSection());
   // characters
   side.append(h("div", { class: "section" }, "Characters ", h("span", { class: "hint" }, "left to right in the frame = order in the prompt")));
@@ -97,7 +99,72 @@ export function renderPoseSide(valuesOnly) {
       h("button", { onclick: downloadPose }, "Download PNG"),
       h("button", { onclick: () => savePoseShot(false) }, "Save to shot"),
       h("button", { class: "primary", onclick: () => savePoseShot(true), title: "Save, then render on the pod" }, "Save & render")),
+    bg() ? h("div", { class: "btnrow" }, h("button", { onclick: saveBackgroundShot, title: "Render the room alone (no characters) as its own shot, to reuse as a background in other panels" }, "Save background shot")) : null,
     P.panel ? h("p", { class: "hint" }, "The render lands in the panel you opened this from.") : null);
+}
+/* 3D background: a room (starter or imported .glb) seen through a camera the figures stand in front of */
+let MODELS = null;
+export function bg3dSection() {
+  const b = bg();
+  if (MODELS === null) { MODELS = []; listModels().then(m => { MODELS = m; renderPoseSide(); }); }
+  const pick = h("select", { style: "flex:1", onchange: async e => {
+    const v = e.target.value;
+    if (v === "") { delete P.scene.bg3d; pcommit("3D background off"); return; }
+    if (v === "@import") { $("#ps3dfile").click(); e.target.value = b ? (b.room === "model" ? "m:" + b.model : b.room) : ""; return; }
+    const nb = v.startsWith("m:") ? { ...newBg3D("model"), model: v.slice(2) } : newBg3D(v);
+    if (b) { nb.ground = b.ground; nb.lines = b.lines; nb.alpha = b.alpha; if ((b.room === "model") === (nb.room === "model")) nb.cam = b.room === nb.room ? b.cam : nb.cam; }
+    P.scene.bg3d = nb; pcommit("3D background: " + (e.target.selectedOptions[0]?.textContent || v));
+  } },
+    h("option", { value: "" }, "None (black)"),
+    h("optgroup", { label: "Starter rooms" }, ...ROOMS.map(([k, t]) => h("option", { value: k }, t))),
+    MODELS.length ? h("optgroup", { label: "Imported" }, ...MODELS.map(m => h("option", { value: "m:" + m.ref }, m.name))) : null,
+    h("option", { value: "@import" }, "Import .glb…"));
+  pick.value = b ? (b.room === "model" ? "m:" + b.model : b.room) : "";
+  const file = h("input", { id: "ps3dfile", type: "file", accept: ".glb,model/gltf-binary", hidden: true, onchange: async e => {
+    const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+    const m = await importModel(f); if (!m) return;
+    MODELS = [...MODELS.filter(q => q.ref !== m.ref), m];
+    P.scene.bg3d = { ...newBg3D("model"), ...(bg() ? { ground: bg().ground, lines: bg().lines, alpha: bg().alpha } : {}), model: m.ref };
+    pcommit(`3D background: ${m.name}`);
+  } });
+  const out = [h("div", { class: "section" }, "3D background ", h("span", { class: "hint" }, "pose inside a room; the render follows its depth and lines")),
+    prow("Room", pick, file)];
+  if (!b) return out;
+  const cam = b.cam, cs = (label, key, min, max, step, fmt, tip) => {
+    const r = pslider(label, cam, key, min, max, step, fmt, (ROOM_CAM[b.room] || ROOM_CAM.empty)[key]); r.title = tip; return r;
+  };
+  out.push(
+    cs("Height", "y", 0.05, 30, 0.05, v => `${(+v).toFixed(2)} m`, "Camera height above the floor (Alt-drag on empty canvas)"),
+    cs("Across", "x", -20, 20, 0.05, v => `${(+v).toFixed(2)} m`, "Camera position left and right (Shift-drag on empty canvas)"),
+    cs("Depth", "z", -40, 20, 0.05, v => `${(+v).toFixed(2)} m`, "Camera position forward and back (scroll with nothing selected)"),
+    cs("Look", "yaw", -180, 180, 0.5, v => `${Math.round(v)}°`, "Turn the camera (drag on empty canvas)"),
+    cs("Tilt", "pitch", -85, 85, 0.5, v => `${Math.round(v)}°`, "Look up or down (drag on empty canvas)"),
+    cs("Lens", "focal", 10, 135, 1, v => `${Math.round(v)} mm`, "Focal length, 35 mm terms: low is wide and dramatic, high is flat"),
+    h("div", { class: "row" },
+      h("label", { class: "chk", title: "Figures stand on the floor where their feet are and get smaller with distance" },
+        h("input", { type: "checkbox", checked: b.ground, onchange: e => { b.ground = e.target.checked; pcommit(b.ground ? "Figures stand on the floor" : "Figures sized by hand"); } }), " Stand on floor"),
+      h("label", { class: "chk", title: "Also send the room's line art (walls, furniture edges) to the render" },
+        h("input", { type: "checkbox", checked: b.lines, onchange: e => { b.lines = e.target.checked; pcommit(); } }), " Line art"),
+      h("input", { type: "range", min: 0.1, max: 1, step: 0.05, value: b.alpha ?? 0.55, title: "Room preview opacity (never exported)", style: "flex:1",
+        oninput: e => { b.alpha = +e.target.value; pdraw(); } })),
+    h("div", { class: "btnrow" }, h("button", { onclick: () => { b.cam = { ...(ROOM_CAM[b.room] || ROOM_CAM.empty) }; pcommit("Camera reset"); } }, "Reset camera")),
+    h("p", { class: "hint" }, "Drag empty canvas to look around, Shift-drag to walk, Alt-drag to rise; scroll with nothing selected to move in or out. The dashed line is the horizon."));
+  return out;
+}
+/* the room alone as its own shot: no figures, no people in the prompt, same camera */
+export async function saveBackgroundShot() {
+  const b = bg(); if (!b) return;
+  const base = P.shot || "scene", name = prompt("Shot folder for the background", base + "_bg"); if (!name) return;
+  try {
+    const passes = await scenePasses({ figures: false });
+    const blank = document.createElement("canvas"); blank.width = P.scene.w; blank.height = P.scene.h;
+    const g = blank.getContext("2d"); g.fillStyle = "#000"; g.fillRect(0, 0, blank.width, blank.height);
+    await post("/api/pose/shot", { name: name.trim(), background: true, characters: [], png: blank.toDataURL("image/png"),
+      scene: { ...P.scene, chars: [], shot: name.trim(), bg3d: { ...b, vps: passes.vps, dirs: passes.dirs } },
+      depth: passes.depth, lines: passes.lines, prompt: ["no humans, scenery, background", P.scene.prompt || ""].filter(Boolean).join(", "),
+      count_tag: "no humans, scenery", extra: { controlnet_strength: 0, solo_tag: false, head_inpaint: false } });
+    toast(`Saved the background to shots/${name.trim()}`, "ok"); await loadShots();
+  } catch (e) { toast(e.message, "err"); }
 }
 /* Joints of the selected figure that are not drawn (out of the picture it was read from, or cut by hand):
    add one back, where it then sits at a guessed spot to be dragged into place, or cut one that is drawn. */
@@ -217,7 +284,10 @@ export async function savePoseShot(andRender) {
   let chars = [...vis].sort((a, b) => a.x - b.x).map(c => ({ name: c.name || "", series: c.series || "", gender: c.gender || "girl", tags: c.tags || "" }));
   if (typeof enrichChars === "function") chars = enrichChars(chars);
   try {
-    await post("/api/pose/shot", { name: P.shot, png: renderPosePNG().toDataURL("image/png"), scene: { ...P.scene, shot: P.shot }, characters: chars, prompt: P.scene.prompt || "" });
+    const passes = bg() ? await scenePasses() : null;
+    const scene = { ...P.scene, shot: P.shot, ...(passes ? { bg3d: { ...P.scene.bg3d, vps: passes.vps, dirs: passes.dirs } } : {}) };
+    await post("/api/pose/shot", { name: P.shot, png: renderPosePNG().toDataURL("image/png"), scene, characters: chars, prompt: P.scene.prompt || "",
+      ...(passes ? { depth: passes.depth, lines: passes.lines } : {}) });
     P.dirty = false; toast(`Saved pose to shots/${P.shot}`, "ok");
     await loadShots();
     if (P.panel) {                                         // tie the panel to the shot so the render lands there
