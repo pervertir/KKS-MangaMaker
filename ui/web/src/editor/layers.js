@@ -6,10 +6,10 @@ import { commit } from "./history.js";
 import { IMG, LEVELS } from "./images.js";
 import { popMenu } from "./menus.js";
 import { refreshPanels } from "./misc.js";
-import { S, bubbleMeta, layers, selL } from "./state.js";
+import { S, bubbleMeta, layers, selL } from "./state.ts";
 import { deleteSelected, sc } from "./tools.js";
 import { requestDraw } from "./view.js";
-import { ui } from "../ui/store.svelte.js";
+import { ui } from "../ui/store.svelte.ts";
 
 /* ================================================================ layers list */
 export const TYPE_IC = { panel: "▭", bubble: "💬", vbubble: "🗨", caption: "▤", text: "T", image: "🖼", tone: "▦", speed: "✺" };

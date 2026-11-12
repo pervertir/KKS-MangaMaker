@@ -1,4 +1,4 @@
-import { H, W, layers } from "./state.js";
+import { H, W, layers } from "./state.ts";
 
 /* ================================================================ snapping */
 export function snapBox(box, moving, thr) {

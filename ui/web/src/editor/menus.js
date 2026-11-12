@@ -10,7 +10,7 @@ import { toggleOrder } from "./panels-tab.js";
 import { preferencesDialog } from "./preferences.js";
 import { downloadPage, exportPages, importDialog, newProject, openDialog, save } from "./project.js";
 import { shotDialog } from "./shots.js";
-import { S, selL } from "./state.js";
+import { S, selL } from "./state.ts";
 import { center, sc, shortcutSheet } from "./tools.js";
 import { fitView, requestView, zoomAt } from "./view.js";
 import { poseForPanel, setMode } from "../pose/open.js";

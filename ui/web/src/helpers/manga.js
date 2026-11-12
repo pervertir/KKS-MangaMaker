@@ -5,7 +5,7 @@ import { refreshPanels, toast } from "../editor/misc.js";
 import { closeModal, modal } from "../editor/modal.js";
 import { renderPageThumbs } from "../editor/pages.js";
 import { loadShots } from "../editor/shots.js";
-import { S, normalize, page } from "../editor/state.js";
+import { S, normalize, page } from "../editor/state.ts";
 import { TONE_PRESETS } from "../editor/tools.js";
 import { panelOrder, requestDraw } from "../editor/view.js";
 import { TEXT_TYPES, centreIn } from "./checker.js";

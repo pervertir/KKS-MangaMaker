@@ -1,10 +1,10 @@
-<script>
+<script lang="ts">
   /* Panels tab: the page's frames in reading order (panelOrder, the rule the pipeline uses), each with its
      shot, how far along it is and the one action that moves it on. The order comes from where the frames
      sit, so rows are not draggable: to change it, move the frames or apply a layout. */
   import { tick } from "svelte";
-  import { ui } from "./store.svelte.js";
-  import { node } from "./mount.js";
+  import { ui } from "./store.svelte.ts";
+  import { node } from "./mount.ts";
   import { enterAdjust } from "../editor/adjust.js";
   import { showLib } from "../editor/dock-tabs.js";
   import { layerThumb, svgIcon } from "../editor/layers.js";
@@ -12,7 +12,8 @@
   import { popMenu } from "../editor/menus.js";
   import { refreshPanels, status } from "../editor/misc.js";
   import { panelMenu, panelState, toggleOrder } from "../editor/panels-tab.js";
-  import { S, layers, selL } from "../editor/state.js";
+  import type { Layer } from "../types.ts";
+  import { S, layers, selL } from "../editor/state.ts";
   import { setTool } from "../editor/tools.js";
   import { panelOrder, requestDraw } from "../editor/view.js";
 
@@ -21,8 +22,8 @@
     if (!S.doc) return { rows: [], order: false };
     const ls = layers(), order = panelOrder(ls), hidden = ls.filter(l => l.type === "panel" && !l.visible);
     const sel = selL(), kidOf = sel && sel.type !== "panel" ? sel.clip : null;      // a tone or lines clipped to this frame
-    const row = (l, n) => {
-      const st = panelState(l), [label, fn, tip, main] = st.act;
+    const row = (l: Layer, n: number) => {
+      const st = panelState(l), [label, fn, tip, main] = st.act as [string, () => void, string, boolean?];
       return { key: l.id, l, n, on: l.id === S.sel, kid: kidOf === l.id, off: !l.visible, thumb: layerThumb(l, 44),
         name: l.name || l.shot || "no shot", named: !!(l.name || l.shot), shotTip: l.shot ? `Shot ${l.shot}` : "No shot yet: Pose… makes one",
         st, stText: st.text + (l.locked ? " · locked" : ""), label, fn, tip, main };
@@ -30,7 +31,7 @@
     return { rows: [...order.map((l, i) => row(l, i + 1)), ...hidden.map(l => row(l, 0))], order: !!S.showOrder };
   });
 
-  let box = $state(), lastSel = null;
+  let box = $state<HTMLElement>(), lastSel: string | null = null;
   $effect(() => {
     ui.rev;
     if (S.sel === lastSel) return;
@@ -38,10 +39,10 @@
     tick().then(() => box?.querySelector(".on")?.scrollIntoView({ block: "nearest" }));
   });
 
-  const pick = l => { S.sel = l.id; refreshPanels(); requestDraw(); };
-  const menu = (l, x, y) => { if (S.sel !== l.id) pick(l); popMenu(x, y, panelMenu(l)); };
-  function open(l) { if (l.image) enterAdjust(l); else { showLib("shots"); status("Drag a render from Shots onto the panel"); } }
-  const quiet = fn => e => { e.stopPropagation(); fn(e); };
+  const pick = (l: Layer) => { S.sel = l.id; refreshPanels(); requestDraw(); };
+  const menu = (l: Layer, x: number, y: number) => { if (S.sel !== l.id) pick(l); popMenu(x, y, panelMenu(l)); };
+  function open(l: Layer) { if (l.image) enterAdjust(l); else { showLib("shots"); status("Drag a render from Shots onto the panel"); } }
+  const quiet = (fn: (e: MouseEvent) => void) => (e: MouseEvent) => { e.stopPropagation(); fn(e); };
 </script>
 
 <div id="paneltools">
@@ -67,7 +68,7 @@
       <button class="pact" class:primary={r.main && r.on} title={r.tip} ondblclick={e => e.stopPropagation()}
         onclick={quiet(() => { if (S.sel !== r.l.id) pick(r.l); r.fn(); })}>{r.label}</button>
       <button class="ib" title="More: pose, render, split, hide, lock, delete" ondblclick={e => e.stopPropagation()}
-        onclick={quiet(e => { const b = e.currentTarget.getBoundingClientRect(); menu(r.l, b.left, b.bottom + 2); })}>⋯</button>
+        onclick={quiet(e => { const b = (e.currentTarget as HTMLElement).getBoundingClientRect(); menu(r.l, b.left, b.bottom + 2); })}>⋯</button>
     </div>
   {:else}
     <div class="empty">No panels on this page.

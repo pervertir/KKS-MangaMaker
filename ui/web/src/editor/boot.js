@@ -8,7 +8,7 @@ import { buildMenus, popMenu } from "./menus.js";
 import { status, toast } from "./misc.js";
 import { renderPages } from "./pages.js";
 import { loadDoc, openProject, setName } from "./project.js";
-import { S, newDoc, normalize } from "./state.js";
+import { S, newDoc, normalize } from "./state.ts";
 import { buildToolbar, center, sc, setTool } from "./tools.js";
 import { fitView, zoomAt } from "./view.js";
 

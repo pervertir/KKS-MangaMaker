@@ -1,11 +1,12 @@
-<script>
-  /* The lower dock: Layers | Panels | Library. Layers and Panels are components; the Library pane still
-     hosts the editor's own renderer (src/editor/library.js) until it is ported too. */
-  import { ui } from "./store.svelte.js";
+<script lang="ts">
+  /* The lower dock: Layers | Panels | Library. */
+  import { ui } from "./store.svelte.ts";
   import LayersPane from "./LayersPane.svelte";
   import PanelsPane from "./PanelsPane.svelte";
+  import Library from "./Library.svelte";
   import { setDockTab } from "../editor/dock-tabs.js";
-  import { S, layers } from "../editor/state.js";
+  import type { DockTab } from "../types.ts";
+  import { S, layers } from "../editor/state.ts";
 
   const counts = $derived.by(() => {
     ui.rev;
@@ -13,7 +14,7 @@
     const ls = layers(), panels = ls.filter(l => l.type === "panel").length;
     return { layers: ls.length - panels, panels };
   });
-  const TABS = [
+  const TABS: [DockTab, string, string][] = [
     ["layers", "Layers", "Lettering, tones and images on this page, front to back"],
     ["panels", "Panels", "This page's panels in reading order, with their shots and renders"],
     ["library", "Library", "Shots, bubbles, layouts and artwork to put on the page"],
@@ -29,8 +30,4 @@
 </div>
 <div class="tabpane" id="pane-layers" role="tabpanel" hidden={ui.dockTab !== "layers"}><LayersPane /></div>
 <div class="tabpane" id="pane-panels" role="tabpanel" hidden={ui.dockTab !== "panels"}><PanelsPane /></div>
-<div class="tabpane" id="pane-library" role="tabpanel" hidden={ui.dockTab !== "library"}>
-  <div class="chips" id="libtabs"></div>
-  <div id="libtools"></div>
-  <div id="library" class="dockbody"></div>
-</div>
+<div class="tabpane" id="pane-library" role="tabpanel" hidden={ui.dockTab !== "library"}><Library /></div>

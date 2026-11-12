@@ -9,11 +9,11 @@ import { layoutDialog } from "./layouts.js";
 import { popMenu } from "./menus.js";
 import { refreshPanels, status } from "./misc.js";
 import { shotDialog } from "./shots.js";
-import { S, layers, selL } from "./state.js";
+import { S, layers, selL } from "./state.ts";
 import { deleteSelected, sc, setTool } from "./tools.js";
 import { panelOrder, requestDraw, requestView } from "./view.js";
 import { poseForPanel } from "../pose/open.js";
-import { ui } from "../ui/store.svelte.js";
+import { ui } from "../ui/store.svelte.ts";
 
 /* ================================================================ panels tab */
 /* The page's frames in reading order (panelOrder, the rule the pipeline uses), each with its shot, how far

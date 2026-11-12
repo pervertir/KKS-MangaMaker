@@ -1,7 +1,7 @@
 import { clamp } from "./core.js";
 import { paperOf } from "./creation.js";
 import { drawLayer } from "./drawing.js";
-import { H, S, W } from "./state.js";
+import { H, S, W } from "./state.ts";
 import { drawText } from "./text.js";
 
 /* ================================================================ manga tools */

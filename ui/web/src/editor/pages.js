@@ -5,7 +5,7 @@ import { layoutDialog } from "./layouts.js";
 import { drawPage } from "./manga-tools.js";
 import { popMenu } from "./menus.js";
 import { refreshPanels, toast } from "./misc.js";
-import { H, S, W, page } from "./state.js";
+import { H, S, W, page } from "./state.ts";
 import { sc } from "./tools.js";
 import { PC, requestDraw } from "./view.js";
 

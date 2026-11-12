@@ -11,7 +11,7 @@ import { popMenu } from "./menus.js";
 import { refreshPanels, status } from "./misc.js";
 import { refreshProps } from "./props.js";
 import { snapBox } from "./snapping.js";
-import { H, S, W, layers, selL } from "./state.js";
+import { H, S, W, layers, selL } from "./state.ts";
 import { keyLabel } from "./tools.js";
 import { DC, corners, cv, interacting, requestDraw, requestView, stage, toPage, zoomAt, set_DC } from "./view.js";
 

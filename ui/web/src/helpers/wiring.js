@@ -1,6 +1,6 @@
 import { MENUS, buildMenus } from "../editor/menus.js";
 import { status } from "../editor/misc.js";
-import { S } from "../editor/state.js";
+import { S } from "../editor/state.ts";
 import { SC_MAP, SHORTCUTS, sc, setTool, set_setTool } from "../editor/tools.js";
 import { castDialog, loadCast } from "./cast.js";
 import { checkerDialog } from "./checker.js";

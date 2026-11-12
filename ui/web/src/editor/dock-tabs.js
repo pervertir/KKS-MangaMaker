@@ -1,7 +1,7 @@
 import { $, $$ } from "./core.js";
 import { renderLibrary } from "./library.js";
-import { S, selL } from "./state.js";
-import { ui } from "../ui/store.svelte.js";
+import { S, selL } from "./state.ts";
+import { ui } from "../ui/store.svelte.ts";
 
 /* ================================================================ dock tabs */
 export const DOCKTABS = ["layers", "panels", "library"];
