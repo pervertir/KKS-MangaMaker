@@ -7,11 +7,14 @@ import { renderShot, toggleJobs } from "./jobs.js";
 import { layerName } from "./layers.js";
 import { refreshPanels, status, toast } from "./misc.js";
 import { toggleOverview } from "./pages.js";
-import { S, layers, selL } from "./state.ts";
+import { S, layers, selL, H, W } from "./state.ts";
 import { deleteSelected, setTool } from "./tools.js";
 import { requestDraw, requestView } from "./view.js";
 
 import { ui } from "../ui/store.svelte.ts";
+import { applyFrameShape, bleedPanel, isPlainRect, panelBase, setPanelPoly, splitOutline } from "./frames.js";
+import { finishPoly } from "./polygon-panels.js";
+import { refreshProps } from "./props.js";
 
 /* ================================================================ actions */
 export const act = {
@@ -26,6 +29,7 @@ export const act = {
     S.sel = c.id; S.clip = deep(c); commit("Pasted"); requestDraw();
   },
   escape() {
+    if (S.polyDraft) { S.polyDraft = null; S.polyHover = null; requestView(); return status("Polygon cancelled"); }
     if (!$("#overview").hidden) return toggleOverview(false);
     if (ui.jobsOpen && !selL()) return toggleJobs(false);
     if (S.adjust) return exitAdjust();
@@ -33,6 +37,7 @@ export const act = {
     S.sel = null; refreshPanels(); requestView();
   },
   enter() {
+    if (S.polyDraft) return finishPoly();
     const l = selL();
     if (l?.type === "panel" && l.image) enterAdjust(l);
     else if (l && ["bubble", "caption", "text", "vbubble", "balloon"].includes(l.type)) showInline(l);
@@ -68,13 +73,26 @@ export const act = {
   layerDown() { const ls = layers(), l = selL(); if (!l) return; const i = ls.indexOf(l); if (i > 0) { ls.splice(i, 1); ls.splice(i - 1, 0, l); commit("Moved down"); requestDraw(); } },
   toFront() { const ls = layers(), l = selL(); if (!l) return; ls.splice(ls.indexOf(l), 1); ls.push(l); commit("To front"); requestDraw(); },
   toBack() { const ls = layers(), l = selL(); if (!l) return; ls.splice(ls.indexOf(l), 1); ls.unshift(l); commit("To back"); requestDraw(); },
-  split(dir) {
+  split(dir, tilt = 0) {
     const l = selL(); if (!l || l.type !== "panel") return;
     const g = 30 + l.border, b = deep(l); b.id = uid(); b.image = null; b.shot = "";
-    if (dir === "v") { const w = (l.w - g) / 2; l.w = w; b.x = l.x + w + g; b.w = w; }
-    else { const hh = (l.h - g) / 2; l.h = hh; b.y = l.y + hh + g; b.h = hh; }
-    layers().splice(layers().indexOf(l) + 1, 0, b); commit("Split panel"); requestDraw();
+    if (!tilt && isPlainRect(l)) {
+      if (dir === "v") { const w = (l.w - g) / 2; l.w = w; b.x = l.x + w + g; b.w = w; }
+      else { const hh = (l.h - g) / 2; l.h = hh; b.y = l.y + hh + g; b.h = hh; }
+    } else {                      // any other outline, or a slanted gutter: cut the outline itself
+      const [A, B] = splitOutline(l, dir, tilt, g);
+      if (A.length < 3 || B.length < 3) return toast("This panel is too small to split there");
+      for (const q of [l, b]) { q.radius = 0; if (q.edge === "jagged" || q.edge === "wavy") q.seed = (q.seed || 1) + (q === b ? 1 : 0); }
+      setPanelPoly(l, A); setPanelPoly(b, B);
+    }
+    layers().splice(layers().indexOf(l) + 1, 0, b); commit(tilt ? "Slanted split" : "Split panel"); requestDraw();
   },
+  frame(key) { const l = selL(); if (l?.type !== "panel") return; applyFrameShape(l, key); commit("Frame: " + key); requestDraw(); refreshProps(); },
+  bleed() { const l = selL(); if (l?.type !== "panel") return; bleedPanel(l, W(), H()); commit("Bleeds off the page"); requestDraw(); refreshProps(); },
+  editCorners() {
+    const l = selL(); if (l?.type !== "panel") return;
+    if (l.shape === "ellipse") return status("A circle has no corners: pick a polygon shape first");
+    setPanelPoly(l, panelBase({ ...l, radius: 0 }), true); l.locked = false; commit("Corners editable"); requestView(); refreshProps(); status("Drag a corner; drag an edge dot to add one; ⌥-click a corner to remove it"); },
 };
 
 /* runs once at start-up, in the original order (see main.js) */

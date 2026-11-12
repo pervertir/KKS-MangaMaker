@@ -6,9 +6,10 @@ import { refreshPanels, toast } from "./misc.js";
 import { S } from "./state.ts";
 import { cv, stage, toPage, toScreen } from "./view.js";
 import { ui } from "../ui/store.svelte.ts";
+import { lib, loadLibrary, placeAsset } from "../assets/library.ts";
 
 /* ================================================================ library */
-export const LIBTABS = [["shots", "Shots"], ["bubbles", "Bubbles"], ["layouts", "Layouts"], ["decor", "Decor"], ["speedlines", "Speed lines"], ["particles", "Particles"], ["uploads", "Uploads"]];
+export const LIBTABS = [["shots", "Shots"], ["assets", "Assets"], ["bubbles", "Bubbles"], ["layouts", "Layouts"]];
 /* The tab itself is src/ui/Library.svelte; this tells it to read the editor state again. */
 export function renderLibrary() { ui.rev++; }
 export function imgSize(ref) {
@@ -18,7 +19,7 @@ export async function uploadFile(f, at) {
   try {
     const r = await post(`/api/upload?name=${encodeURIComponent(f.name)}`, f, true);
     S.cat.assets.uploads.push({ ref: r.ref, name: r.name, multiply: false });
-    if (S.libTab === "uploads") renderLibrary();
+    loadLibrary();
     return r;
   } catch (e) { toast(e.message, "err"); }
 }
@@ -58,7 +59,7 @@ export function init_editor_library() {
       if (pl) { S.sel = pl.id; setPanelImage(pl, d.ref, d.shot); }
       else { const dim = await imgSize(d.ref); addImageLayer(d.ref, dim.w, dim.h, p, false); }
     } else if (d.kind === "bubble") { S.bubble = d.key; createAt("bubble", { x: p.x, y: p.y, w: 0, h: 0 }, true); }
-    else if (d.kind === "asset") { const dim = await imgSize(d.ref); addImageLayer(d.ref, dim.w, dim.h, p, d.multiply); }
+    else if (d.kind === "libasset") { const a = lib.assets.find(q => q.id === d.id); if (a) placeAsset(a, p); }
     refreshPanels();
   });
 }

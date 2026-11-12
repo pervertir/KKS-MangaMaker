@@ -75,7 +75,7 @@ def build_prompt(shot: dict, style: dict, loras: list[dict]) -> tuple[str, str]:
 
 def build_graph(shot: dict, cfg, loras: list[dict], identity: str, pose_name: str, ref_name: str | None,
                 size: tuple[int, int], seed: int, regions: list[tuple[int, int, str]] | None = None,
-                depth_name: str | None = None) -> dict:
+                depth_name: str | None = None, lines_name: str | None = None) -> dict:
     """regions: [(x0, x1, prompt)] left to right; each prompt is applied only inside its column."""
     g = {}
     nid = [0]
@@ -124,6 +124,13 @@ def build_graph(shot: dict, cfg, loras: list[dict], identity: str, pose_name: st
                       strength=float(shot.get("depth_strength", 0.5)), start_percent=0.0,
                       end_percent=float(shot.get("depth_end", 0.5)), vae=vae)
         pos_c, neg_c = [d_apply, 0], [d_apply, 1]
+    if lines_name:  # the background's edges from the same camera, so walls and furniture keep their perspective
+        lines_img = add("LoadImage", image=lines_name)
+        lcn = add("SetUnionControlNetType", control_net=[cn, 0], type="canny/lineart/anime_lineart/mlsd")
+        l_apply = add("ControlNetApplyAdvanced", positive=pos_c, negative=neg_c, control_net=[lcn, 0], image=[lines_img, 0],
+                      strength=float(shot.get("lines_strength", 0.45)), start_percent=0.0,
+                      end_percent=float(shot.get("lines_end", 0.6)), vae=vae)
+        pos_c, neg_c = [l_apply, 0], [l_apply, 1]
 
     ref_img = None
     if ref_name:
