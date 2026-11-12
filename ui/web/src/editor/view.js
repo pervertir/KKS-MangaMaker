@@ -4,6 +4,7 @@ import { drawLayer, drawLayers, imageRect } from "./drawing.js";
 import { imgFor } from "./images.js";
 import { placeInline } from "./inline-edit.js";
 import { drawFlipped, drawPage } from "./manga-tools.js";
+import { drawNombres, guides } from "./book.ts";
 import { H, S, W, layers, page, selL } from "./state.ts";
 import { boxes } from "../core/format.ts";
 import { drawTransformBox } from "./transform-box.js";
@@ -58,6 +59,7 @@ export function paintCache(target, cs, from, to) {           // layers [from, to
   const ls = layers();
   const paper = paperOf(page());
   drawLayers(g, ls, from, to, { rs: cs, paper });
+  if (to === ls.length) drawNombres(g, S.doc, S.page);
   return target;
 }
 export function liveRange() {                                  // contiguous layer range that moves with the drag
@@ -145,15 +147,20 @@ export function draw() {
 }
 let antsT = 0;
 function antsTick() { if (!antsT) antsT = setTimeout(() => { antsT = 0; requestView(); }, 120); }
-/* print guides from the book format: the trim line sits one bleed in from the canvas edge, the safe area
-   inside the trim. Art that must survive the cut stays inside the green line. */
+/* print guides from the book format: trim (cut line), safe area (keep text and faces inside),
+   the spread's fold and the gutter band either side of it that the binding swallows */
 export function drawPrintGuides(px) {
-  const { trim, safe } = boxes(S.doc.format, W(), H());
-  ctx.save(); ctx.lineWidth = 1.5 * px; ctx.setLineDash([10 * px, 6 * px]);
-  ctx.strokeStyle = "#ff4f7b"; ctx.strokeRect(trim.x, trim.y, trim.w, trim.h);
-  ctx.strokeStyle = "#3ccf8e"; ctx.strokeRect(safe.x, safe.y, safe.w, safe.h);
-  ctx.setLineDash([]); ctx.fillStyle = "#ff4f7b"; ctx.font = `${12 * px}px sans-serif`;
-  ctx.fillText("trim", trim.x + 4 * px, trim.y - 4 * px); ctx.fillStyle = "#3ccf8e"; ctx.fillText("safe area", safe.x + 4 * px, safe.y + 14 * px);
+  const G = guides(S.doc, page());
+  ctx.save(); ctx.lineWidth = 1.5 * px;
+  for (const r of G.gutter) { ctx.fillStyle = "#f5b84b22"; ctx.fillRect(r.x, r.y, r.w, r.h); }
+  ctx.setLineDash([10 * px, 6 * px]);
+  ctx.strokeStyle = "#ff4f7b"; ctx.strokeRect(G.trim.x, G.trim.y, G.trim.w, G.trim.h);
+  ctx.strokeStyle = "#3ccf8e"; for (const r of G.safe) ctx.strokeRect(r.x, r.y, r.w, r.h);
+  if (G.fold != null) { ctx.strokeStyle = "#f5b84b"; ctx.beginPath(); ctx.moveTo(G.fold, 0); ctx.lineTo(G.fold, H()); ctx.stroke(); }
+  ctx.setLineDash([]); ctx.font = `${12 * px}px sans-serif`;
+  ctx.fillStyle = "#ff4f7b"; ctx.fillText("trim", G.trim.x + 4 * px, G.trim.y - 4 * px);
+  ctx.fillStyle = "#3ccf8e"; ctx.fillText("safe area", G.safe[0].x + 4 * px, G.safe[0].y + 14 * px);
+  if (G.fold != null) { ctx.fillStyle = "#f5b84b"; ctx.fillText("fold", G.fold + 4 * px, G.trim.y + 14 * px); }
   ctx.restore();
 }
 export function drawPanelOrder(px) {

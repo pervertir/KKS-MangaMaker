@@ -1,6 +1,7 @@
 import { clamp } from "./core.js";
 import { paperOf } from "./creation.js";
 import { drawBreakout, drawLayer } from "./drawing.js";
+import { drawNombres, pageWidth } from "./book.ts";
 import { H, S, W } from "./state.ts";
 import { drawText } from "./text.js";
 
@@ -179,11 +180,13 @@ export function lum(hex) {             // 0 (black) .. 1 (white)
 export function drawPage(ctx, pg, opt = {}) {
   const paper = paperOf(pg, opt);
   ctx.fillStyle = paper;
-  ctx.fillRect(0, 0, W(), H());
+  ctx.fillRect(0, 0, pageWidth(S.doc, pg), H());
   const ls = pg.layers;
   let last = -1; ls.forEach((l, i) => { if (l.type === "panel") last = i; });
   ls.forEach((l, i) => {
     drawLayer(ctx, l, { ...opt, paper, ghost: opt.ghostId === l.id });
     if (i === last) for (const q of ls) if (q.type === "panel" && q.breakout) drawBreakout(ctx, q, { ...opt, paper });
   });
+  const i = S.doc.pages.indexOf(pg);
+  if (i >= 0) drawNombres(ctx, S.doc, i);
 }
