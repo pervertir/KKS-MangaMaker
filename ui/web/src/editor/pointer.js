@@ -96,7 +96,7 @@ function routeToTool(kind, e) {
   let samples = st?.stab ? raw.flatMap(s => st.stab.push(s)) : raw;
   if (kind === "up" && st?.stab) samples = [...samples, ...st.stab.flush()];
   const ev = { ...toolEvent(e, samples.length ? samples : raw.slice(-1)), raw: raw[raw.length - 1] };
-  if (kind === "down") t.down?.(ev); else if (kind === "move") { if (samples.length) t.move?.(ev); } else { t.up?.(ev); toolStroke = null; }
+  if (kind === "down") t.down?.(ev); else if (kind === "move") { if (samples.length) t.move?.(ev); } else { t.up?.(ev); toolStroke = null; S.guides = []; }
   requestView();
   return true;
 }

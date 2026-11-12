@@ -120,7 +120,10 @@ export function draw() {
   }
   for (const g of S.guides) {
     ctx.strokeStyle = "#ff3df2"; ctx.lineWidth = px; ctx.beginPath();
-    if (g.x != null) { ctx.moveTo(g.x, -2000); ctx.lineTo(g.x, H() + 2000); } else { ctx.moveTo(-2000, g.y); ctx.lineTo(W() + 2000, g.y); }
+    if (g.x != null) { ctx.moveTo(g.x, -2000); ctx.lineTo(g.x, H() + 2000); }
+    else if (g.y != null) { ctx.moveTo(-2000, g.y); ctx.lineTo(W() + 2000, g.y); }
+    else if (g.line) { ctx.moveTo(g.line[0][0], g.line[0][1]); ctx.lineTo(g.line[1][0], g.line[1][1]); }
+    else if (g.point) { ctx.moveTo(g.point[0] - 12 * px, g.point[1]); ctx.lineTo(g.point[0] + 12 * px, g.point[1]); ctx.moveTo(g.point[0], g.point[1] - 12 * px); ctx.lineTo(g.point[0], g.point[1] + 12 * px); }
     ctx.stroke();
   }
   const s = selL();
