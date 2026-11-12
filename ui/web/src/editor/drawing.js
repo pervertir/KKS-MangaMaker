@@ -3,7 +3,7 @@ import { THEMES, themeOf, themed, paperOf } from "./creation.js";
 import { imgFor } from "./images.js";
 import { drawFlipped, drawVBubble, lum, speedCanvas, toneCanvas } from "./manga-tools.js";
 import { S, bubbleMeta, page } from "./state.ts";
-import { drawText } from "./text.js";
+import { drawSfxText, drawText } from "./text.js";
 import { layerType, outlineOf } from "../core/registry.ts";
 import { clipTo } from "../core/geometry/region.ts";
 import { drawCached } from "../core/layer-cache.ts";
@@ -111,7 +111,8 @@ export function drawLayer(ctx, l, opt = {}) {
     case "text": {
       withBox(ctx, l, () => {
         const big = l.fontSize > 0 ? l.fontSize : Math.max(maxFont, 400);
-        drawText(ctx, l, 0, 0, l.w, l.h, big, l.color === "auto" ? THEMES[TH].ink : l.color);
+        const col = l.color === "auto" ? THEMES[TH].ink : l.color;
+        if (l.sfx) drawSfxText(ctx, l, big, col); else drawText(ctx, l, 0, 0, l.w, l.h, big, col);
       });
       break;
     }

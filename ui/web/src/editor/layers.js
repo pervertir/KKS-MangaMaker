@@ -10,21 +10,22 @@ import { S, bubbleMeta, layers, selL } from "./state.ts";
 import { deleteSelected, sc } from "./tools.js";
 import { requestDraw } from "./view.js";
 import { ui } from "../ui/store.svelte.ts";
+import { plainText } from "../lettering/ruby.ts";
 import { expressionDialog, saveRenderDialog, saveSelectionDialog } from "../assets/dialogs.ts";
 import { layerType } from "../core/registry.ts";
 import { blobGen } from "../draw/blobs.ts";
 
 /* ================================================================ layers list */
-export const TYPE_IC = { panel: "▭", bubble: "💬", vbubble: "🗨", caption: "▤", text: "T", image: "🖼", tone: "▦", speed: "✺", raster: "✎", vector: "✒" };
+export const TYPE_IC = { panel: "▭", bubble: "💬", vbubble: "🗨", balloon: "🗨", caption: "▤", text: "T", image: "🖼", tone: "▦", speed: "✺", raster: "✎", vector: "✒" };
 export function layerName(l) {
   if (l.name) return l.name;
   if (l.type === "panel") return "Panel" + (l.shot ? ` · ${l.shot}` : "");
   if (l.type === "image") return l.ref.split("/").pop();
   if (l.type === "tone") return `Screentone · ${l.pattern}${l.fade !== "none" ? " " + l.fade : ""}`;
   if (l.type === "speed") return l.mode === "focus" ? "Focus lines" : "Speed lines";
-  if (layerType(l.type)) return layerType(l.type).label;
-  const t = (l.text || "").replace(/\s+/g, " ").trim();
-  return (l.sfx ? "SFX" : l.type === "bubble" || l.type === "vbubble" ? "Bubble" : l.type === "caption" ? "Caption" : "Text") + (t ? ` · ${t}` : "");
+  if (layerType(l.type) && l.type !== "balloon") return layerType(l.type).label;
+  const t = plainText(l.text || "").replace(/\s+/g, " ").trim();
+  return (l.sfx ? "SFX" : l.type === "bubble" || l.type === "vbubble" || l.type === "balloon" ? "Bubble" : l.type === "caption" ? "Caption" : "Text") + (t ? ` · ${t}` : "");
 }
 /* monochrome line icons (currentColor), so they follow the theme instead of emoji colours */
 export const UI_ICON = {
@@ -56,7 +57,7 @@ export function paintLayerThumb(l, T = 32) {
   const w = Math.max(1, l.w), hh = Math.max(1, l.h), s = (T * 2 - pad * 2) / Math.max(w, hh);
   g.fillStyle = "#d4d4da"; g.fillRect(0, 0, T * 2, T * 2);
   g.save(); g.translate(T - (l.x + w / 2) * s, T - (l.y + hh / 2) * s); g.scale(s, s);
-  try { drawLayer(g, { ...l, visible: true, opacity: 1 }, { rs: s, export: true }); } catch { }
+  try { drawLayer(g, { ...l, visible: true, opacity: 1 }, { rs: s, export: true, solo: true }); } catch { }
   g.restore();
   return c;
 }

@@ -25,6 +25,8 @@
   import { FRAME_EDGES, FRAME_SHAPES, frameShapeKey } from "../editor/frames.js";
   import { cutOut, frameIcon, refreshProps, startBreakout } from "../editor/props.js";
   import { poseForPanel } from "../pose/open.js";
+  import LetterProps from "./LetterProps.svelte";
+  import type { Layer } from "../types.ts";
   import { clearLayer, counts, recolor, smoothing, widen } from "../draw/edit.ts";
 
   type Obj = Record<string, any>;
@@ -37,7 +39,7 @@
 
   const TITLES: Record<string, (l: Obj) => string> = {
     panel: () => "Panel", bubble: () => "Speech bubble", caption: () => "Caption", text: l => l.sfx ? "Sound effect" : "Text",
-    image: () => "Image", vbubble: () => "Drawn bubble", tone: () => "Screentone", speed: l => l.mode === "focus" ? "Focus lines" : "Speed lines",
+    image: () => "Image", vbubble: () => "Drawn bubble", balloon: () => "Bubble", tone: () => "Screentone", speed: l => l.mode === "focus" ? "Focus lines" : "Speed lines",
     raster: () => "Paint", vector: () => "Line art",
   };
   $effect(() => {
@@ -247,6 +249,7 @@
       {@render fonts(sel()!)}
       {@render color("Text color", sel()!, "color", true)}
       <div class="btnrow">{@render check("Flip tail", sel()!, "flip")}{@render check("Vertical text", sel()!, "vertical")}</div>
+      <LetterProps l={sel() as Layer} kind="convert" />
     {:else if type === "caption"}
       {@render words(sel()!)}
       {@render fonts(sel()!)}
@@ -260,7 +263,7 @@
       {@render color("Outline", sel()!, "stroke")}
       {@render slider("Outline w", sel()!, "strokeWidth", 0, 40, 1)}
       {@render select("Align", [["center", "Center"], ["left", "Left"], ["right", "Right"]], sel()!.align || "center", v => put(sel()!, "align", v))}
-      <div class="btnrow">{@render check("Vertical (tategaki)", sel()!, "vertical")}</div>
+      <LetterProps l={sel() as Layer} kind="text" />
     {:else if type === "image"}
       <div class="btnrow">{@render check("Flip", sel()!, "flip")}</div>
     {:else if type === "vbubble"}
@@ -281,6 +284,12 @@
         {@render check("Vertical text", sel()!, "vertical")}
       </div>
       <p class="hint">Drag the pink dot to aim the tail.</p>
+      <LetterProps l={sel() as Layer} kind="convert" />
+    {:else if type === "balloon"}
+      {@render words(sel()!)}
+      {@render fonts(sel()!)}
+      {@render color("Text color", sel()!, "color", true)}
+      <LetterProps l={sel() as Layer} kind="balloon" />
     {:else if type === "tone"}
       <div class="row"><label>Preset</label>
         <select onchange={e => tonePreset(e, sel()!)}>
