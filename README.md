@@ -220,8 +220,7 @@ The library is filtered by pose type (standing, sitting, kneeling, lying, ...).
 from the game's H animations (`abdata/h/anim`), which are Unity animation clips rather than pose files:
 `mp/khanim.py` decodes one frame of each position's main loop for every actor and stores the actors
 together as a group pose, turned to the side view that separates the bodies best. Build them once with
-`./mangapipe poses build-h` (needs `pip install UnityPy`); they are written to `poses/h_library.json`,
-which is not committed. `./mangapipe poses build-h-mods` does the same for the named positions that
+`./mangapipe poses build-h` (needs `pip install UnityPy`); they are written to `poses/h_library.json`. `./mangapipe poses build-h-mods` does the same for the named positions that
 AnimationLoader mods add (`mods/Sideloader Modpack - Animations`; 155 in this install) into
 `poses/h_mods_library.json`. In the Pose tab, **Turn everyone** rotates a whole group while keeping it together.
 
