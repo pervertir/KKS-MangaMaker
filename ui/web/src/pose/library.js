@@ -7,6 +7,12 @@ import { newChar, pcommit, pcur } from "./scene.js";
 import { registerGroup, useGroup } from "./side.js";
 
 /* ---------------------------------------------------------------- library */
+export async function reloadPoseLib() {
+  P.lib = null; P.byId = new Map();
+  await loadPoseLib();
+  if (P.filter.pack && P.filter.pack !== "@mine" && !P.packs.includes(P.filter.pack)) P.filter.pack = "";
+  renderPoseLib();
+}
 export async function loadPoseLib() {
   if (P.lib) return;
   status("Loading poses…");

@@ -14,8 +14,9 @@ shots/_example/out/
 # Built manga pages (mangapipe page / layouts)
 pages/
 
-# Per-machine path overrides
+# Per-machine path overrides and editor preferences
 config.local.yaml
+settings.json
 
 # The character sheet is per user
 cast.json

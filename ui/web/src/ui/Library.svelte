@@ -102,12 +102,12 @@
               onclick={() => useRender(ref, s.name)} ondragstart={drag({ kind: "render", ref, shot: s.name })} oncontextmenu={e => renderMenu(e, ref, s.name)} />
           {:else}
             {#if s.pose}<img src={thumb(s.pose, 200)} alt="" title="pose (not rendered yet)" style="opacity:.7" />{/if}
-            <div class="none">{s.pose ? "Not rendered yet." : "No pose yet: Grab from Studio."}</div>
+            <div class="none">{s.pose ? "Not rendered yet." : cat().settings?.koikatsu ? "No pose yet: Grab from Studio or open the Pose studio." : "No pose yet: open the Pose studio."}</div>
           {/each}
         </div>
       </div>
     {:else}
-      <div class="hint">No shots yet. Create one, pose it in CharaStudio, then Grab and Render.</div>
+      <div class="hint">No shots yet. Create one, pose it {cat().settings?.koikatsu ? "in CharaStudio and Grab it, or" : ""} in the Pose studio, then Render.</div>
     {/each}
   {:else if tab() === "bubbles"}
     {#if cat().bubbles.length}

@@ -130,7 +130,7 @@ def render_layers(shot: dict, cfg, render: Callable[[dict, int], list[Path]], co
             import sys
             sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "ui"))
             from server import pose_library  # the editor's library: basics, studio, H, custom
-            poses = {p["id"]: p for p in pose_library()["poses"]}
+            poses = {p["id"]: p for p in pose_library(adult=True)["poses"]}
         solo = {**scene, "chars": [{**q, "hidden": q["id"] != c["id"]} for q in scene["chars"]]}
         pose_png = live / f"pose_{c['id']}.png"
         draw_pose(solo, poses).save(pose_png)
