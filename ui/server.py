@@ -303,31 +303,56 @@ def shots() -> list[dict]:
 
 POSES = ROOT / "poses"
 CAST = ROOT / "cast.json"   # the character sheet: reused across shots and projects
+SETTINGS = ROOT / "settings.json"   # Edit > Preferences that the server and the MCP server honour too
+SETTING_DEFAULTS = {"adult_poses": False, "koikatsu": False}
 
 
-def pose_library() -> dict:
-    """Built-in basics + the converted studio library (built on first use when the install is
-    reachable) + poses saved from the editor."""
+def settings() -> dict:
+    try:
+        saved = json.loads(SETTINGS.read_text(encoding="utf-8")) if SETTINGS.exists() else {}
+    except ValueError:
+        saved = {}
+    return {k: bool(saved.get(k, d)) for k, d in SETTING_DEFAULTS.items()}
+
+
+def save_settings(changes: dict) -> dict:
+    cur = settings()
+    cur.update({k: bool(v) for k, v in changes.items() if k in SETTING_DEFAULTS})
+    SETTINGS.write_text(json.dumps(cur, indent=1), encoding="utf-8")
+    return cur
+
+
+def is_adult(pose: dict) -> bool:
+    return str(pose.get("kind", "")).startswith("Adult")
+
+
+def pose_library(adult: bool | None = None) -> dict:
+    """Built-in basics + the converted studio library + poses saved from the editor. With the Koikatsu
+    workflow on, missing libraries are built from the game install on first use. Adult poses are left
+    out unless `adult` (default: the "Show adult poses" preference)."""
     from mp.kkpose import basic_poses, build_library
+    pref = settings()
+    adult = pref["adult_poses"] if adult is None else adult
+    kks = pref["koikatsu"]
     lib = POSES / "library.json"
-    if not lib.exists() and CFG.studio_pose_dir.is_dir():
+    if kks and not lib.exists() and CFG.studio_pose_dir.is_dir():
         build_library(CFG.studio_pose_dir, lib)
     poses = basic_poses()
     hlib = POSES / "h_library.json"
-    if not hlib.exists() and CFG.h_anim_dir.is_dir():
+    if kks and adult and not hlib.exists() and CFG.h_anim_dir.is_dir():
         try:   # needs UnityPy; without it the H positions are simply not offered
             from mp.khanim import build_h_library
             build_h_library(CFG.h_anim_dir, hlib)
         except Exception as e:  # noqa: BLE001
             sys.stderr.write(f"[ui] H-scene poses not built: {e}\n")
     hmods = POSES / "h_mods_library.json"
-    if not hmods.exists() and CFG.h_mods_dir.is_dir():
+    if kks and adult and not hmods.exists() and CFG.h_mods_dir.is_dir():
         try:
             from mp.khanim import build_mod_library
             build_mod_library(CFG.h_mods_dir, hmods)
         except Exception as e:  # noqa: BLE001
             sys.stderr.write(f"[ui] mod H positions not built: {e}\n")
-    for f in (lib, hlib, hmods, POSES / "custom.json"):
+    for f in (lib, *((hlib, hmods) if adult else ()), POSES / "custom.json"):
         if f.exists():
             poses += json.loads(f.read_text(encoding="utf-8")).get("poses", [])
     from mp.kkpose import KINDS, pose_kind
@@ -336,9 +361,11 @@ def pose_library() -> dict:
     for p in poses:   # older libraries and saved poses get a type too
         if not p.get("kind") and p.get("body"):
             p["kind"] = pose_kind(p, " ".join([p.get("group", ""), p.get("name", "")]))
+    if not adult:
+        poses = [p for p in poses if not is_adult(p)]
     from mp.khanim import CATEGORIES
-    adult = list(dict.fromkeys(CATEGORIES.values()))
-    return {"poses": poses, "kinds": ["Group poses", *KINDS, *adult]}
+    adult_kinds = list(dict.fromkeys(CATEGORIES.values())) if adult else []
+    return {"poses": poses, "kinds": ["Group poses", *KINDS, *adult_kinds]}
 
 
 def save_custom_pose(pose: dict) -> dict:
@@ -753,8 +780,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.cached_json("catalog", lambda: {"bubbles": bubbles(), "layouts": layouts(), "assets": assets(),
                                   "styles": list(CFG.styles), "reading": "rtl", "page": [PAGE_W, PAGE_H],
                                   "maxFont": int(CFG.compose.get("page_max_font_px", 56)),
-                                  "scripts": sorted(p.name for p in (ROOT / "scripts").glob("*.y*ml"))},
-                    deps=[ROOT / "scripts", UPLOADS, CFG.path, TPL])
+                                  "scripts": sorted(p.name for p in (ROOT / "scripts").glob("*.y*ml")), "settings": settings()},
+                    deps=[ROOT / "scripts", UPLOADS, CFG.path, TPL, SETTINGS])
             if u.path == "/api/shots":
                 return self.json(shots())
             if u.path == "/api/library":
@@ -786,7 +813,9 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == "/api/pod":
                 return self.json(pod_status())
             if u.path == "/api/poses":
-                return self.cached_json("poses", pose_library, deps=[POSES / "library.json", POSES / "h_library.json", POSES / "h_mods_library.json", POSES / "custom.json", CFG.studio_pose_dir])
+                return self.cached_json("poses", pose_library, deps=[POSES / "library.json", POSES / "h_library.json", POSES / "h_mods_library.json", POSES / "custom.json", CFG.studio_pose_dir, SETTINGS])
+            if u.path == "/api/settings":
+                return self.json(settings())
             if u.path == "/api/guide":
                 return self.file(ROOT / "docs" / "SCRIPT_WIZARD.md", "text/markdown; charset=utf-8")
             if u.path == "/api/cast":
@@ -1090,6 +1119,8 @@ class Handler(BaseHTTPRequestHandler):
                     k += 1
                 dest.write_bytes(data)
                 return self.json({"ref": mp_ref(dest), "name": dest.stem})
+            if u.path == "/api/settings":
+                return self.json(save_settings(self.jbody()))
             if u.path == "/api/poses/custom":
                 return self.json(save_custom_pose(self.jbody()))
             if u.path == "/api/library":
@@ -1115,6 +1146,8 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == "/api/jobs":
                 body = self.jbody()
                 cmd = body.get("cmd")
+                if cmd == "grab" and not settings()["koikatsu"]:
+                    return self.json({"error": "Grab from Studio is part of the Koikatsu workflow: turn it on in Edit > Preferences"}, 400)
                 if cmd in SHOT_CMDS:
                     d = shot_dir(body["shot"])
                     args = [cmd, str(d.relative_to(ROOT))]

@@ -175,8 +175,8 @@ def t_list_shots(_: dict) -> dict:
     return {"shots": out}
 
 
-def _library():
-    lib = _srv().pose_library()
+def _library(adult: bool | None = None):
+    lib = _srv().pose_library(adult)
     poses = {p["id"]: p for p in lib["poses"]}
     for p in lib["poses"]:
         for i, m in enumerate(p.get("members") or []):
@@ -199,7 +199,7 @@ def t_pose_shot(a: dict) -> dict:
     d = srv.shot_dir(a["shot"], must_exist=False)      # a new shot is created by save_pose_shot
     side = next((d / n for n in srv.SIDECAR_NAMES if (d / n).exists()), None) if d.exists() else None
     known = (yaml.safe_load(side.read_text(encoding="utf-8")) or {}).get("characters", []) if side else []
-    lib, poses = _library()
+    lib, poses = _library(adult=True)
     w, h = (int(v) for v in str(a.get("canvas") or "832x1216").lower().split("x"))
     if not (256 <= w <= 2048 and 256 <= h <= 2048):
         raise ToolError("canvas: each side 256 to 2048, e.g. 832x1216 (portrait), 1024x1024, 1216x832 (landscape)")
@@ -424,7 +424,8 @@ TOOLS = {
     "list_shots": (t_list_shots, "List shots", "Every shot: characters, prompt, whether it is posed, how many renders.",
                    _obj({}), "ri", _obj({"shots": {"type": "array", "items": {"type": "object"}}}, ["shots"]), None),
     "list_poses": (t_list_poses, "Search the pose library",
-                   "Search the pose library (basic, the converted studio poses, H-scene group poses, saved poses) by type or name. "
+                   "Search the pose library (basic, the converted studio poses, saved poses, and H-scene group poses when the editor's "
+                   "\"Show adult poses\" preference is on) by type or name. "
                    "The answer lists every type; a pose with figures > 1 is a group pose.",
                    _obj({"type": _s("Exact pose type, as listed in `types` of any answer (e.g. Standing, Sitting, Group poses)."),
                          "search": _s("Words to find in the pose name or type (case-insensitive)."),

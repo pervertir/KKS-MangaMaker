@@ -249,6 +249,15 @@ with its place, as one entry; both land under *My poses* (`poses/custom.json`), 
 all its figures in at once (replacing the scene's figures, names carried over, or beside them).
 The library is filtered by pose type (standing, sitting, kneeling, lying, ...).
 
+**Edit > Preferences** (saved in `settings.json`, also read by the MCP server):
+
+- **Show adult poses** (off by default): the adult group poses (`poses/h_library.json`,
+  `poses/h_mods_library.json`) and their types appear in the Pose studio and in the MCP `list_poses` search
+  only when this is on.
+- **Koikatsu Sunshine capture workflow** (off by default): shows *Grab from Studio* and the CharaStudio hints,
+  and lets the editor build missing pose libraries from the game install. The Pose studio makes the same
+  OpenPose images, so the game is not needed; the `./mangapipe grab` and `poses build*` commands still work.
+
 **H-scene positions** (138 of them: foreplay, oral & service, sex, solo, girl & girl, threesome) come
 from the game's H animations (`abdata/h/anim`), which are Unity animation clips rather than pose files:
 `mp/khanim.py` decodes one frame of each position's main loop for every actor and stores the actors

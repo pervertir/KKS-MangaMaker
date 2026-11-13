@@ -5,7 +5,10 @@
   import { refreshPanels } from "../editor/misc.js";
   import { closeModal } from "../editor/modal.js";
   import { renderPages } from "../editor/pages.js";
+  import { saveSetting, setting } from "../editor/settings.js";
   import { S } from "../editor/state.ts";
+  import { toast } from "../editor/misc.js";
+  import { reloadPoseLib } from "../pose/library.js";
   import { requestDraw } from "../editor/view.js";
   import { TIPS_ON, toggleTips } from "../helpers/tips.js";
 
@@ -14,12 +17,20 @@
   let custom = $state(!!exportPaper());
   let paper = $state(exportPaper() || "#ffffff");
   let tips = $state(TIPS_ON());
+  let adultPoses = $state(setting("adult_poses"));
+  let koikatsu = $state(setting("koikatsu"));
 
   // every setting applies as it changes: there is nothing to confirm
   function setDark() {
     PREF.set("darkPages", dark ? "1" : "0");
     applyThemeChrome(); THUMBS.clear(); requestDraw(); refreshPanels(); renderPages();
     if (S.libTab === "layouts") renderLibrary();
+  }
+  async function setAdult() {
+    try { await saveSetting("adult_poses", adultPoses); await reloadPoseLib(); } catch (e) { toast((e as Error).message, "err"); }
+  }
+  async function setKoikatsu() {
+    try { await saveSetting("koikatsu", koikatsu); renderLibrary(); } catch (e) { toast((e as Error).message, "err"); }
   }
   $effect(() => { PREF.set("exportTheme", exportPages); });
   $effect(() => { PREF.set("exportPaper", custom ? paper : null); });
@@ -50,6 +61,20 @@
     </div>
     <p class="hint">Exports use white pages unless you change this, whatever the editor shows. A custom paper colour replaces the page
       background in exports only.</p>
+
+    <div class="section">Poses</div>
+    <label class="chkrow">
+      <input type="checkbox" bind:checked={adultPoses} onchange={setAdult} />
+      <span><b>Show adult poses</b><br /><span class="hint">Adds the adult group poses and their types to the Pose studio library and to the
+        MCP pose search. Off by default.</span></span>
+    </label>
+
+    <div class="section">Koikatsu</div>
+    <label class="chkrow">
+      <input type="checkbox" bind:checked={koikatsu} onchange={setKoikatsu} />
+      <span><b>Koikatsu Sunshine capture workflow</b><br /><span class="hint">Pose in CharaStudio, F11 with the OpenPose card and Grab from Studio
+        into a shot, and build the pose libraries from the game install. Not needed: the Pose studio makes the same OpenPose images.</span></span>
+    </label>
 
     <div class="section">Help</div>
     <label class="chkrow">
